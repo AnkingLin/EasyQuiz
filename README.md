@@ -16,24 +16,25 @@ An Obsidian plugin for Markdown-native quiz practice. Questions are written as *
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (146 cases)
+npm test           # bundle and run the test suite (192 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 ```
 
 The suite has two layers:
 
-- **Pure logic** (`parser`, `stem`, `grade`, `writeback`, `match-board`): plain node, no DOM.
-- **DOM** (`tests/quiz-match-dom.test.ts`): renders the real card and board through `renderQuizCard`
-  under jsdom and clicks its nodes, so click handling, line targets, per-column isolation and the
-  `MarkdownRenderer` contract are checked rather than assumed. `tests/dom.ts` installs the
+- **Pure logic** (`parser`, `stem`, `grade`, `writeback`, `match-board`, `insert`): plain node, no DOM.
+- **DOM** (`tests/quiz-match-dom.test.ts`, `tests/quiz-insert-modal.test.ts`): renders the real card and
+  board through `renderQuizCard` under jsdom and clicks its nodes, so click handling, line targets,
+  per-column isolation and the `MarkdownRenderer` contract are checked rather than assumed; the insert
+  dialog is opened through `InsertQuestionModal` and its controls are driven. `tests/dom.ts` installs the
   Obsidian-style DOM helpers (`createDiv`, `addClass`, …) and `tests/obsidian-stub.ts` stands in for
   the type-only `obsidian` package.
 
 Source layout:
 
 ```
-src/main.ts        plugin entry: code-block processor, command, settings tab
+src/main.ts        plugin entry: code-block processor, commands, editor menu, settings tab
 src/parser.ts      question-bank parser (pure logic, no obsidian import)
 src/types.ts       question model and parse-result types
 src/stem.ts        stem preprocessing: strips what the interactive controls render (pure logic)
@@ -43,10 +44,14 @@ src/hash.ts        stem hash (rev change detection)
 src/match-board.ts matching board state machine: adjacent-column links (pure logic)
 src/runtime.ts     Obsidian adapter: file detection, dependency injection, atomic writes
 src/view.ts        practice card rendering
-tests/             parser / stem / grading / write-back tests and a question-bank fixture
+src/insert.ts      question templates and insertion positioning (pure logic)
+src/insert-modal.ts insert-question dialog and the editor write
+tests/             parser / stem / grading / write-back / insert tests and a question-bank fixture
 ```
 
-`parser` / `stem` / `grade` / `writeback` / `hash` deliberately do **not** import `obsidian`, so they run under plain Node; every Obsidian API dependency is confined to `runtime.ts` and `view.ts`.
+`parser` / `stem` / `grade` / `writeback` / `hash` / `insert` deliberately do **not** import `obsidian`,
+so they run under plain Node; every Obsidian API dependency is confined to `runtime.ts`, `view.ts`,
+and `insert-modal.ts`.
 
 The stem is rendered **without** the parts that get their own interactive control — the option list,
 the matching table, and the `==answer==` text are stripped so that nothing is displayed twice.
@@ -295,8 +300,32 @@ and never guesses an answer:
 
 | Command | What it does |
 |---|---|
+| Insert question | Opens a dialog to build a question skeleton (type + stem title) and inserts it at the cursor |
 | Validate current question bank | Parses the active note and reports how many questions are answerable vs. need fixing |
 | Refresh quiz view | Forces the reading view to re-render the quiz blocks (also happens automatically after edits) |
+
+The insert dialog is also available from the editor context menu (**right-click → Insert question**,
+Markdown notes only). It asks for the type and the stem title only; the field names and syntax come from
+the template, and the Markdown is previewed before it is written:
+
+````markdown
+## 单选题干
+
+- 选项内容 ^a
+- 选项内容 ^b
+
+```quiz
+type: single
+answer: a
+```
+````
+
+The placeholder text is Chinese because the shipped templates are; the structure is what matters.
+The skeleton is an answerable question from the start — replace the placeholder text and submit it in
+reading view. The heading level, the block language, and the blank marker all follow the settings
+below, and the insertion point is normalised so that the question always ends up separated from its
+neighbours by exactly one blank line (no matter where the cursor is, how many blank lines were there,
+or how many times you insert).
 
 ## Settings
 
@@ -345,14 +374,16 @@ Write-back rules:
 ## Status
 
 Implemented and covered by tests: the parser, stem preprocessing, grading for all five types, record
-write-back, matching-board logic, and the practice card UI (choice options, click-to-connect
-multi-column matching with shuffling, inline click-to-type blanks that grow with their content,
-short-answer self-assessment). Question-bank edits trigger a debounced reading-view refresh.
+write-back, matching-board logic, question templates with their insertion positioning, and the practice
+card UI (choice options, click-to-connect multi-column matching with shuffling, inline click-to-type
+blanks that grow with their content, short-answer self-assessment). Question-bank edits trigger a
+debounced reading-view refresh.
 
 Not yet implemented: batching of multiple write-backs into one file write, alternate renderers
 (review mode / single-question panel), and statistics such as a mistake book.
 
-> The card UI and write-back have **not** been verified inside a real Obsidian instance. The logic
-> layer (parsing, stem preprocessing, grading, write-back) is fully tested, but DOM behaviour —
-> line rendering between columns, focus handling on blank inputs, and read-mode re-rendering — can
+> The card UI, the insert dialog, and write-back have **not** been verified inside a real Obsidian
+> instance. The logic layer (parsing, stem preprocessing, grading, write-back, template generation and
+> insertion positioning) is fully tested, but DOM behaviour — line rendering between columns, focus
+> handling on blank inputs, read-mode re-rendering, and how the dialog renders in a real modal — can
 > only be confirmed by hand in Obsidian.

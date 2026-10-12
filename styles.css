@@ -344,3 +344,25 @@
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
 }
+
+/* ---------------------------------------------------------- 插入题目对话框 */
+
+.easy-quiz-insert__label {
+	margin-top: 18px;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+
+.easy-quiz-insert__preview {
+	margin: 6px 0 0;
+	padding: 10px 12px;
+	max-height: 40vh;
+	overflow: auto;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+	line-height: 1.5;
+	white-space: pre;
+}

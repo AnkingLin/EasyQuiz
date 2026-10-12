@@ -126,4 +126,11 @@ function installOn(proto: Prototype, svgToo: boolean): void {
 			this.appendChild(this.ownerDocument.createTextNode(text));
 		};
 	}
+	// Obsidian 的 Element 上有 detach()（把自己从父节点摘下来），jsdom 没有。
+	const withDetach = proto as Prototype & { detach?: unknown };
+	if (withDetach.detach === undefined) {
+		withDetach.detach = function (this: Element) {
+			this.remove();
+		};
+	}
 }

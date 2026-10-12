@@ -10,6 +10,8 @@ import "./quiz-parser.test";
 import "./quiz-grading.test";
 import "./quiz-stem.test";
 import "./quiz-match-board.test";
+import "./quiz-insert.test";
+import "./quiz-insert-modal.test";
 import "./quiz-match-dom.test";
 
 async function main(): Promise<void> {

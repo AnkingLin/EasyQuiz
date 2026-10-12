@@ -1,8 +1,11 @@
 import {
 	App,
 	debounce,
+	Editor,
+	MarkdownFileInfo,
 	MarkdownPostProcessorContext,
 	MarkdownView,
+	Menu,
 	Notice,
 	Plugin,
 	PluginSettingTab,
@@ -12,6 +15,7 @@ import {
 import { BlankMarkerMode, ParsedQuizFile, QuizQuestion } from "./types";
 import { DEFAULT_SETTINGS, QuizService, RuntimeSettings } from "./runtime";
 import { renderQuizCard } from "./view";
+import { insertQuestionAtCursor, InsertQuestionOptions } from "./insert-modal";
 
 export default class EasyQuizPlugin extends Plugin {
 	// 两者都在 onload 中先于任何注册动作完成初始化。
@@ -66,7 +70,48 @@ export default class EasyQuizPlugin extends Plugin {
 			},
 		});
 
+		this.addCommand({
+			id: "insert-question",
+			name: "插入题目",
+			editorCheckCallback: (checking, editor) => {
+				if (!checking) this.insertQuestion(editor);
+				return true;
+			},
+		});
+
+		// 编辑区右键菜单：与命令共用同一套插入逻辑，只在有编辑器的 md 视图里出现。
+		this.registerEvent(
+			this.app.workspace.on("editor-menu", (menu, editor, info) => {
+				this.addInsertMenuItem(menu, editor, info);
+			})
+		);
+
 		this.addSettingTab(new EasyQuizSettingTab(this.app, this));
+	}
+
+	/** 对话框所需的设置项；题型标题层级与数据块语言都跟随设置。 */
+	private insertOptions(): InsertQuestionOptions {
+		return {
+			headingLevel: this.settings.headingLevels[0],
+			blockLanguage: this.settings.blockLanguage,
+			blankMarker: this.settings.blankMarker,
+		};
+	}
+
+	/** 打开「插入题目」对话框，确认后在光标处写入题目骨架。 */
+	private insertQuestion(editor: Editor): void {
+		insertQuestionAtCursor(this.app, editor, this.insertOptions());
+	}
+
+	private addInsertMenuItem(menu: Menu, editor: Editor, info: MarkdownView | MarkdownFileInfo): void {
+		// 只有 Markdown 笔记里插入才有意义（画布、PDF 等视图也会触发该事件）。
+		if (!(info.file instanceof TFile) || info.file.extension !== "md") return;
+		menu.addItem((item) =>
+			item
+				.setTitle("插入题目")
+				.setIcon("circle-plus")
+				.onClick(() => this.insertQuestion(editor))
+		);
 	}
 
 	onunload() {}
