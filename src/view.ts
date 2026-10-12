@@ -8,7 +8,7 @@
  * 填空题的 `==答案==` 由各自的交互控件承担，避免同一内容出现两次。
  */
 
-import { App, MarkdownRenderer, setIcon, TFile } from "obsidian";
+import { App, Component, MarkdownRenderer, MarkdownRenderChild, setIcon, TFile } from "obsidian";
 import { GradeResult, UserAnswer } from "./grade";
 import { BoardNode, createBoardState, leftNodeKey, rightNodeKey, splitConnection } from "./match-board";
 import { formatStats, QuizService, staleNote } from "./runtime";
@@ -25,6 +25,13 @@ export interface CardContext {
 	blockLine?: number;
 	/** 空位标记样式，需与解析设置一致。 */
 	blankMarker: BlankMarkerMode;
+	/**
+	 * 承载 MarkdownRenderer 生命周期的 Component。
+	 * 不传时插件会自己创建一个 MarkdownRenderChild，并通过 `addRenderChild` 注册。
+	 */
+	renderComponent?: Component;
+	/** 把自建的 MarkdownRenderChild 交给 Obsidian 的渲染上下文托管。 */
+	addRenderChild?: (child: MarkdownRenderChild) => void;
 	/** 提交完成后回调（用于刷新统计角标）。 */
 	onSubmitted?: (result: GradeResult) => void;
 }
@@ -64,7 +71,15 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 	const bodyEl = card.createDiv({ cls: "easy-quiz-card__body" });
 	const stem = formatStem(question, ctx.blankMarker);
 	if (stem.trim() !== "") {
-		await MarkdownRenderer.render(ctx.app, stem, bodyEl, ctx.file.path, null as never);
+		// Obsidian 要求传入承载生命周期的 Component：传 null 会直接抛错，
+		// 并使这一道题后续的渲染（包括题板）全部中断。
+		let component = ctx.renderComponent;
+		if (component === undefined) {
+			const child = new MarkdownRenderChild(bodyEl);
+			ctx.addRenderChild?.(child);
+			component = child;
+		}
+		await MarkdownRenderer.render(ctx.app, stem, bodyEl, ctx.file.path, component);
 	}
 
 	switch (question.type) {
@@ -305,10 +320,22 @@ export function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: Card
 	}
 
 	function paint(): void {
-		// 视图已被移除时不再绘制，避免操作脱离文档的节点。
-		if (!board.isConnected) return;
-		const width = board.clientWidth;
-		const height = board.clientHeight;
+		if (board.isConnected === false) return;
+		// 题板尺寸：优先用容器自身，拿不到时退回到节点范围，避免布局尚未完成时不画线。
+		const rect = board.getBoundingClientRect();
+		let width = board.clientWidth;
+		let height = board.clientHeight;
+		if (width === 0 || height === 0) {
+			let right = 0;
+			let bottom = 0;
+			for (const el of nodes.values()) {
+				const nodeRect = el.getBoundingClientRect();
+				right = Math.max(right, nodeRect.right - rect.left);
+				bottom = Math.max(bottom, nodeRect.bottom - rect.top);
+			}
+			width = width === 0 ? right : width;
+			height = height === 0 ? bottom : height;
+		}
 		if (width === 0 || height === 0) return;
 
 		const view = state.view();

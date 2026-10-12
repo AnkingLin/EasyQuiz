@@ -13,13 +13,14 @@ const { window: testWindow, document } = setupDom();
 
 import { parseQuizFile, ParseOptions } from "../src/parser";
 import { contentHash } from "../src/hash";
-import { renderMatch } from "../src/view";
+import { renderMatch, renderQuizCard } from "../src/view";
 import { QuizQuestion } from "../src/types";
+import { MarkdownRenderer, MarkdownRenderChild } from "./obsidian-stub";
 import { assert, assertEqual, test } from "./harness";
 
 const options: ParseOptions = { deps: { parseYaml: (s) => yaml.load(s), hash: contentHash } };
 
-function parseTable(header: string[], rows: string[]): QuizQuestion {
+function parseTable(header: string[], rows: string[], intro = ""): QuizQuestion {
 	const source = [
 		"---",
 		"quiz: true",
@@ -27,6 +28,7 @@ function parseTable(header: string[], rows: string[]): QuizQuestion {
 		"",
 		"## 配对",
 		"",
+		...(intro === "" ? [] : [intro, ""]),
 		`| ${header.join(" | ")} |`,
 		`| ${header.map(() => "---").join(" | ")} |`,
 		...rows.map((row) => `| ${row} |`),
@@ -46,6 +48,24 @@ interface Board {
 	linkedTexts: () => string[];
 	currentColumn: () => number;
 	card: HTMLElement;
+}
+
+/** 渲染整张题卡（含 MarkdownRenderer 调用），用于验证渲染契约。 */
+async function renderFullCard(
+	question: QuizQuestion,
+	extra: Partial<Parameters<typeof renderQuizCard>[1]> = {}
+): Promise<HTMLElement> {
+	const card = document.createElement("div");
+	document.body.appendChild(card);
+	await renderQuizCard(question, {
+		app: {},
+		service: {},
+		file: { path: "题库/测试.md" },
+		el: card,
+		blankMarker: "highlight",
+		...extra,
+	} as unknown as Parameters<typeof renderQuizCard>[1]);
+	return card;
 }
 
 /** 渲染一块题板，并给每个节点一个可区分的矩形，便于判断连线终点。 */
@@ -293,6 +313,48 @@ test("DOM：重名表头会给出可区分的列名", () => {
 	const names = question.matchColumns.map((column) => column.name);
 	assertEqual(names.length, 2, "应有两个答案列");
 	assert(names[0] !== names[1], `两个列名不应相同（实际：${JSON.stringify(names)}）`);
+});
+
+// ---------------------------------------------------------------------------
+// 渲染契约：Obsidian 要求 render 必须收到 Component
+// ---------------------------------------------------------------------------
+
+test("DOM：渲染题面时必须传入 Component（不能是 null）", async () => {
+	MarkdownRenderer.calls.length = 0;
+	await renderFullCard(parseTable(header3, rows3, "把协议与端口配对。"));
+	assert(MarkdownRenderer.calls.length > 0, "应调用过 MarkdownRenderer.render");
+	for (const call of MarkdownRenderer.calls) {
+		assert(call.component !== null && call.component !== undefined, "Component 不能为空");
+	}
+});
+
+test("DOM：题面为空时不调用 render（也就不会踩到 Component 缺失）", async () => {
+	// 配对题的题面可能只剩表格，去掉表格后为空。
+	MarkdownRenderer.calls.length = 0;
+	await renderFullCard(parseTable(header3, rows3));
+	assertEqual(MarkdownRenderer.calls.length, 0, "题面为空时不应调用 render");
+});
+
+test("DOM：未提供 Component 时插件会自己创建并交给渲染上下文", async () => {
+	MarkdownRenderer.calls.length = 0;
+	const registered: unknown[] = [];
+	await renderFullCard(parseTable(header3, rows3, "把协议与端口配对。"), {
+		addRenderChild: (child) => registered.push(child),
+	});
+	assertEqual(registered.length, 1, "应注册一个自建的 MarkdownRenderChild");
+	assert(MarkdownRenderer.calls[0]?.component === registered[0], "render 应使用该 Component");
+});
+
+test("DOM：传入 Component 时直接使用它，不再自建", async () => {
+	MarkdownRenderer.calls.length = 0;
+	const registered: unknown[] = [];
+	const component = new MarkdownRenderChild(document.createElement("div"));
+	await renderFullCard(parseTable(header3, rows3, "把协议与端口配对。"), {
+		renderComponent: component,
+		addRenderChild: (child) => registered.push(child),
+	});
+	assertEqual(registered.length, 0, "已有 Component 时不应再自建");
+	assert(MarkdownRenderer.calls[0]?.component === component, "应使用传入的 Component");
 });
 
 // ---------------------------------------------------------------------------

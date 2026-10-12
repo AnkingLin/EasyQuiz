@@ -16,7 +16,7 @@ An Obsidian plugin for Markdown-native quiz practice. Questions are written as *
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (135 cases)
+npm test           # bundle and run the test suite (141 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 ```
@@ -24,10 +24,11 @@ npm run lint       # eslint (eslint-plugin-obsidianmd)
 The suite has two layers:
 
 - **Pure logic** (`parser`, `stem`, `grade`, `writeback`, `match-board`): plain node, no DOM.
-- **DOM** (`tests/quiz-match-dom.test.ts`): renders the real board through `renderMatch` under
-  jsdom and clicks its nodes, so click handling, line targets and per-column isolation are checked
-  rather than assumed. `tests/dom.ts` installs the Obsidian-style DOM helpers (`createDiv`,
-  `addClass`, …) and `tests/obsidian-stub.ts` stands in for the type-only `obsidian` package.
+- **DOM** (`tests/quiz-match-dom.test.ts`): renders the real card and board through `renderQuizCard`
+  under jsdom and clicks its nodes, so click handling, line targets, per-column isolation and the
+  `MarkdownRenderer` contract are checked rather than assumed. `tests/dom.ts` installs the
+  Obsidian-style DOM helpers (`createDiv`, `addClass`, …) and `tests/obsidian-stub.ts` stands in for
+  the type-only `obsidian` package.
 
 Source layout:
 

@@ -1,17 +1,16 @@
 /**
- * 极简断言框架：测试结果由各测试文件返回，统一由 tests/run.ts 汇总。
+ * 极简测试框架。
+ *
+ * 测试先注册、后统一运行（`runTests`），因此可以 await 异步测试，
+ * 也能保证执行顺序稳定（DOM 测试依赖这一点）。
  */
 
 let passed = 0;
 const failures: string[] = [];
+const cases: { name: string; fn: () => void | Promise<void> }[] = [];
 
-export function test(name: string, fn: () => void): void {
-	try {
-		fn();
-		passed++;
-	} catch (error) {
-		failures.push(`${name}\n    ${error instanceof Error ? error.message : String(error)}`);
-	}
+export function test(name: string, fn: () => void | Promise<void>): void {
+	cases.push({ name, fn });
 }
 
 export function assert(condition: unknown, message: string): void {
@@ -24,7 +23,16 @@ export function assertEqual<T>(actual: T, expected: T, message: string): void {
 	}
 }
 
-export function results(): { passed: number; failures: string[] } {
+/** 依次运行已注册的测试。 */
+export async function runTests(): Promise<{ passed: number; failures: string[] }> {
+	for (const item of cases) {
+		try {
+			await item.fn();
+			passed++;
+		} catch (error) {
+			failures.push(`${item.name}\n    ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
 	return { passed, failures };
 }
 

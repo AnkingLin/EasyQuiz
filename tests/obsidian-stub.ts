@@ -13,8 +13,46 @@ export function setIcon(): void {
 	// 图标在测试中不需要真实渲染。
 }
 
+/** 只用于满足 MarkdownRenderer.render 的 Component 参数。 */
+export class Component {
+	load(): void {}
+	unload(): void {}
+	onload(): void {}
+	onunload(): void {}
+	addChild<T>(child: T): T {
+		return child;
+	}
+	removeChild<T>(child: T): T {
+		return child;
+	}
+	register(_callback: () => void): void {}
+	registerEvent(_event: unknown): void {}
+	registerDomEvent(_el: unknown, _type: string, _callback: unknown): void {}
+	registerInterval(_id: number): number {
+		return 0;
+	}
+}
+
+export class MarkdownRenderChild extends Component {
+	containerEl: HTMLElement;
+	constructor(containerEl: HTMLElement) {
+		super();
+		this.containerEl = containerEl;
+	}
+}
+
 export class MarkdownRenderer {
-	static render(): Promise<void> {
+	/** 记录 render 的调用参数，供测试断言 Component 一定被传入。 */
+	static calls: { component: unknown }[] = [];
+
+	static render(
+		_app: unknown,
+		_source: string,
+		_el: HTMLElement,
+		_path: string,
+		component: unknown
+	): Promise<void> {
+		MarkdownRenderer.calls.push({ component });
 		return Promise.resolve();
 	}
 }

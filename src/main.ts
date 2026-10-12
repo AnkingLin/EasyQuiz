@@ -1,4 +1,14 @@
-import { App, debounce, MarkdownView, Notice, Plugin, PluginSettingTab, Setting, TFile } from "obsidian";
+import {
+	App,
+	debounce,
+	MarkdownPostProcessorContext,
+	MarkdownView,
+	Notice,
+	Plugin,
+	PluginSettingTab,
+	Setting,
+	TFile,
+} from "obsidian";
 import { BlankMarkerMode, ParsedQuizFile, QuizQuestion } from "./types";
 import { DEFAULT_SETTINGS, QuizService, RuntimeSettings } from "./runtime";
 import { renderQuizCard } from "./view";
@@ -17,7 +27,7 @@ export default class EasyQuizPlugin extends Plugin {
 		this.registerMarkdownCodeBlockProcessor(
 			this.settings.blockLanguage,
 			async (source, el, ctx) => {
-				await this.renderBlock(source, el, ctx.sourcePath, ctx.getSectionInfo(el));
+				await this.renderBlock(source, el, ctx);
 			}
 		);
 
@@ -87,9 +97,10 @@ export default class EasyQuizPlugin extends Plugin {
 	private async renderBlock(
 		source: string,
 		el: HTMLElement,
-		sourcePath: string,
-		section: { lineStart: number; lineEnd: number } | null
+		post: MarkdownPostProcessorContext
 	): Promise<void> {
+		const sourcePath = post.sourcePath;
+		const section = post.getSectionInfo(el);
 		el.empty();
 		el.addClass("easy-quiz-block");
 
@@ -131,6 +142,8 @@ export default class EasyQuizPlugin extends Plugin {
 			el,
 			blockLine: question.blockLine ?? undefined,
 			blankMarker: this.settings.blankMarker,
+			// MarkdownRenderer 需要一个 Component 承载生命周期；交给渲染上下文托管。
+			addRenderChild: (child) => post.addChild(child),
 			onSubmitted: () => this.refreshNotice(),
 		});
 	}
