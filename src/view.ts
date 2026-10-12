@@ -255,7 +255,7 @@ function findTextElement(root: HTMLElement, label: string): HTMLElement | null {
  * - 交互规则（选中、连线、替换、禁止跨列）都在 `match-board.ts` 的状态机里，
  *   这里只负责把状态画出来。
  */
-function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: CardContext): void {
+export function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: CardContext): void {
 	const columns = question.matchColumns;
 	if (columns.length === 0) {
 		card.createDiv({ cls: "easy-quiz-card__hint", text: "配对表格没有可作答的答案列。" });

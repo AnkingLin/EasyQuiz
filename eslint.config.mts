@@ -42,6 +42,10 @@ export default defineConfig(
 		},
 		rules: {
 			'obsidianmd/rule-custom-message': 'off',
+			// 测试要自己搭建 DOM 辅助方法，这里并不存在 Obsidian 的 this.win。
+			'obsidianmd/prefer-create-el': 'off',
+			// 测试在 node 下运行，需要把 jsdom 的 window 装到 globalThis 上。
+			'obsidianmd/no-global-this': 'off',
 		},
 	},
 );

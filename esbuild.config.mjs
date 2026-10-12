@@ -20,6 +20,9 @@ if (mode === 'test') {
 		format: 'cjs',
 		target: 'node18',
 		loader: { '.md': 'text' },
+		// jsdom 自带资源文件，必须保持外部依赖；obsidian 只有类型定义，用测试存根替代。
+		external: ['jsdom'],
+		alias: { obsidian: './tests/obsidian-stub.ts' },
 		outfile: '.test-build/test.cjs',
 		logLevel: 'info',
 	});

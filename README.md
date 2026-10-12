@@ -16,10 +16,18 @@ An Obsidian plugin for Markdown-native quiz practice. Questions are written as *
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (121 cases)
+npm test           # bundle and run the test suite (135 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 ```
+
+The suite has two layers:
+
+- **Pure logic** (`parser`, `stem`, `grade`, `writeback`, `match-board`): plain node, no DOM.
+- **DOM** (`tests/quiz-match-dom.test.ts`): renders the real board through `renderMatch` under
+  jsdom and clicks its nodes, so click handling, line targets and per-column isolation are checked
+  rather than assumed. `tests/dom.ts` installs the Obsidian-style DOM helpers (`createDiv`,
+  `addClass`, …) and `tests/obsidian-stub.ts` stands in for the type-only `obsidian` package.
 
 Source layout:
 
@@ -175,7 +183,8 @@ type: match
   click its answer**, and a connecting line is drawn between them.
 - **Each answer column is matched on its own.** A left item can hold one connection per answer
   column, and an answer accepts one connection within its own column — working on one column never
-  disturbs another, and a connection can never jump between columns.
+  disturbs another, and a connection can never jump between columns. Answer columns whose headers
+  are duplicated or empty get distinguishable names (e.g. `层级（第 2 组）`).
 - **Replacing keeps the line until the new one exists**: connecting to a different answer (or from a
   different item) builds the new line first and only then releases the old one, so the board never
   passes through a state where nothing is connected.

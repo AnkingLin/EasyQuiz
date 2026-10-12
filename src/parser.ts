@@ -927,6 +927,15 @@ function buildMatchColumns(header: string[], table: string[][]): MatchColumn[] {
 		});
 	}
 
+	// 表头重名（或为空）时给出可区分的名字，否则题板上会出现两个同名答案列。
+	const seen = new Map<string, number>();
+	for (const column of columns) {
+		const base = column.name.trim() === "" ? `第 ${column.index + 2} 列` : column.name;
+		const count = (seen.get(base) ?? 0) + 1;
+		seen.set(base, count);
+		column.name = count === 1 ? base : `${base}（第 ${count} 组）`;
+	}
+
 	return columns;
 }
 

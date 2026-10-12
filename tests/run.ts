@@ -7,6 +7,7 @@ import * as parserTests from "./quiz-parser.test";
 import * as gradeWriteBackTests from "./quiz-grading.test";
 import * as stemTests from "./quiz-stem.test";
 import * as matchBoardTests from "./quiz-match-board.test";
+import * as matchDomTests from "./quiz-match-dom.test";
 
 export { test };
 
@@ -15,6 +16,7 @@ void parserTests;
 void gradeWriteBackTests;
 void stemTests;
 void matchBoardTests;
+void matchDomTests;
 
 for (const failure of summary.failures) {
 	console.error(`✗ ${failure}`);
