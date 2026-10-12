@@ -1,5 +1,5 @@
 # vscode
-.vscode 
+.vscode
 
 # Intellij
 *.iml
@@ -9,14 +9,14 @@
 node_modules
 
 # Don't include the compiled main.js file in the repo.
-# They should be uploaded to GitHub releases instead.
+# A release artifact is generated for each release.
 main.js
 
 # Exclude sourcemaps
 *.map
 
+# 测试打包产物
+.test-build
+
 # obsidian
 data.json
-
-# Exclude macOS Finder (System Explorer) View States
-.DS_Store

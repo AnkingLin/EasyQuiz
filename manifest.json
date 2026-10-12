@@ -1,11 +1,10 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
+	"id": "easy-quiz",
+	"name": "EasyQuiz",
 	"version": "1.0.0",
-	"minAppVersion": "1.0.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"minAppVersion": "1.4.0",
+	"description": "Markdown-native quiz practice: write questions as plain Markdown and practice them in a rendered card UI, with attempt records written back into the note.",
+	"author": "AnkingLin",
+	"authorUrl": "https://github.com/AnkingLin",
 	"isDesktopOnly": false
 }

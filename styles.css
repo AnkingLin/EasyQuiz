@@ -1,8 +1,147 @@
-/*
+/* EasyQuiz 刷题界面样式 */
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.easy-quiz-block {
+	margin: 0.5em 0;
+}
 
-If your plugin does not need CSS, delete this file.
+.easy-quiz-card {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m, 8px);
+	padding: 12px 14px;
+	background: var(--background-primary-alt, var(--background-primary));
+}
 
-*/
+.easy-quiz-card + .easy-quiz-card {
+	margin-top: 10px;
+}
+
+.easy-quiz-card__header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 8px;
+}
+
+.easy-quiz-card__type {
+	flex: none;
+	font-size: var(--font-ui-smaller);
+	padding: 1px 8px;
+	border-radius: 10px;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.easy-quiz-card__title {
+	font-weight: var(--font-semibold, 600);
+	flex: 1 1 auto;
+}
+
+.easy-quiz-card__stats,
+.easy-quiz-card__stats.is-stale {
+	flex: none;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.easy-quiz-card__stats.is-stale {
+	color: var(--text-warning);
+}
+
+.easy-quiz-card__stale {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-warning);
+	margin-bottom: 6px;
+}
+
+.easy-quiz-card__body > :first-child {
+	margin-top: 0;
+}
+
+.easy-quiz-card__options,
+.easy-quiz-card__blanks,
+.easy-quiz-card__matches {
+	margin-top: 10px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.easy-quiz-card__option {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	cursor: pointer;
+}
+
+.easy-quiz-card__blank,
+.easy-quiz-card__match {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.easy-quiz-card__match-item {
+	flex: 1 1 auto;
+}
+
+.easy-quiz-card__essay {
+	width: 100%;
+	min-height: 4.5em;
+	margin-top: 10px;
+	resize: vertical;
+}
+
+.easy-quiz-card__actions {
+	display: flex;
+	gap: 8px;
+	margin-top: 12px;
+}
+
+.easy-quiz-card__feedback {
+	margin-top: 8px;
+	font-size: var(--font-ui-small);
+}
+
+.easy-quiz-card__feedback.is-correct {
+	color: var(--text-success);
+}
+
+.easy-quiz-card__feedback.is-wrong {
+	color: var(--text-error);
+}
+
+.easy-quiz-card__feedback.is-warning {
+	color: var(--text-warning);
+}
+
+.easy-quiz-card__note {
+	color: var(--text-muted);
+}
+
+/* 诊断卡片：题目数据有问题时替换刷题界面 */
+.easy-quiz-card.is-diagnostic {
+	border-color: var(--text-warning);
+	background: var(--background-secondary);
+}
+
+.easy-quiz-card__icon {
+	display: flex;
+	color: var(--text-warning);
+}
+
+.easy-quiz-card__hint {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+
+.easy-quiz-card__warnings {
+	margin: 6px 0 0;
+	padding-left: 1.2em;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+/* 填空题在题面里的占位 */
+.easy-quiz-card__body code {
+	background: var(--background-modifier-border);
+}

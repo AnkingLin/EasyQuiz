@@ -1,27 +1,35 @@
 {
-	"name": "obsidian-sample-plugin",
+	"name": "easy-quiz",
 	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"description": "An Obsidian plugin for markdown-native quiz practice.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-		"version": "node version-bump.mjs && git add manifest.json versions.json",
-		"lint": "eslint ."
+		"test": "node esbuild.config.mjs test && node .test-build/test.cjs",
+		"typecheck": "tsc -noEmit -skipLibCheck",
+		"lint": "eslint .",
+		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
 	"keywords": [],
 	"license": "0-BSD",
 	"devDependencies": {
 		"@eslint/js": "^9.39.4",
+		"@types/js-yaml": "^4.0.9",
 		"@types/node": "^22.15.17",
 		"esbuild": "0.25.5",
 		"eslint": "^9.39.4",
 		"eslint-plugin-obsidianmd": "^0.4.0",
 		"globals": "^17.6.0",
 		"jiti": "^2.6.1",
-		"obsidian": "latest",
+		"js-yaml": "^4.1.0",
+		"obsidian": "^1.14.4",
+		"tslib": "^2.8.1",
 		"typescript": "^5.8.3",
 		"typescript-eslint": "^8.59.1"
+	},
+	"allowScripts": {
+		"esbuild@0.25.5": true
 	}
 }

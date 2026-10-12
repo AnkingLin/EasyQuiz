@@ -8,7 +8,23 @@ if you want to view the source, please visit the github repository of this plugi
 */
 `;
 
-const prod = process.argv[2] === 'production';
+const mode = process.argv[2];
+const prod = mode === 'production';
+
+// `test` 模式：把测试与其 Markdown fixture 一起打成可用 node 直接运行的单文件。
+if (mode === 'test') {
+	await esbuild.build({
+		entryPoints: ['tests/run.ts'],
+		bundle: true,
+		platform: 'node',
+		format: 'cjs',
+		target: 'node18',
+		loader: { '.md': 'text' },
+		outfile: '.test-build/test.cjs',
+		logLevel: 'info',
+	});
+	process.exit(0);
+}
 
 const context = await esbuild.context({
 	banner: {
