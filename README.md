@@ -16,7 +16,7 @@ An Obsidian plugin for Markdown-native quiz practice. Questions are written as *
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (108 cases)
+npm test           # bundle and run the test suite (121 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 ```
@@ -172,8 +172,16 @@ type: match
 - A table is only read as a matching question when `type: match`; tables in other question types are
   ordinary prose and are not graded.
 - In the UI the first column and each answer column are laid out side by side: **click an item, then
-  click its answer**, and a connecting line is drawn between them. Clicking a connected item again
-  removes its line. Each item and each answer accepts one line.
+  click its answer**, and a connecting line is drawn between them.
+- **Each answer column is matched on its own.** A left item can hold one connection per answer
+  column, and an answer accepts one connection within its own column — working on one column never
+  disturbs another, and a connection can never jump between columns.
+- **Replacing keeps the line until the new one exists**: connecting to a different answer (or from a
+  different item) builds the new line first and only then releases the old one, so the board never
+  passes through a state where nothing is connected.
+- Clicking a node again simply selects/deselects it; it does not silently drop a line. To change a
+  match, select the item and click the new answer.
+- The header of the column you are currently working on is highlighted.
 - **Order is shuffled**: the first column and every answer column are shuffled independently, so the
   table's row order never gives the answer away.
 - **Duplicate entries are merged**: within one answer column, entries with the same answer appear

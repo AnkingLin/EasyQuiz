@@ -10,15 +10,7 @@
 
 import { App, MarkdownRenderer, setIcon, TFile } from "obsidian";
 import { GradeResult, UserAnswer } from "./grade";
-import {
-	answerOf,
-	connectionsOf,
-	entryKeyOf,
-	leftNodeKey,
-	makeConnection,
-	rightNodeKey,
-	splitConnection,
-} from "./match-board";
+import { BoardNode, createBoardState, leftNodeKey, rightNodeKey, splitConnection } from "./match-board";
 import { formatStats, QuizService, staleNote } from "./runtime";
 import { BLANK_MARKER_PREFIX, formatStem } from "./stem";
 import { BlankMarkerMode, QuizQuestion } from "./types";
@@ -260,7 +252,8 @@ function findTextElement(root: HTMLElement, label: string): HTMLElement | null {
  * - 首列是待匹配项，其余每一列都是一组需要配对的答案，各自渲染成一列。
  * - 各列顺序都会**独立打乱**，因此题目顺序不会泄露答案。
  * - 同一列内答案相同的条目已在解析阶段合并，所以不会出现重复选项。
- * - 连线用 `左节点key|右节点key` 记录（左右节点都带前缀，避免同文本碰撞）。
+ * - 交互规则（选中、连线、替换、禁止跨列）都在 `match-board.ts` 的状态机里，
+ *   这里只负责把状态画出来。
  */
 function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: CardContext): void {
 	const columns = question.matchColumns;
@@ -277,61 +270,38 @@ function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: CardContext
 	const svg = createSvg("svg", { cls: "easy-quiz-card__links" });
 	board.appendChild(svg);
 
-	const connections = new Set<string>();
-	let activeKey: string | null = null;
 	const nodes = new Map<string, HTMLElement>();
+	// 节点 key → 所属列（左节点为 null），供状态机校验"不跨列"。
+	const nodeModels: BoardNode[] = [];
 
 	// 首列：待匹配项（打乱）。
 	const leftCol = createBoardColumn(grid, question.tableHeader?.[0] ?? "待匹配");
 	for (const entry of shuffle(columns[0]?.entries ?? [])) {
+		const key = leftNodeKey(entry.key);
 		const el = leftCol.createDiv({ cls: "easy-quiz-card__node is-left", text: entry.text });
-		nodes.set(leftNodeKey(entry.key), el);
-		el.addEventListener("click", () => onNodeClick(leftNodeKey(entry.key)));
+		nodes.set(key, el);
+		nodeModels.push({ key, column: null });
+		el.addEventListener("click", () => onNodeClick(key));
 	}
 
 	// 其余列：每列一组答案，各自独立打乱。
+	const columnEls = new Map<number, HTMLElement>();
 	for (const column of columns) {
 		const col = createBoardColumn(grid, column.name);
+		columnEls.set(column.index, col);
 		for (const answer of shuffle(column.answers)) {
 			const key = rightNodeKey(column.index, answer);
 			const el = col.createDiv({ cls: "easy-quiz-card__node is-right", text: answer });
 			nodes.set(key, el);
+			nodeModels.push({ key, column: column.index });
 			el.addEventListener("click", () => onNodeClick(key));
 		}
 	}
 
+	const state = createBoardState(nodeModels);
+
 	function onNodeClick(key: string): void {
-		// 该节点已连线：再次点击断开它所有的线。
-		const existingForNode = connectionsOf(connections, key);
-		if (existingForNode.length > 0) {
-			for (const connection of existingForNode) connections.delete(connection);
-			activeKey = null;
-			paint();
-			return;
-		}
-		if (activeKey === null || activeKey === key) {
-			activeKey = activeKey === key ? null : key;
-			paint();
-			return;
-		}
-		const connection = makeConnection(activeKey, key);
-		if (connection === null) {
-			// 同侧不能相连：改为切换当前选中项。
-			activeKey = key;
-			paint();
-			return;
-		}
-		const [left, right] = splitConnection(connection);
-		// 左节点只能连一条线；一个答案也只能被连一次。
-		for (const existing of [
-			...(left === null ? [] : connectionsOf(connections, left)),
-			...(right === null ? [] : connectionsOf(connections, right)),
-		]) {
-			connections.delete(existing);
-		}
-		connections.add(connection);
-		activeKey = null;
-		paint();
+		if (state.click(key)) paint();
 	}
 
 	function paint(): void {
@@ -341,15 +311,19 @@ function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: CardContext
 		const height = board.clientHeight;
 		if (width === 0 || height === 0) return;
 
+		const view = state.view();
 		svg.empty();
 		svg.setAttribute("width", `${width}`);
 		svg.setAttribute("height", `${height}`);
 		svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
 		for (const el of nodes.values()) el.removeClass("is-active", "is-linked");
-		if (activeKey !== null) nodes.get(activeKey)?.addClass("is-active");
+		for (const [index, el] of columnEls) {
+			el.toggleClass("is-current", view.activeColumn === index);
+		}
+		if (view.activeKey !== null) nodes.get(view.activeKey)?.addClass("is-active");
 
 		const boardRect = board.getBoundingClientRect();
-		for (const connection of connections) {
+		for (const connection of view.connections) {
 			const [leftId, rightId] = splitConnection(connection);
 			if (leftId === null || rightId === null) continue;
 			const leftEl = nodes.get(leftId);
@@ -376,10 +350,7 @@ function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: CardContext
 	window.setTimeout(() => paint(), 0);
 
 	renderSubmit(card, ctx, question, "提交答案", () => {
-		const pairs = [...connections]
-			.map((connection) => splitConnection(connection))
-			.filter((pair): pair is [string, string] => pair[0] !== null && pair[1] !== null)
-			.map(([leftId, rightId]) => ({ key: entryKeyOf(leftId), target: answerOf(rightId) }));
+		const pairs = state.pairs();
 		return pairs.length === 0 ? null : { kind: "match", pairs };
 	});
 }

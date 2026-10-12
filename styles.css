@@ -209,6 +209,13 @@
 	margin-bottom: 2px;
 }
 
+/* 当前正在作答的答案列 */
+.easy-quiz-card__board-col.is-current .easy-quiz-card__board-head {
+	color: var(--text-accent);
+	border-bottom-color: var(--interactive-accent);
+	font-weight: var(--font-semibold, 600);
+}
+
 /* 连线层：铺满题板，位于节点之下 */
 .easy-quiz-card__links {
 	position: absolute;
