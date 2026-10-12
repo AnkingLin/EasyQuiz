@@ -1,5 +1,5 @@
 import { App, debounce, MarkdownView, Notice, Plugin, PluginSettingTab, Setting, TFile } from "obsidian";
-import { ParsedQuizFile, QuizQuestion } from "./types";
+import { BlankMarkerMode, ParsedQuizFile, QuizQuestion } from "./types";
 import { DEFAULT_SETTINGS, QuizService, RuntimeSettings } from "./runtime";
 import { renderQuizCard } from "./view";
 
@@ -130,6 +130,7 @@ export default class EasyQuizPlugin extends Plugin {
 			file,
 			el,
 			blockLine: question.blockLine ?? undefined,
+			blankMarker: this.settings.blankMarker,
 			onSubmitted: () => this.refreshNotice(),
 		});
 	}
@@ -256,6 +257,23 @@ class EasyQuizSettingTab extends PluginSettingTab {
 					this.plugin.settings.writeBackEnabled = value;
 					await this.plugin.saveSettings();
 				})
+			);
+
+		new Setting(containerEl)
+			.setName("填空标记")
+			.setDesc("填空题用哪种 Markdown 标记挖空。空位锚点 ^b1 可以省略，省略时按出现顺序自动编号。")
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOptions({
+						highlight: "== 高亮 ==",
+						bold: "** 加粗 **",
+						both: "两者都识别",
+					})
+					.setValue(this.plugin.settings.blankMarker)
+					.onChange(async (value) => {
+						this.plugin.settings.blankMarker = value as BlankMarkerMode;
+						await this.plugin.saveSettings();
+					})
 			);
 
 		new Setting(containerEl)

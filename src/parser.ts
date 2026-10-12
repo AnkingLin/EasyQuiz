@@ -11,6 +11,7 @@
  */
 
 import {
+	BlankMarkerMode,
 	BlankRule,
 	BlankSpec,
 	HistoryEntry,
@@ -41,12 +42,14 @@ export interface ParseOptions {
 	pathMatched?: boolean;
 	/** Obsidian 汇总的全部标签（含 frontmatter tags 与正文 inline tag）。 */
 	tags?: string[];
-	/** 数据块语言超出预期时是否提示（用于排查写错的围栏）。 */
+	/** 空位标记样式，默认只认 `==高亮==`。 */
+	blankMarker?: BlankMarkerMode;
 	deps: ParseDependencies;
 }
 
 export const DEFAULT_BLOCK_LANGUAGE = "quiz";
 export const DEFAULT_HEADING_LEVELS: [number, number] = [2, 2];
+export const DEFAULT_BLANK_MARKER: BlankMarkerMode = "highlight";
 
 /** 作者可书写的字段；其余字段视为未知并提示。 */
 const KNOWN_META_KEYS = new Set([
@@ -112,6 +115,7 @@ export function parseQuizFile(content: string, path: string, options: ParseOptio
 	const { frontmatter, bodyStartLine } = parseFrontmatter(lines, deps, warnings);
 	const tags = options.tags ?? [];
 	const detected = detectQuizFile(frontmatter, tags, options.pathMatched === true);
+	const blankMarker = options.blankMarker ?? DEFAULT_BLANK_MARKER;
 
 	// 一次算出每行的围栏归属，标题扫描与题面解析共用，避免多处各写一份状态机。
 	const fenceMap = buildFenceMap(lines);
@@ -167,6 +171,7 @@ export function parseQuizFile(content: string, path: string, options: ParseOptio
 				questionIndex: questions.length,
 				path,
 				blockLanguage,
+				blankMarker,
 				deps,
 				warnings,
 			})
@@ -391,6 +396,8 @@ interface QuestionContext {
 	questionIndex: number;
 	path: string;
 	blockLanguage: string;
+	/** 空位标记样式。 */
+	blankMarker: BlankMarkerMode;
 	deps: ParseDependencies;
 	warnings: ParseWarning[];
 }
@@ -776,7 +783,8 @@ interface BodyStructure {
 
 const LIST_ITEM_RE = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/;
 const ANCHOR_RE = /\s\^([A-Za-z0-9\-_]+)\s*$/m;
-const BLANK_RE = /==([^=]+)==\s*\^([A-Za-z0-9\-_]+)/g;
+/** 空位的显式锚点：`==答案== ^b1` / `**答案** ^b1` 里的 `^b1`，可省略。 */
+const BLANK_ANCHOR_RE = /\s*\^([A-Za-z0-9\-_]+)\s*$/;
 
 function parseBodyStructure(body: string, bodyStartLine: number, ctx: QuestionContext): BodyStructure {
 	const lines = splitLines(body);
@@ -829,7 +837,7 @@ function parseBodyStructure(body: string, bodyStartLine: number, ctx: QuestionCo
 	const table = hasTable ? dataRows : null;
 
 	const matchColumns = table && header ? buildMatchColumns(header, table) : [];
-	const blanks = collectBlanks(body);
+	const blanks = collectBlanks(body, ctx.blankMarker);
 
 	return {
 		options,
@@ -946,26 +954,97 @@ function splitCell(cell: string): string[] {
 		.filter((part) => part !== "");
 }
 
-/** 收集 `==答案== ^anchor` 形式的空位，按出现顺序。 */
-function collectBlanks(body: string): BlankSpec[] {
-	const blanks: BlankSpec[] = [];
-	BLANK_RE.lastIndex = 0;
-	let match = BLANK_RE.exec(body);
-	while (match) {
-		const start = match.index;
-		const anchor = match[2];
-		const expected = match[1];
-		if (anchor !== undefined && expected !== undefined) {
-			blanks.push({
-				anchor,
-				expected: expected.trim(),
-				contextBefore: body.slice(Math.max(0, start - 40), start),
-				contextAfter: body.slice(start + match[0].length, start + match[0].length + 40),
-			});
+/**
+ * 空位标记样式（`==高亮==` / `**加粗**`）。
+ * 模式里带一个可选的尾部锚点 `^b1`：不写锚点时按出现顺序自动编号。
+ */
+const MARKER_PATTERNS: { mode: BlankMarkerMode; pattern: RegExp }[] = [
+	{ mode: "highlight", pattern: /==([^=\n]+)==(\s*\^[A-Za-z0-9\-_]+)?/g },
+	{ mode: "bold", pattern: /\*\*([^*\n]+)\*\*(\s*\^[A-Za-z0-9\-_]+)?/g },
+];
+
+/**
+ * 收集题面里的空位，按出现顺序。
+ *
+ * - 标记样式由 `marker` 决定（`==…==` / `**…**` / 两者都识别）。
+ * - 空位可以写显式锚点 `^b1`；**不写也完全可以**，此时按出现顺序自动编号为 `b1`、`b2`…
+ *   （`blanks` 规则里要引用某个空位时才需要锚点）。
+ * - 代码块与行内代码中的标记不算空位。
+ */
+function collectBlanks(body: string, marker: BlankMarkerMode): BlankSpec[] {
+	const spans: { anchor: string; expected: string; index: number; length: number }[] = [];
+	for (const { mode, pattern } of MARKER_PATTERNS) {
+		if (marker !== "both" && marker !== mode) continue;
+		const regex = new RegExp(pattern.source, "g");
+		let match = regex.exec(body);
+		while (match) {
+			const expected = match[1];
+			if (expected !== undefined) {
+				// 锚点正则用局部实例：共享的带 `g` 正则会在多次 exec 之间带状态。
+				const trailing = new RegExp(BLANK_ANCHOR_RE.source, "m").exec(match[0]);
+				spans.push({
+					anchor: trailing?.[1] ?? "",
+					expected: expected.trim(),
+					index: match.index,
+					length: match[0].length,
+				});
+			}
+			match = regex.exec(body);
 		}
-		match = BLANK_RE.exec(body);
+	}
+	spans.sort((a, b) => a.index - b.index);
+
+	const excluded = codeRanges(body);
+	const blanks: BlankSpec[] = [];
+	let auto = 0;
+	for (const span of spans) {
+		// 落在代码块 / 行内代码里的标记只是示例文字，不算空位。
+		if (excluded.some(([start, end]) => span.index >= start && span.index < end)) continue;
+		auto++;
+		blanks.push({
+			anchor: span.anchor === "" ? `b${auto}` : span.anchor,
+			expected: span.expected,
+			contextBefore: body.slice(Math.max(0, span.index - 40), span.index),
+			contextAfter: body.slice(span.index + span.length, span.index + span.length + 40),
+		});
 	}
 	return blanks;
+}
+
+/** 计算代码区域的字符区间：围栏代码块与行内代码。 */
+function codeRanges(body: string): [number, number][] {
+	const ranges: [number, number][] = [];
+	const lines = body.split("\n");
+	let offset = 0;
+	let fenceStart = -1;
+	let inFence = false;
+
+	for (const line of lines) {
+		const lineLength = line.length + 1;
+		if (/^\s*(?:`{3,}|~{3,})/.test(line)) {
+			if (!inFence) {
+				inFence = true;
+				fenceStart = offset;
+			} else {
+				inFence = false;
+				ranges.push([fenceStart, offset + lineLength]);
+			}
+		} else if (!inFence) {
+			// 行内代码：按反引号成对切分。
+			let index = 0;
+			while (index < line.length) {
+				const open = line.indexOf("`", index);
+				if (open < 0) break;
+				const close = line.indexOf("`", open + 1);
+				if (close < 0) break;
+				ranges.push([offset + open, offset + close + 1]);
+				index = close + 1;
+			}
+		}
+		offset += lineLength;
+	}
+	if (inFence) ranges.push([fenceStart, body.length]);
+	return ranges;
 }
 
 // ---------------------------------------------------------------------------

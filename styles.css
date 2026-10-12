@@ -130,14 +130,13 @@
 
 /* ---------------------------------------------------------------- 填空题 */
 
-/* 题面里的空位：下划线样式，点击即可输入 */
+/* 题面里的空位：行内可编辑，宽度由浏览器按实际文字排版决定 */
 .easy-quiz-card__blank-input {
 	display: inline-block;
 	vertical-align: baseline;
-	margin: 0 2px;
-	padding: 0 4px;
-	min-width: 4ch;
-	background: transparent;
+	margin: 0 3px;
+	padding: 0 2px;
+	min-width: 3em;
 	border: none;
 	border-bottom: 1.5px solid var(--text-muted);
 	border-radius: 0;
@@ -146,7 +145,15 @@
 	font-size: inherit;
 	line-height: inherit;
 	text-align: center;
+	white-space: pre;
 	cursor: text;
+	outline: none;
+}
+
+/* 空着时给一个可点击的提示 */
+.easy-quiz-card__blank-input[data-empty="true"]::after {
+	content: "…";
+	color: var(--text-faint);
 }
 
 .easy-quiz-card__blank-input:hover {
@@ -155,7 +162,6 @@
 }
 
 .easy-quiz-card__blank-input:focus {
-	outline: none;
 	border-bottom-color: var(--interactive-accent);
 	background: var(--background-modifier-hover);
 }
@@ -172,17 +178,6 @@
 	align-items: center;
 	gap: 8px;
 }
-
-/* 用于量出文字实际宽度的隐藏镜像元素（中文与西文都适用） */
-.easy-quiz-card__blank-mirror {
-	position: absolute;
-	left: -9999px;
-	top: 0;
-	visibility: hidden;
-	white-space: pre;
-	pointer-events: none;
-}
-
 /* ---------------------------------------------------------------- 配对题 */
 
 .easy-quiz-card__board {

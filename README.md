@@ -16,7 +16,7 @@ An Obsidian plugin for Markdown-native quiz practice. Questions are written as *
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (88 cases)
+npm test           # bundle and run the test suite (108 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 ```
@@ -31,6 +31,7 @@ src/stem.ts        stem preprocessing: strips what the interactive controls rend
 src/grade.ts       grading for the five question types (pure logic)
 src/writeback.ts   record write-back: only stats/history/rev, validated before writing
 src/hash.ts        stem hash (rev change detection)
+src/match-board.ts matching board logic: node keys, connecting, splitting (pure logic)
 src/runtime.ts     Obsidian adapter: file detection, dependency injection, atomic writes
 src/view.ts        practice card rendering
 tests/             parser / stem / grading / write-back tests and a question-bank fixture
@@ -89,7 +90,7 @@ stem that is followed by another H2, the H3 is correctly absorbed into that ques
 | `type` | **yes** | `single` / `multi` / `match` / `blank` / `essay`. The *only* thing that decides the type. |
 | `id` | no | Stable identifier; derived from the heading text when omitted. |
 | `answer` | type-dependent | `single`: `c`; `multi`: `[a, b]`; `blank` and `match` and `essay`: not used. |
-| `blanks` | no | Per-blank matching rules: `strict` / `ignoreCase` / `regex` / `accept`. |
+| `blanks` | no | Per-blank matching rules: `strict` / `ignoreCase` / `regex` / `accept`. Keys are blank anchors. |
 | `shuffle` | no | Shuffle order. Default `false`; `match` is always shuffled. |
 | `explanation` | no | Explanation text. May also be written inline as a `> [!note]- 解析` callout. |
 | `score` | no | Points, default 1. |
@@ -206,12 +207,14 @@ type: match
 
 ### Fill in the blank
 
-`==answer==` is the capture group, `^bN` is the blank anchor.
+The marker is configurable (see **Blank marker** under Settings): `==answer==` (default),
+`**answer**`, or both. The blank anchor `^bN` is **optional** — leave it out and blanks are numbered
+automatically in order of appearance.
 
 ````markdown
 ## 补全 TCP 首部字段
 
-TCP 首部的最小长度是 ==20== ^b1 字节，其中 ==序号== ^b2 字段用于标识本报文段的数据的第一个字节。
+TCP 首部的最小长度是 ==20== 字节，其中 ==序号== 字段用于标识本报文段的数据的第一个字节。
 
 ```quiz
 type: blank
@@ -221,7 +224,17 @@ blanks:
 ```
 ````
 
-- Each `==…== ^bN` is one blank; the number of blanks comes from the question body.
+- Each marked span is one blank; the number of blanks comes from the question body.
+- Write an explicit anchor only when you need to reference that blank from `blanks`:
+
+  ````markdown
+  最小长度是 ==20== ^len 字节。
+  ````
+
+- Anchors you don't write are numbered `b1`, `b2`, … by position; mixing explicit and automatic
+  anchors in one question is fine.
+- Markers inside code blocks and inline code are ignored, so you can write `==like this==` as an
+  example in prose.
 - Blanks not listed under `blanks` use strict matching (surrounding whitespace is ignored).
 - In the UI the blanks are rendered **inline in the stem** as underlined gaps that grow with what you
   type: click a gap and type. The answer text never appears in the stem before submitting.
@@ -274,6 +287,7 @@ and never guesses an answer:
 | Setting | Default | Notes |
 |---|---|---|
 | Block language | `quiz` | Change if it clashes; reload Obsidian afterwards |
+| Blank marker | `==` | Which Markdown marker defines a blank: `==answer==`, `**answer**`, or both |
 | Stem heading level | H2 | Decides which headings are questions |
 | Question-bank path globs | empty | One per line, e.g. `题库/**` |
 | Write records back | on | Turn off to grade in the UI only, leaving notes untouched |
@@ -315,9 +329,9 @@ Write-back rules:
 ## Status
 
 Implemented and covered by tests: the parser, stem preprocessing, grading for all five types, record
-write-back, and the practice card UI (choice options, click-to-connect multi-column matching with
-shuffling, inline click-to-type blanks that grow with their content, short-answer self-assessment).
-Question-bank edits trigger a debounced reading-view refresh.
+write-back, matching-board logic, and the practice card UI (choice options, click-to-connect
+multi-column matching with shuffling, inline click-to-type blanks that grow with their content,
+short-answer self-assessment). Question-bank edits trigger a debounced reading-view refresh.
 
 Not yet implemented: batching of multiple write-backs into one file write, alternate renderers
 (review mode / single-question panel), and statistics such as a mistake book.

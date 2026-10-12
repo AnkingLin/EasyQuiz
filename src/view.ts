@@ -10,9 +10,18 @@
 
 import { App, MarkdownRenderer, setIcon, TFile } from "obsidian";
 import { GradeResult, UserAnswer } from "./grade";
+import {
+	answerOf,
+	connectionsOf,
+	entryKeyOf,
+	leftNodeKey,
+	makeConnection,
+	rightNodeKey,
+	splitConnection,
+} from "./match-board";
 import { formatStats, QuizService, staleNote } from "./runtime";
 import { BLANK_MARKER_PREFIX, formatStem } from "./stem";
-import { QuizQuestion } from "./types";
+import { BlankMarkerMode, QuizQuestion } from "./types";
 
 export interface CardContext {
 	app: App;
@@ -22,6 +31,8 @@ export interface CardContext {
 	el: HTMLElement;
 	/** 数据块所在行（用于把题卡与源码位置对应起来）。 */
 	blockLine?: number;
+	/** 空位标记样式，需与解析设置一致。 */
+	blankMarker: BlankMarkerMode;
 	/** 提交完成后回调（用于刷新统计角标）。 */
 	onSubmitted?: (result: GradeResult) => void;
 }
@@ -59,7 +70,7 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 	}
 
 	const bodyEl = card.createDiv({ cls: "easy-quiz-card__body" });
-	const stem = formatStem(question);
+	const stem = formatStem(question, ctx.blankMarker);
 	if (stem.trim() !== "") {
 		await MarkdownRenderer.render(ctx.app, stem, bodyEl, ctx.file.path, null as never);
 	}
@@ -164,17 +175,15 @@ function renderChoice(question: QuizQuestion, card: HTMLElement, ctx: CardContex
 // ---------------------------------------------------------------------------
 
 function renderBlanks(question: QuizQuestion, bodyEl: HTMLElement, card: HTMLElement, ctx: CardContext): void {
-	const fields = new Map<string, HTMLInputElement>();
+	const fields = new Map<string, HTMLElement>();
 
 	// 把题面中的占位标记替换成可点击的空位。
 	for (const blank of question.blanks) {
 		const label = `${BLANK_MARKER_PREFIX}${blank.anchor}`;
 		const placeholder = findTextElement(bodyEl, label);
 		if (placeholder === null) continue;
-		const input = createBlankInput(blank.anchor, fields);
-		placeholder.replaceWith(input);
-		input.addEventListener("input", () => sizeBlankInput(input, card, input.value));
-		sizeBlankInput(input, card, "");
+		const field = createBlankField(blank.anchor, fields);
+		placeholder.replaceWith(field);
 	}
 
 	// 题面里没找到（例如题面为空）时，退化为逐空列表，保证仍可作答。
@@ -184,44 +193,47 @@ function renderBlanks(question: QuizQuestion, bodyEl: HTMLElement, card: HTMLEle
 		for (const blank of missing) {
 			const row = list.createDiv({ cls: "easy-quiz-card__blank" });
 			row.createSpan({ text: `第 ${question.blanks.indexOf(blank) + 1} 空` });
-			const input = createBlankInput(blank.anchor, fields);
-			row.appendChild(input);
-			sizeBlankInput(input, card, "");
+			row.appendChild(createBlankField(blank.anchor, fields));
 		}
 	}
 
 	renderSubmit(card, ctx, question, "提交答案", () => {
-		const values = question.blanks.map((blank) => (fields.get(blank.anchor)?.value ?? "").trim());
+		const values = question.blanks.map((blank) => (fields.get(blank.anchor)?.textContent ?? "").trim());
 		return values.every((value) => value === "") ? null : { kind: "blank", values };
 	});
 }
 
-/** 创建一个下划线样式的空位输入框，点击即可输入。 */
-function createBlankInput(anchor: string, fields: Map<string, HTMLInputElement>): HTMLInputElement {
-	const input = createEl("input", { cls: "easy-quiz-card__blank-input" });
-	input.type = "text";
-	input.dataset["anchor"] = anchor;
-	input.placeholder = "…";
-	input.setAttribute("aria-label", `填空 ${anchor}`);
-	fields.set(anchor, input);
-	return input;
-}
-
 /**
- * 让空位输入框宽度适应内容。
+ * 创建一个行内可编辑的空位。
  *
- * 用 `ch` 单位对中文无效（1ch 远小于一个汉字），所以这里用一个隐藏的镜像元素
- * 量出实际文字宽度，再据此设置像素宽度；为空时给出一个可点击的最小宽度。
+ * 用 `contenteditable` 而不是 `<input>`：空位的宽度直接由浏览器按实际文字排版决定，
+ * 因此中英文都不会被裁掉（输入框需要插件自己算宽度，容易差半个字）。
  */
-function sizeBlankInput(input: HTMLInputElement, host: HTMLElement, value: string): void {
-	const mirror = host.createSpan({ cls: "easy-quiz-card__blank-mirror", text: value === "" ? "…" : value });
-	const computed = window.getComputedStyle(input);
-	mirror.style.font = computed.font;
-	mirror.style.fontFamily = computed.fontFamily;
-	mirror.style.fontSize = computed.fontSize;
-	const width = mirror.getBoundingClientRect().width;
-	mirror.remove();
-	input.style.width = `${Math.max(28, Math.ceil(width) + 14)}px`;
+function createBlankField(anchor: string, fields: Map<string, HTMLElement>): HTMLElement {
+	const field = createSpan({ cls: "easy-quiz-card__blank-input" });
+	field.contentEditable = "true";
+	field.setAttribute("role", "textbox");
+	field.setAttribute("aria-label", `填空 ${anchor}`);
+	field.dataset["anchor"] = anchor;
+	// 空位时也能看出来这里可以填。
+	field.dataset["empty"] = "true";
+	field.addEventListener("input", () => {
+		field.dataset["empty"] = (field.textContent ?? "") === "" ? "true" : "false";
+	});
+	// 空位是单行的，避免回车插入换行或换元素。
+	field.addEventListener("keydown", (event) => {
+		if (event.key === "Enter") event.preventDefault();
+	});
+	// 粘贴后清掉富文本格式，只保留纯文本。
+	field.addEventListener("paste", () => {
+		window.setTimeout(() => {
+			const text = field.textContent ?? "";
+			if (field.innerHTML !== text) field.textContent = text;
+			field.dataset["empty"] = text === "" ? "true" : "false";
+		}, 0);
+	});
+	fields.set(anchor, field);
+	return field;
 }
 
 /** 在已渲染的题面里找到承载占位标记的元素（通常是内联 code）。 */
@@ -269,22 +281,19 @@ function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: CardContext
 	let activeKey: string | null = null;
 	const nodes = new Map<string, HTMLElement>();
 
-	const leftKey = (entryKey: string) => `L|${entryKey}`;
-	const rightKey = (columnIndex: number, answer: string) => `R|${columnIndex}|${answer}`;
-
 	// 首列：待匹配项（打乱）。
 	const leftCol = createBoardColumn(grid, question.tableHeader?.[0] ?? "待匹配");
 	for (const entry of shuffle(columns[0]?.entries ?? [])) {
 		const el = leftCol.createDiv({ cls: "easy-quiz-card__node is-left", text: entry.text });
-		nodes.set(leftKey(entry.key), el);
-		el.addEventListener("click", () => onNodeClick(leftKey(entry.key)));
+		nodes.set(leftNodeKey(entry.key), el);
+		el.addEventListener("click", () => onNodeClick(leftNodeKey(entry.key)));
 	}
 
 	// 其余列：每列一组答案，各自独立打乱。
 	for (const column of columns) {
 		const col = createBoardColumn(grid, column.name);
 		for (const answer of shuffle(column.answers)) {
-			const key = rightKey(column.index, answer);
+			const key = rightNodeKey(column.index, answer);
 			const el = col.createDiv({ cls: "easy-quiz-card__node is-right", text: answer });
 			nodes.set(key, el);
 			el.addEventListener("click", () => onNodeClick(key));
@@ -292,38 +301,35 @@ function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: CardContext
 	}
 
 	function onNodeClick(key: string): void {
-		// 已连线：再次点击断开这条线。
-		if (connections.has(key)) {
-			connections.delete(key);
+		// 该节点已连线：再次点击断开它所有的线。
+		const existingForNode = connectionsOf(connections, key);
+		if (existingForNode.length > 0) {
+			for (const connection of existingForNode) connections.delete(connection);
 			activeKey = null;
 			paint();
 			return;
 		}
-		if (activeKey === null) {
-			activeKey = key;
+		if (activeKey === null || activeKey === key) {
+			activeKey = activeKey === key ? null : key;
 			paint();
 			return;
 		}
-		if (activeKey === key) {
-			activeKey = null;
-			paint();
-			return;
-		}
-		const [left, right] = orderPair(activeKey, key);
-		if (left === null || right === null) {
+		const connection = makeConnection(activeKey, key);
+		if (connection === null) {
 			// 同侧不能相连：改为切换当前选中项。
 			activeKey = key;
 			paint();
 			return;
 		}
+		const [left, right] = splitConnection(connection);
 		// 左节点只能连一条线；一个答案也只能被连一次。
-		for (const existing of [...connections]) {
-			const parts = existing.split("|");
-			const existingLeft = parts.length >= 2 ? `L|${parts[1]}` : "";
-			const existingRight = parts.length >= 4 ? parts.slice(3).join("|") : "";
-			if (existingLeft === left || existingRight === right) connections.delete(existing);
+		for (const existing of [
+			...(left === null ? [] : connectionsOf(connections, left)),
+			...(right === null ? [] : connectionsOf(connections, right)),
+		]) {
+			connections.delete(existing);
 		}
-		connections.add(`${left}|${right}`);
+		connections.add(connection);
 		activeKey = null;
 		paint();
 	}
@@ -373,11 +379,7 @@ function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: CardContext
 		const pairs = [...connections]
 			.map((connection) => splitConnection(connection))
 			.filter((pair): pair is [string, string] => pair[0] !== null && pair[1] !== null)
-			.map(([leftId, rightId]) => {
-				// 右侧 key 形如 R|列号|答案，需要去掉前缀与列号还原答案文本。
-				const answer = rightId.split("|").slice(2).join("|");
-				return { key: leftId.slice(2), target: answer };
-			});
+			.map(([leftId, rightId]) => ({ key: entryKeyOf(leftId), target: answerOf(rightId) }));
 		return pairs.length === 0 ? null : { kind: "match", pairs };
 	});
 }
@@ -388,24 +390,7 @@ function createBoardColumn(grid: HTMLElement, name: string): HTMLElement {
 	return col;
 }
 
-/** 把 `activeKey` 与 `key` 归一化成「左节点 | 右节点」，同侧时返回 null。 */
-function orderPair(first: string, second: string): [string | null, string | null] {
-	const isLeft = (key: string) => key.startsWith("L|");
-	if (isLeft(first) && !isLeft(second)) return [first, second];
-	if (!isLeft(first) && isLeft(second)) return [second, first];
-	return [null, null];
-}
-
 /** 拆出 `左节点|右节点`。 */
-function splitConnection(connection: string): [string | null, string | null] {
-	const parts = connection.split("|");
-	// 形如 L|c0.abcd|R|0|答案
-	if (parts.length < 4 || parts[0] !== "L" || parts[3] !== "R") return [null, null];
-	const leftId = `${parts[0]}|${parts[1]}`;
-	const rightId = parts.slice(3).join("|");
-	return [leftId, rightId];
-}
-
 /** Fisher–Yates 打乱，返回新数组（不改动入参）。 */
 function shuffle<T>(items: readonly T[]): T[] {
 	const result = [...items];

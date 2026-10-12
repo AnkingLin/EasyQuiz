@@ -11,6 +11,14 @@ export const QUIZ_TYPES = ["single", "multi", "match", "blank", "essay"] as cons
 
 export type QuizType = (typeof QUIZ_TYPES)[number];
 
+/**
+ * 空位标记样式。
+ * - `highlight`：`==答案==`（Obsidian 高亮语法）
+ * - `bold`：`**答案**`
+ * - `both`：两者都识别
+ */
+export type BlankMarkerMode = "highlight" | "bold" | "both";
+
 /** 降级原因分类，便于 UI 给出针对性提示。 */
 export type WarningCode =
 	/** 未能解析出题目数据块 */

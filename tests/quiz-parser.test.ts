@@ -296,6 +296,99 @@ test("填空题：blanks 匹配规则被解析", () => {
 	assertEqual(question.blankRules["b2"]?.ignoreCase, true, "b2 忽略大小写");
 });
 
+test("填空题：不写锚点也能识别，并按出现顺序自动编号", () => {
+	const question = questionOf(
+		["---", "quiz: true", "---", "", "## 题", "", "最小长度是 ==20== 字节，==序号== 字段标识首字节。", "", "```quiz", "type: blank", "```"].join("\n")
+	);
+	assertEqual(question.ok, true, `应解析成功（warnings=${warnCodes(question)}）`);
+	assertEqual(question.blanks.map((blank) => blank.anchor).join(","), "b1,b2", "自动编号");
+	assertEqual(question.blanks.map((blank) => blank.expected).join(","), "20,序号", "答案");
+});
+
+test("填空题：自动编号可被 blanks 规则引用", () => {
+	const question = questionOf(
+		[
+			"---",
+			"quiz: true",
+			"---",
+			"",
+			"## 题",
+			"",
+			"答案是 ==abc== 结束。",
+			"",
+			"```quiz",
+			"type: blank",
+			"blanks:",
+			"  b1: { ignoreCase: true }",
+			"```",
+		].join("\n")
+	);
+	assertEqual(question.ok, true, `应解析成功（warnings=${warnCodes(question)}）`);
+	assertEqual(question.blankRules["b1"]?.ignoreCase, true, "规则应作用于自动编号的空位");
+});
+
+test("填空题：显式锚点与自动编号可以混用", () => {
+	const question = questionOf(
+		["---", "quiz: true", "---", "", "## 题", "", "==甲== ^first 与 ==乙== 和 ==丙==。", "", "```quiz", "type: blank", "```"].join("\n")
+	);
+	assertEqual(question.blanks.map((blank) => blank.anchor).join(","), "first,b2,b3", "显式锚点保留，其余自动编号");
+});
+
+test("填空题：**加粗** 也可作为标记（bold 模式）", () => {
+	const question = questionOf(
+		["---", "quiz: true", "---", "", "## 题", "", "最小长度是 **20** 字节。", "", "```quiz", "type: blank", "```"].join("\n"),
+		{ blankMarker: "bold" }
+	);
+	assertEqual(question.ok, true, `应解析成功（warnings=${warnCodes(question)}）`);
+	assertEqual(question.blanks.length, 1, "应识别出一个空位");
+	assertEqual(question.blanks[0]?.expected, "20", "答案");
+});
+
+test("填空题：默认模式下加粗不是空位", () => {
+	const withBold = questionOf(
+		["---", "quiz: true", "---", "", "## 题", "", "这是 **加粗** 文字。", "", "```quiz", "type: blank", "```"].join("\n")
+	);
+	assertEqual(withBold.blanks.length, 0, "默认模式下加粗不是空位");
+	assertEqual(withBold.ok, false, "没有空位时应提示结构不符");
+});
+
+test("填空题：both 模式下两种标记都是空位，按出现顺序", () => {
+	const both = questionOf(
+		["---", "quiz: true", "---", "", "## 题", "", "==高亮== 与 **加粗** 都是空位。", "", "```quiz", "type: blank", "```"].join("\n"),
+		{ blankMarker: "both" }
+	);
+	assertEqual(both.blanks.length, 2, "both 模式下两种标记都是空位");
+	assertEqual(both.blanks.map((blank) => blank.expected).join(","), "高亮,加粗", "按出现顺序");
+});
+
+test("填空题：代码块与行内代码里的标记不算空位", () => {
+	const question = questionOf(
+		[
+			"---",
+			"quiz: true",
+			"---",
+			"",
+			"## 题",
+			"",
+			"行内示例 `==不是空位==`，正文里 ==是空位==。",
+			"",
+			"```text",
+			"==也不是空位==",
+			"```",
+			"",
+			"```quiz",
+			"type: blank",
+			"```",
+		].join("\n")
+	);
+	assertEqual(
+		question.blanks.length,
+		1,
+		`只应识别出一个空位（实际：${JSON.stringify(question.blanks.map((b) => b.expected))}）`
+	);
+	assertEqual(question.blanks[0]?.expected, "是空位", "答案");
+});
+
 test("填空题：answer 字段被忽略并提示", () => {
 	const question = first(
 		["## 题", "", "答案是 ==甲== ^b1 和 ==乙== ^b2。", "", "```quiz", "type: blank", "answer: 甲", "```"].join("\n")

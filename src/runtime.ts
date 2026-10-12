@@ -7,6 +7,7 @@
 
 import { App, parseYaml, TFile } from "obsidian";
 import {
+	DEFAULT_BLANK_MARKER,
 	DEFAULT_BLOCK_LANGUAGE,
 	DEFAULT_HEADING_LEVELS,
 	parseQuizFile,
@@ -15,7 +16,7 @@ import {
 import { GradeResult, gradeAnswer, UserAnswer } from "./grade";
 import { contentHash } from "./hash";
 import { DEFAULT_HISTORY_LIMIT, planWriteBack, replaceBlockInFile } from "./writeback";
-import { HistoryEntry, ParsedQuizFile, QuizQuestion, QuizStats } from "./types";
+import { BlankMarkerMode, HistoryEntry, ParsedQuizFile, QuizQuestion, QuizStats } from "./types";
 
 export { contentHash };
 
@@ -27,6 +28,8 @@ export const parserDeps: ParseDependencies = {
 export interface RuntimeSettings {
 	blockLanguage: string;
 	headingLevels: [number, number];
+	/** 空位标记样式：`==高亮==` / `**加粗**` / 两者都识别。 */
+	blankMarker: BlankMarkerMode;
 	pathGlobs: string[];
 	historyLimit: number;
 	writeBackEnabled: boolean;
@@ -35,6 +38,7 @@ export interface RuntimeSettings {
 export const DEFAULT_SETTINGS: RuntimeSettings = {
 	blockLanguage: DEFAULT_BLOCK_LANGUAGE,
 	headingLevels: DEFAULT_HEADING_LEVELS,
+	blankMarker: DEFAULT_BLANK_MARKER,
 	pathGlobs: [],
 	historyLimit: DEFAULT_HISTORY_LIMIT,
 	writeBackEnabled: true,
@@ -91,6 +95,7 @@ export class QuizService {
 		return {
 			blockLanguage: this.settings.blockLanguage,
 			headingLevels: this.settings.headingLevels,
+			blankMarker: this.settings.blankMarker,
 			pathMatched: this.pathMatched(file),
 			tags,
 			deps: parserDeps,
@@ -151,6 +156,7 @@ export class QuizService {
 			const parsed = parseQuizFile(data, file.path, {
 				blockLanguage: this.settings.blockLanguage,
 				headingLevels: this.settings.headingLevels,
+				blankMarker: this.settings.blankMarker,
 				deps: parserDeps,
 			});
 			const question = parsed.questions.find((item) => item.id === questionId);
