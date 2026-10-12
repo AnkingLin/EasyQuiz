@@ -10,7 +10,7 @@
 
 import { App, Component, MarkdownRenderer, MarkdownRenderChild, setIcon, TFile } from "obsidian";
 import { GradeResult, UserAnswer } from "./grade";
-import { BoardNode, createBoardState, leftNodeKey, rightNodeKey, splitConnection } from "./match-board";
+import { createBoardState, splitConnection } from "./match-board";
 import { formatStats, QuizService, staleNote } from "./runtime";
 import { BLANK_MARKER_PREFIX, formatStem } from "./stem";
 import { BlankMarkerMode, QuizQuestion } from "./types";
@@ -271,49 +271,39 @@ function findTextElement(root: HTMLElement, label: string): HTMLElement | null {
  *   这里只负责把状态画出来。
  */
 export function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: CardContext): void {
-	const columns = question.matchColumns;
-	if (columns.length === 0) {
-		card.createDiv({ cls: "easy-quiz-card__hint", text: "配对表格没有可作答的答案列。" });
+	const columns = question.board;
+	if (columns.length < 2) {
+		card.createDiv({ cls: "easy-quiz-card__hint", text: "配对表格至少需要两列才能连线。" });
 		return;
 	}
 
 	const board = card.createDiv({ cls: "easy-quiz-card__board" });
 	const grid = board.createDiv({ cls: "easy-quiz-card__board-columns" });
-	grid.style.setProperty("--easy-quiz-match-cols", `${columns.length + 1}`);
+	grid.style.setProperty("--easy-quiz-match-cols", `${columns.length}`);
 
 	// 连线画在列之上的 SVG 层里。
 	const svg = createSvg("svg", { cls: "easy-quiz-card__links" });
 	board.appendChild(svg);
 
+	/** 条目 key → 节点元素。 */
 	const nodes = new Map<string, HTMLElement>();
-	// 节点 key → 所属列（左节点为 null），供状态机校验"不跨列"。
-	const nodeModels: BoardNode[] = [];
-
-	// 首列：待匹配项（打乱）。
-	const leftCol = createBoardColumn(grid, question.tableHeader?.[0] ?? "待匹配");
-	for (const entry of shuffle(columns[0]?.entries ?? [])) {
-		const key = leftNodeKey(entry.key);
-		const el = leftCol.createDiv({ cls: "easy-quiz-card__node is-left", text: entry.text });
-		nodes.set(key, el);
-		nodeModels.push({ key, column: null });
-		el.addEventListener("click", () => onNodeClick(key));
-	}
-
-	// 其余列：每列一组答案，各自独立打乱。
 	const columnEls = new Map<number, HTMLElement>();
+
 	for (const column of columns) {
 		const col = createBoardColumn(grid, column.name);
 		columnEls.set(column.index, col);
-		for (const answer of shuffle(column.answers)) {
-			const key = rightNodeKey(column.index, answer);
-			const el = col.createDiv({ cls: "easy-quiz-card__node is-right", text: answer });
-			nodes.set(key, el);
-			nodeModels.push({ key, column: column.index });
-			el.addEventListener("click", () => onNodeClick(key));
+		// 每列各自打乱，避免行顺序泄露答案。
+		for (const item of shuffle(column.items)) {
+			const el = col.createDiv({
+				cls: `easy-quiz-card__node${column.index === 0 ? " is-left" : ""}`,
+				text: item.text,
+			});
+			nodes.set(item.key, el);
+			el.addEventListener("click", () => onNodeClick(item.key));
 		}
 	}
 
-	const state = createBoardState(nodeModels);
+	const state = createBoardState(columns.flatMap((column) => column.items));
 
 	function onNodeClick(key: string): void {
 		if (state.click(key)) paint();
@@ -344,9 +334,6 @@ export function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: Card
 		svg.setAttribute("height", `${height}`);
 		svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
 		for (const el of nodes.values()) el.removeClass("is-active", "is-linked");
-		for (const [index, el] of columnEls) {
-			el.toggleClass("is-current", view.activeColumn === index);
-		}
 		if (view.activeKey !== null) nodes.get(view.activeKey)?.addClass("is-active");
 
 		const boardRect = board.getBoundingClientRect();

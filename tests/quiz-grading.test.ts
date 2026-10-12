@@ -175,27 +175,55 @@ const matchSource = [
 	"```",
 ].join("\n");
 
-test("配对：全部匹配正确才判对", () => {
+test("配对：连对全部连线才判对", () => {
 	const question = questionOf(matchSource);
-	const entries = at(question.matchColumns, 0).entries;
-	const pairs = entries.map((entry) => ({ key: entry.key, target: at(entry.actualTargets, 0) }));
-	assertEqual(gradeAnswer(question, { kind: "match", pairs }).correct, true, "全对应判对");
-
-	const swapped = entries.map((entry) => ({
-		key: entry.key,
-		target: at(entry.actualTargets, 0) === "80" ? "22" : "80",
-	}));
-	assertEqual(gradeAnswer(question, { kind: "match", pairs: swapped }).correct, false, "换位应判错");
+	const pairs = question.boardPairs.map((pair) => ({ left: pair.left, right: pair.right }));
+	assertEqual(pairs.length, 2, "两行两列表格应有两条连线");
+	assertEqual(gradeAnswer(question, { kind: "match", pairs }).correct, true, "全连对应判对");
 });
 
-test("配对：未作答的条目判错并给出正确答案", () => {
+test("配对：连线顺序不影响判分", () => {
+	const question = questionOf(matchSource);
+	const pairs = question.boardPairs.map((pair) => ({ left: pair.left, right: pair.right })).reverse();
+	assertEqual(gradeAnswer(question, { kind: "match", pairs }).correct, true, "顺序颠倒也应判对");
+});
+
+test("配对：左右方向互换仍然判对", () => {
+	const question = questionOf(matchSource);
+	// 把每条线写成「右-左」，判分应当等效。
+	const pairs = question.boardPairs.map((pair) => ({ left: pair.right, right: pair.left }));
+	assertEqual(gradeAnswer(question, { kind: "match", pairs }).correct, true, "方向无关");
+});
+
+test("配对：未作答时给出缺少的连线", () => {
 	const question = questionOf(matchSource);
 	const result = gradeAnswer(question, { kind: "match", pairs: [] });
 	assertEqual(result.correct, false, "未作答应判错");
-	assert(at(result.details, 0).note?.includes("应匹配"), "应说明正确对应");
+	assert(
+		result.details.some((detail) => detail.note?.includes("缺少连线")),
+		`应说明缺少连线（实际：${JSON.stringify(result.details.map((d) => d.note))}）`
+	);
 });
 
-test("配对多列：每一列都要配对正确", () => {
+test("配对：连错一条即判错，并给出缺少与多余", () => {
+	const question = questionOf(matchSource);
+	const first = at(question.boardPairs, 0);
+	const second = at(question.boardPairs, 1);
+	// 把第一条连成错的（跨到第二条的右端），于是既缺一条又错一条。
+	const pairs = [{ left: first.left, right: second.right }];
+	const result = gradeAnswer(question, { kind: "match", pairs });
+	assertEqual(result.correct, false, "应判错");
+	assert(
+		result.details.some((detail) => detail.note?.includes("缺少连线")),
+		"应指出缺少的连线"
+	);
+	assert(
+		result.details.some((detail) => detail.note?.includes("多余")),
+		"应指出多余的连线"
+	);
+});
+
+test("配对：三列表格要 A-B 与 B-C 都连对", () => {
 	const question = questionOf(
 		[
 			"---",
@@ -214,30 +242,47 @@ test("配对多列：每一列都要配对正确", () => {
 			"```",
 		].join("\n")
 	);
-	assertEqual(question.matchColumns.length, 2, "应有两组答案列");
+	assertEqual(question.board.length, 3, "三列");
+	assertEqual(question.boardPairs.length, 4, "A-B 两条 + B-C 两条");
 
-	const pairs = question.matchColumns.flatMap((column) =>
-		column.entries.map((entry) => ({ key: entry.key, target: at(entry.actualTargets, 0) }))
-	);
-	assertEqual(gradeAnswer(question, { kind: "match", pairs }).correct, true, "两列都对应判对");
-	assertEqual(pairs.length, 4, "两列共 4 个待匹配条目");
+	const all = question.boardPairs.map((pair) => ({ left: pair.left, right: pair.right }));
+	assertEqual(gradeAnswer(question, { kind: "match", pairs: all }).correct, true, "全部连对应判对");
 
-	// 只答对第二列，第一列改成同一列里的另一个答案（必错）。
-	const firstColumn = at(question.matchColumns, 0);
-	const partlyWrong = pairs.map((pair) =>
-		pair.key.startsWith("c0.")
-			? { key: pair.key, target: pair.target === at(firstColumn.answers, 0) ? at(firstColumn.answers, 1) : at(firstColumn.answers, 0) }
-			: pair
+	// 只连 A-B，缺 B-C。
+	const onlyFirstPair = all.slice(0, 2);
+	assertEqual(gradeAnswer(question, { kind: "match", pairs: onlyFirstPair }).correct, false, "缺少 B-C 应判错");
+});
+
+test("配对：跨列连线（A-C）算多余，判错", () => {
+	const question = questionOf(
+		[
+			"---",
+			"quiz: true",
+			"---",
+			"",
+			"## 配对",
+			"",
+			"| 协议 | 端口 | 层级 |",
+			"| --- | --- | --- |",
+			"| HTTP | 80 | 应用层 |",
+			"",
+			"```quiz",
+			"type: match",
+			"```",
+		].join("\n")
 	);
-	const result = gradeAnswer(question, { kind: "match", pairs: partlyWrong });
-	assertEqual(result.correct, false, "有一列配错应判错");
+	const columnA = at(question.board, 0).items.map((item) => item.key);
+	const columnC = at(question.board, 2).items.map((item) => item.key);
+	const crossed = [{ left: at(columnA, 0), right: at(columnC, 0) }];
+	const result = gradeAnswer(question, { kind: "match", pairs: crossed });
+	assertEqual(result.correct, false, "跨列连线不应算对");
 	assert(
-		result.details.some((detail) => detail.note?.includes(firstColumn.name)),
-		`提示应指出是哪一列（实际：${JSON.stringify(result.details.map((d) => d.note))}）`
+		result.details.some((detail) => detail.note?.includes("多余")),
+		"应指出这是多余的连线"
 	);
 });
 
-test("配对：一对多的每个条目都要求匹配到同一答案", () => {
+test("配对：一对多的两条连线都要连上", () => {
 	const question = questionOf(
 		[
 			"---",
@@ -255,17 +300,11 @@ test("配对：一对多的每个条目都要求匹配到同一答案", () => {
 			"```",
 		].join("\n")
 	);
-	const column = at(question.matchColumns, 0);
-	assertEqual(column.entries.length, 2, "一对多应拆出两个待匹配条目");
-	assertEqual(at(column.entries, 0).actualTargets.join("/"), "关系型", "两个条目的可接受答案都是关系型");
-	assertEqual(at(column.entries, 0).text, "MySQL", "第一个条目为 MySQL");
-	assertEqual(at(column.entries, 1).text, "PostgreSQL", "第二个条目为 PostgreSQL");
-
-	// 合并选项：两个条目都接受同一个答案。
-	const picked = column.entries.map((entry) => ({ key: entry.key, target: "关系型" }));
-	assertEqual(gradeAnswer(question, { kind: "match", pairs: picked }).correct, true, "都匹配关系型应判对");
-	const mismatched = [{ key: at(column.entries, 0).key, target: "键值型" }];
-	assertEqual(gradeAnswer(question, { kind: "match", pairs: mismatched }).correct, false, "匹配错答案应判错");
+	assertEqual(at(question.board, 0).items.map((item) => item.text).join(","), "MySQL,PostgreSQL", "斜杠应拆成两个条目");
+	assertEqual(question.boardPairs.length, 2, "两个条目各一条连线");
+	const all = question.boardPairs.map((pair) => ({ left: pair.left, right: pair.right }));
+	assertEqual(gradeAnswer(question, { kind: "match", pairs: all }).correct, true, "两条都连上应判对");
+	assertEqual(gradeAnswer(question, { kind: "match", pairs: all.slice(0, 1) }).correct, false, "只连一条应判错");
 });
 
 // ---------------------------------------------------------------------------

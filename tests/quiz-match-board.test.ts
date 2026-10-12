@@ -1,267 +1,213 @@
 /**
  * 连线题板逻辑与状态机测试。
  *
- * 重点覆盖实际报告过的问题：
- *   - 点不动（已连线判定用错集合 / 连线拆分下标写错）；
- *   - 第二列与第三列之间混乱（不能跨列、每列各自独立）；
- *   - 替换连线时先删后建，导致出现"什么都没连"的中间状态。
+ * 规则（都由这里固定下来）：
+ *   1. 每一列只允许与**相邻列**连线；
+ *   2. 禁止跨列连线；
+ *   3. 从左到右与从右到左是**同一条线**（判分等效）。
  */
 
 import {
-	answerOf,
-	columnOf,
 	connectionsOf,
 	createBoardState,
-	entryKeyOf,
-	leftNodeKey,
 	makeConnection,
-	orderPair,
-	rightNodeKey,
 	splitConnection,
-	slotKey,
 } from "../src/match-board";
+import { BoardItem } from "../src/types";
 import { assert, assertEqual, test } from "./harness";
 
+// 三列：A(0) - B(1) - C(2)
+const A1: BoardItem = { key: "i0.a1", text: "A1", column: 0 };
+const A2: BoardItem = { key: "i0.a2", text: "A2", column: 0 };
+const B1: BoardItem = { key: "i1.b1", text: "B1", column: 1 };
+const B2: BoardItem = { key: "i1.b2", text: "B2", column: 1 };
+const C1: BoardItem = { key: "i2.c1", text: "C1", column: 2 };
+const C2: BoardItem = { key: "i2.c2", text: "C2", column: 2 };
+const ALL = [A1, A2, B1, B2, C1, C2];
+
 // ---------------------------------------------------------------------------
-// key 与拆分
+// 相邻列判定
 // ---------------------------------------------------------------------------
 
-test("左节点 key 带 L 前缀，右节点 key 带 R 前缀与列号", () => {
-	assertEqual(leftNodeKey("c0.abcd"), "L|c0.abcd", "左节点 key");
-	assertEqual(rightNodeKey(0, "80"), "R|0|80", "右节点 key");
+test("相邻列可以连线", () => {
+	assertEqual(makeConnection(A1, B1), "i0.a1~i1.b1", "A-B 相邻，可以连线");
+	assertEqual(makeConnection(B1, C1), "i1.b1~i2.c1", "B-C 相邻，可以连线");
 });
 
-test("配对方向与点击顺序无关", () => {
-	const left = leftNodeKey("c0.a");
-	const right = rightNodeKey(0, "80");
-	assertEqual(makeConnection(left, right), "L|c0.a|R|0|80", "先左后右");
-	assertEqual(makeConnection(right, left), "L|c0.a|R|0|80", "先右后左应得到同一条线");
+test("同列不能连线", () => {
+	assertEqual(makeConnection(A1, A2), null, "同列不应成线");
+	assertEqual(makeConnection(B1, B2), null, "同列不应成线");
 });
 
-test("同侧的两个节点不能连成线", () => {
-	assertEqual(orderPair(leftNodeKey("c0.a"), leftNodeKey("c0.b"))[0], null, "左左不应成对");
-	assertEqual(orderPair(rightNodeKey(0, "80"), rightNodeKey(0, "22"))[0], null, "右右不应成对");
-	assertEqual(makeConnection(leftNodeKey("c0.a"), leftNodeKey("c0.b")), null, "左左不产生连线");
+test("跨列（相隔一列以上）不能连线", () => {
+	assertEqual(makeConnection(A1, C1), null, "A 与 C 相隔一列，禁止连线");
+	assertEqual(makeConnection(C1, A1), null, "反向同样禁止");
 });
 
-test("可以强制要求右节点属于指定列（禁止跨列）", () => {
-	const left = leftNodeKey("c0.a");
-	const sameColumn = rightNodeKey(0, "80");
-	const otherColumn = rightNodeKey(1, "80");
-	assertEqual(makeConnection(left, sameColumn, 0), "L|c0.a|R|0|80", "同列应可连线");
-	assertEqual(makeConnection(left, otherColumn, 0), null, "跨列应被拒绝");
+test("方向无关：从左到右与从右到左是同一条线", () => {
+	assertEqual(makeConnection(A1, B1), makeConnection(B1, A1), "两个方向应得到同一条线");
+	assertEqual(makeConnection(A2, B2), makeConnection(B2, A2), "两个方向应得到同一条线");
 });
 
-test("连线可以被拆回左右节点，并能还原列号", () => {
-	const connection = makeConnection(leftNodeKey("c0.abc"), rightNodeKey(1, "关系型"))!;
-	const [left, right] = splitConnection(connection);
-	assertEqual(left, "L|c0.abc", "左节点");
-	assertEqual(right, "R|1|关系型", "右节点");
-	assertEqual(entryKeyOf(left!), "c0.abc", "还原条目 key");
-	assertEqual(answerOf(right!), "关系型", "还原答案");
-	assertEqual(columnOf(right!), 1, "还原列号");
+test("连线始终规范化为「列号小~列号大」", () => {
+	const forward = makeConnection(A1, B1);
+	const backward = makeConnection(B1, A1);
+	assertEqual(splitConnection(forward!)[0], "i0.a1", "左端应是列号小的条目");
+	assertEqual(splitConnection(backward!)[1], "i1.b1", "右端应是列号大的条目");
 });
 
-test("答案本身含竖线时仍能正确还原列号与答案", () => {
-	const connection = makeConnection(leftNodeKey("c0.a"), rightNodeKey(2, "a|b"))!;
-	const [, right] = splitConnection(connection);
-	assertEqual(columnOf(right!), 2, "列号应正确");
-	assertEqual(answerOf(right!), "a|b", "答案里的竖线应保留");
+test("拆分连线", () => {
+	assertEqual(splitConnection("i0.a1~i1.b1").join("|"), "i0.a1|i1.b1", "正常拆分");
+	assertEqual(splitConnection("垃圾数据")[0], null, "非法输入返回 null");
 });
 
-test("格式不符的连线不会解析出节点", () => {
-	assertEqual(splitConnection("垃圾数据")[0], null, "垃圾数据应返回 null");
-	assertEqual(splitConnection("L|c0.a")[0], null, "缺少右侧时应返回 null");
-});
-
-test("能找出涉及某节点的所有连线", () => {
-	const leftA = leftNodeKey("c0.a");
-	const right80 = rightNodeKey(0, "80");
-	const connections = [makeConnection(leftA, right80)!];
-	assertEqual(connectionsOf(connections, leftA).length, 1, "左节点 A 有一条");
-	assertEqual(connectionsOf(connections, right80).length, 1, "右节点 80 有一条");
-	assertEqual(connectionsOf(connections, leftNodeKey("c0.zzz")).length, 0, "未连线的节点没有连线");
-});
-
-test("回归：已连线节点的判定必须用连线集合而不是节点 key", () => {
-	// 曾经的缺陷：用 connections.has(nodeKey) 判断，永远为 false。
-	const left = leftNodeKey("c0.a");
-	const right = rightNodeKey(0, "80");
-	const connections = new Set<string>([makeConnection(left, right)!]);
-	assertEqual(connections.has(left), false, "节点 key 本身不在连线集合里");
-	assertEqual(connectionsOf(connections, left).length, 1, "必须通过 connectionsOf 判断");
-});
-
-test("回归：连线里 R 标记在下标 2，不是 3", () => {
-	const connection = "L|c0.abc|R|1|关系型";
-	const [left, right] = splitConnection(connection);
-	assertEqual(left, "L|c0.abc", "左节点应能解析");
-	assertEqual(right, "R|1|关系型", "右节点应能解析");
+test("能找出涉及某条目的所有连线", () => {
+	const connection = makeConnection(A1, B1)!;
+	assertEqual(connectionsOf([connection], "i0.a1").length, 1, "左端应能查到");
+	assertEqual(connectionsOf([connection], "i1.b1").length, 1, "右端应能查到");
+	assertEqual(connectionsOf([connection], "i0.a2").length, 0, "无关条目查不到");
 });
 
 // ---------------------------------------------------------------------------
-// 状态机：基本交互
+// 状态机
 // ---------------------------------------------------------------------------
-
-const leftA = leftNodeKey("c0.a");
-const leftB = leftNodeKey("c0.b");
-const right0_80 = rightNodeKey(0, "80");
-const right0_22 = rightNodeKey(0, "22");
-const right1_应用 = rightNodeKey(1, "应用层");
-const right1_网络 = rightNodeKey(1, "网络层");
 
 function board() {
-	return createBoardState([
-		{ key: leftA, column: null },
-		{ key: leftB, column: null },
-		{ key: right0_80, column: 0 },
-		{ key: right0_22, column: 0 },
-		{ key: right1_应用, column: 1 },
-		{ key: right1_网络, column: 1 },
-	]);
+	return createBoardState(ALL);
 }
 
-test("选中左节点、再点右节点即可建立连线", () => {
+test("选中左列条目，再点相邻列条目即可连线", () => {
 	const state = board();
-	state.click(leftA);
-	assertEqual(state.view().activeKey, leftA, "左节点应处于选中状态");
-	state.click(right0_80);
-	assertEqual(state.view().activeKey, null, "连线后应清除选中");
-	assertEqual(state.view().connections.join(","), "L|c0.a|R|0|80", "应生成一条连线");
-	assertEqual(state.pairs().length, 1, "应产出一组答案");
-	assertEqual(state.pairs()[0]?.target, "80", "答案");
+	state.click(A1.key);
+	assertEqual(state.view().activeKey, A1.key, "应处于选中状态");
+	state.click(B1.key);
+	assertEqual(state.view().activeKey, null, "连线后清除选中");
+	assertEqual(state.view().connections.join(","), "i0.a1~i1.b1", "应生成一条相邻列连线");
 });
 
-test("同一节点再次点击只是取消选中，不会删除已有连线", () => {
+test("从右往左点也能连成同一条线", () => {
 	const state = board();
-	state.click(leftA);
-	state.click(right0_80);
-	// 点击已连线的左节点：只是选中，连线保持。
-	state.click(leftA);
-	assertEqual(state.view().activeKey, leftA, "应变为选中");
-	assertEqual(state.view().connections.length, 1, "连线不应被删除");
-	state.click(leftA);
-	assertEqual(state.view().activeKey, null, "再次点击取消选中");
-	assertEqual(state.view().connections.length, 1, "连线仍然存在");
+	state.click(B1.key);
+	state.click(A1.key);
+	assertEqual(state.view().connections.join(","), "i0.a1~i1.b1", "结果应与从左往右一致");
 });
 
-test("未选中左节点时点击右节点不会建立连线", () => {
+test("跨列连线被拒绝（A 与 C）", () => {
 	const state = board();
-	state.click(right0_80);
+	state.click(A1.key);
+	state.click(C1.key);
 	assertEqual(state.view().connections.length, 0, "不应产生连线");
-	assertEqual(state.view().activeKey, right0_80, "应选中该右节点");
+	assertEqual(state.view().activeKey, C1.key, "应改为选中被点中的条目");
 });
 
-// ---------------------------------------------------------------------------
-// 状态机：禁止跨列
-// ---------------------------------------------------------------------------
-
-test("右节点只能连到它所属的列（不允许跨列）", () => {
+test("同一列的另一个条目被点中时不会连线", () => {
 	const state = board();
-	state.click(leftA);
-	state.click(right0_80);
-	assertEqual(state.view().activeColumn, 0, "当前列应为 0");
-
-	// 同一左条目连到另一列：应当允许（每列各自一条线）。
-	state.click(leftA);
-	state.click(right1_应用);
-	const view = state.view();
-	assertEqual(view.connections.length, 2, "两列各有一条连线");
-	assertEqual(state.pairs().length, 2, "两列各产出一组答案");
-	assert(view.connections.includes("L|c0.a|R|0|80"), "第一列连线应保留");
-	assert(view.connections.includes("L|c0.a|R|1|应用层"), "第二列连线应保留");
+	state.click(A1.key);
+	state.click(A2.key);
+	assertEqual(state.view().connections.length, 0, "同列不应连线");
+	assertEqual(state.view().activeKey, A2.key, "应改为选中该条目");
 });
 
-test("第一列的连线不会被第二列的操作影响", () => {
+test("中间列条目可以同时连左右相邻列", () => {
 	const state = board();
-	state.click(leftA);
-	state.click(right0_80);
-	state.click(leftB);
-	state.click(right0_22);
-	assertEqual(state.view().connections.length, 2, "第一列应有两条连线");
-
-	// 切到第二列操作，第一列结果必须原样保留。
-	state.click(leftA);
-	state.click(right1_应用);
-	state.click(leftB);
-	state.click(right1_网络);
+	state.click(A1.key);
+	state.click(B1.key);
+	// B1 与 A 列已连；现在用中间列作为起点连 B-C，两条应同时存在。
+	state.click(B1.key);
+	state.click(C1.key);
 	const connections = state.view().connections;
-	assertEqual(connections.length, 4, "两列共四条连线");
-	assert(connections.includes("L|c0.a|R|0|80"), "第一列 A 的连线应保留");
-	assert(connections.includes("L|c0.b|R|0|22"), "第一列 B 的连线应保留");
-	assert(connections.includes("L|c0.a|R|1|应用层"), "第二列 A 的连线应存在");
-	assert(connections.includes("L|c0.b|R|1|网络层"), "第二列 B 的连线应存在");
+	assertEqual(connections.length, 2, `中间列条目应能连左右各一条（实际 ${JSON.stringify(connections)}）`);
+	assert(connections.includes("i0.a1~i1.b1"), "应有 A-B 连线");
+	assert(connections.includes("i1.b1~i2.c1"), "应有 B-C 连线");
 });
 
-test("activeColumn 跟随最近使用的列", () => {
+test("每一对相邻列各自只保留一条：改连时先建后解", () => {
 	const state = board();
-	state.click(leftA);
-	state.click(right0_80);
-	assertEqual(state.view().activeColumn, 0, "第一列");
-	state.click(leftB);
-	state.click(right1_应用);
-	assertEqual(state.view().activeColumn, 1, "第二列");
-});
-
-// ---------------------------------------------------------------------------
-// 状态机：替换连线（先建后解）
-// ---------------------------------------------------------------------------
-
-test("同列改答案：新连线建立后旧连线才解除", () => {
-	const state = board();
-	state.click(leftA);
-	state.click(right0_80);
-	state.click(leftA);
-	state.click(right0_22);
+	state.click(A1.key);
+	state.click(B1.key);
+	// 同一对列（A-B）里把 A1 改连 B2。
+	state.click(A1.key);
+	state.click(B2.key);
 	const connections = state.view().connections;
-	assertEqual(connections.length, 1, "同一列里一个条目只保留一条连线");
-	assertEqual(connections[0], "L|c0.a|R|0|22", "应换成新答案");
+	assertEqual(connections.length, 1, "A1 与 B 列之间只应保留一条");
+	assertEqual(connections[0], "i0.a1~i1.b2", "应换成 B2");
 });
 
-test("同列改条目：答案上原有连线被新连线取代", () => {
+test("同一对列里右端可被多个左条目连上（合并选项）", () => {
 	const state = board();
-	state.click(leftA);
-	state.click(right0_80);
-	state.click(leftB);
-	state.click(right0_80);
+	state.click(A1.key);
+	state.click(B1.key);
+	state.click(A2.key);
+	state.click(B1.key);
 	const connections = state.view().connections;
-	assertEqual(connections.length, 1, "一个答案在同一列里只被连一次");
-	assertEqual(connections[0], "L|c0.b|R|0|80", "应换成新条目");
+	assertEqual(connections.length, 2, "同一答案允许同列多个条目连上");
+	assert(connections.includes("i0.a1~i1.b1"), "A1-B1 应保留");
+	assert(connections.includes("i0.a2~i1.b1"), "A2-B1 应新增");
 });
 
-test("替换时先建立新连线，再解除旧的（不会出现空档）", () => {
+test("同一对列里一个左条目只能连一条（改连即替换）", () => {
 	const state = board();
-	state.click(leftA);
-	state.click(right0_80);
-	// 直接把 A 改连到 22：点击 22 之后必须立即有连线，而不是先断后连。
-	state.click(leftA);
-	state.click(right0_22);
-	assertEqual(state.view().connections.length, 1, "任意时刻都应恰好有一条连线");
-	assertEqual(state.view().connections[0], "L|c0.a|R|0|22", "指向新答案");
-});
-
-test("每列的连线互不覆盖", () => {
-	const state = board();
-	state.click(leftA);
-	state.click(right0_80);
-	state.click(leftA);
-	state.click(right1_应用);
-	// 再改第二列，第一列不应受影响。
-	state.click(leftA);
-	state.click(right1_网络);
+	state.click(A1.key);
+	state.click(B1.key);
+	state.click(A1.key);
+	state.click(B2.key);
 	const connections = state.view().connections;
-	assertEqual(connections.length, 2, "两列各一条");
-	assert(connections.includes("L|c0.a|R|0|80"), "第一列的连线必须保留");
-	assert(connections.includes("L|c0.a|R|1|网络层"), "第二列已换成新答案");
+	assertEqual(connections.length, 1, "A1 只应保留一条连线");
+	assertEqual(connections[0], "i0.a1~i1.b2", "应换成 B2");
 });
 
-test("slotKey 让同一条目在不同列拥有独立槽位", () => {
-	assert(slotKey("c0.a", 0) !== slotKey("c0.a", 1), "不同列的槽位应不同");
-	assertEqual(slotKey("c0.a", 0), "c0.a@0", "槽位格式");
-});
-
-test("未知节点被忽略，不改变状态", () => {
+test("再次点击已连线的条目只是取消选中，不删线", () => {
 	const state = board();
-	assertEqual(state.click("L|不存在"), false, "未知节点应返回未变化");
+	state.click(A1.key);
+	state.click(B1.key);
+	state.click(A1.key);
+	assertEqual(state.view().activeKey, A1.key, "应变为选中");
+	assertEqual(state.view().connections.length, 1, "连线不应被删除");
+	state.click(A1.key);
+	assertEqual(state.view().activeKey, null, "再次点击取消选中");
+	assertEqual(state.view().connections.length, 1, "连线仍在");
+});
+
+test("三列串起来：A-B 两条、B-C 两条", () => {
+	const state = board();
+	for (const [first, second] of [
+		[A1, B1],
+		[A2, B2],
+		[B1, C1],
+		[B2, C2],
+	] as const) {
+		state.click(first.key);
+		state.click(second.key);
+	}
+	const connections = state.view().connections;
+	assertEqual(connections.length, 4, `应有四条连线（实际 ${JSON.stringify(connections)}）`);
+	assert(connections.includes("i0.a1~i1.b1"), "A1-B1");
+	assert(connections.includes("i0.a2~i1.b2"), "A2-B2");
+	assert(connections.includes("i1.b1~i2.c1"), "B1-C1");
+	assert(connections.includes("i1.b2~i2.c2"), "B2-C2");
+});
+
+test("pairs() 给出规范化的左右端点", () => {
+	const state = board();
+	state.click(A1.key);
+	state.click(B1.key);
+	const pairs = state.pairs();
+	assertEqual(pairs.length, 1, "一条连线");
+	assertEqual(pairs[0]?.left, "i0.a1", "左端应是列号小的条目");
+	assertEqual(pairs[0]?.right, "i1.b1", "右端应是列号大的条目");
+});
+
+test("从右往左建立时 pairs() 同样规范化", () => {
+	const state = board();
+	state.click(B1.key);
+	state.click(A1.key);
+	const pairs = state.pairs();
+	assertEqual(pairs[0]?.left, "i0.a1", "左端仍是列号小的条目");
+	assertEqual(pairs[0]?.right, "i1.b1", "右端仍是列号大的条目");
+});
+
+test("未知条目被忽略", () => {
+	const state = board();
+	assertEqual(state.click("不存在"), false, "应返回未变化");
 	assertEqual(state.view().connections.length, 0, "不应产生连线");
 });

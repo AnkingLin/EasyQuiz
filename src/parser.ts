@@ -14,9 +14,10 @@ import {
 	BlankMarkerMode,
 	BlankRule,
 	BlankSpec,
+	BoardColumn,
+	BoardItem,
+	BoardPair,
 	HistoryEntry,
-	MatchColumn,
-	MatchEntry,
 	ParsedQuizFile,
 	ParseWarning,
 	QuizOption,
@@ -493,7 +494,8 @@ function parseQuestion(ctx: QuestionContext): QuizQuestion {
 		options: structure.options,
 		table: structure.table,
 		tableHeader: structure.tableHeader,
-		matchColumns: structure.matchColumns,
+		board: structure.board,
+		boardPairs: structure.boardPairs,
 		blanks: structure.blanks,
 		answer,
 		answerAnchors: ok ? anchorCheck : [],
@@ -524,11 +526,11 @@ function structureHashSource(
 ): string {
 	return [
 		structure.options.map((o) => `${o.anchor ?? ""}:${normalizeText(o.markdown)}`).join("|"),
-		// 用配对条目而不是表格原文：调整行顺序不应改变题面哈希。
-		structure.matchColumns
-			.map((column) => `${column.name}:${column.entries.map((entry) => `${entry.text}>${entry.actualTargets.join(",")}`).join(";")}`)
+		// 用题板条目与正确连线，而不是表格原文：调整行顺序不应改变题面哈希。
+		structure.board
+			.map((column) => `${column.name}:${column.items.map((item) => item.text).join(",")}`)
 			.join("|"),
-		structure.table?.length ? "has-table" : "",
+		structure.boardPairs.map((pair) => `${pair.left}~${pair.right}`).join("|"),
 		structure.blanks.map((b) => `${b.anchor}:${b.expected}`).join("|"),
 		typeof meta.rawAnswer === "string" ? meta.rawAnswer : JSON.stringify(meta.rawAnswer ?? null),
 		JSON.stringify(meta.blankRules),
@@ -777,7 +779,8 @@ interface BodyStructure {
 	table: string[][] | null;
 	tableHeader: string[] | null;
 	tableStartLine: number;
-	matchColumns: MatchColumn[];
+	board: BoardColumn[];
+	boardPairs: BoardPair[];
 	blanks: BlankSpec[];
 }
 
@@ -785,6 +788,8 @@ const LIST_ITEM_RE = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/;
 const ANCHOR_RE = /\s\^([A-Za-z0-9\-_]+)\s*$/m;
 /** 空位的显式锚点：`==答案== ^b1` / `**答案** ^b1` 里的 `^b1`，可省略。 */
 const BLANK_ANCHOR_RE = /\s*\^([A-Za-z0-9\-_]+)\s*$/;
+/** 题板条目 key 前缀。 */
+const ITEM_PREFIX = "i";
 
 function parseBodyStructure(body: string, bodyStartLine: number, ctx: QuestionContext): BodyStructure {
 	const lines = splitLines(body);
@@ -836,7 +841,8 @@ function parseBodyStructure(body: string, bodyStartLine: number, ctx: QuestionCo
 		: [];
 	const table = hasTable ? dataRows : null;
 
-	const matchColumns = table && header ? buildMatchColumns(header, table) : [];
+	const board = table && header ? buildBoardColumns(header, table) : [];
+	const boardPairs = buildExpectedPairs(board);
 	const blanks = collectBlanks(body, ctx.blankMarker);
 
 	return {
@@ -844,7 +850,8 @@ function parseBodyStructure(body: string, bodyStartLine: number, ctx: QuestionCo
 		table,
 		tableHeader: header ?? null,
 		tableStartLine,
-		matchColumns,
+		board,
+		boardPairs,
 		blanks,
 	};
 }
@@ -865,71 +872,66 @@ function isSeparatorRow(cells: string[]): boolean {
 }
 
 /**
- * 由配对表格构造各答案列的待匹配条目。
+ * 由配对表格构造连线题板。
  *
- * - 表头是各列名称；首列是待匹配项，其余每一列都各自是一组需要配对的答案。
- * - 一对多（`MySQL / PostgreSQL`）会拆成两个待匹配项，它们的可接受答案集合相同；
- *   同一答案列内**答案相同的条目会合并**，因此同一列不会出现重复选项。
- * - 每个条目的 key 由「左侧文本哈希 + 列号」组成：只依赖条目本身，
- *   所以打乱（即调整表格行顺序）不会让记录失配。
+ * - 每一列都有若干条目；连线只发生在**相邻两列**之间（第 1↔2、2↔3…），
+ *   因此表格行顺序等价于一条从左到右的链：`A | B | C` 表示 A-B 与 B-C。
+ * - 同一格的 ` / ` 表示"一对多"：`MySQL / PostgreSQL | 关系型` 会拆成两个条目，
+ *   它们都与「关系型」相连。
+ * - 同一列内文本相同的条目合并为一个（否则题板上会出现两个文字相同的节点）。
+ * - 条目 key 只由「列号 + 文本哈希」决定，与表格行顺序无关。
  */
-function buildMatchColumns(header: string[], table: string[][]): MatchColumn[] {
-	const columns: MatchColumn[] = [];
+function buildBoardColumns(header: string[], table: string[][]): BoardColumn[] {
+	// 每一列：条目按文本去重。
+	const columns: BoardColumn[] = header.map((name, columnIndex) => ({
+		index: columnIndex,
+		name,
+		items: [],
+		expected: [],
+	}));
+	const itemAt = new Map<string, BoardItem>(); // `${列号}|${文本}` → 条目
+	const expected: BoardPair[] = [];
+	const expectedKeys = new Set<string>();
 
-	for (let index = 1; index < header.length; index++) {
-		// 左侧文本 → 可接受的答案集合。
-		const actualByLeft = new Map<string, Set<string>>();
-		const answers: string[] = [];
-		const addAnswer = (answer: string) => {
-			if (!answers.includes(answer)) answers.push(answer);
+	const itemFor = (columnIndex: number, text: string): BoardItem => {
+		const lookup = `${columnIndex}|${text}`;
+		const existing = itemAt.get(lookup);
+		if (existing !== undefined) return existing;
+		const item: BoardItem = {
+			key: `${ITEM_PREFIX}${columnIndex}.${leftHash(text)}`,
+			text,
+			column: columnIndex,
 		};
+		itemAt.set(lookup, item);
+		columns[columnIndex]?.items.push(item);
+		return item;
+	};
 
-		for (const row of table) {
-			const leftParts = splitCell(row[0] ?? "");
-			const rightParts = splitCell(row[index] ?? "");
+	const addPair = (from: BoardItem, to: BoardItem): void => {
+		const [left, right] = from.column <= to.column ? [from, to] : [to, from];
+		const key = `${left.key}~${right.key}`;
+		if (expectedKeys.has(key)) return;
+		expectedKeys.add(key);
+		const pair: BoardPair = { left: left.key, right: right.key };
+		expected.push(pair);
+		columns[left.column]?.expected.push(pair);
+	};
+
+	// 逐行展开：每行的相邻列两两相连。
+	for (const row of table) {
+		for (let index = 0; index + 1 < header.length; index++) {
+			const leftParts = splitCell(row[index] ?? "");
+			const rightParts = splitCell(row[index + 1] ?? "");
 			if (leftParts.length === 0 || rightParts.length === 0) continue;
-			for (const left of leftParts) {
-				const actual = actualByLeft.get(left) ?? new Set<string>();
-				for (const right of rightParts) actual.add(right);
-				actualByLeft.set(left, actual);
-			}
-			for (const right of rightParts) addAnswer(right);
-		}
-
-		// 同一答案列里，首列文本相同的行合并成一个条目：题板上只出现一次，
-		// 否则会出现两个文字完全相同、无法区分的节点。
-		const merged = new Map<string, MatchEntry>();
-		for (const row of table) {
-			const leftParts = splitCell(row[0] ?? "");
-			if (leftParts.length === 0) continue;
-			for (const left of leftParts) {
-				const actual = [...(actualByLeft.get(left) ?? new Set<string>())];
-				const existing = merged.get(left);
-				if (existing !== undefined) {
-					// 合并可接受答案。
-					for (const answer of actual) {
-						if (!existing.actualTargets.includes(answer)) existing.actualTargets.push(answer);
-					}
-				} else {
-					merged.set(left, {
-						key: entryKey(index - 1, left),
-						text: left,
-						actualTargets: actual,
-						hash: leftHash(left),
-					});
+			for (const leftText of leftParts) {
+				for (const rightText of rightParts) {
+					addPair(itemFor(index, leftText), itemFor(index + 1, rightText));
 				}
 			}
 		}
-
-		columns.push({
-			index: index - 1,
-			name: header[index] ?? `第 ${index} 列`,
-			entries: [...merged.values()],
-			answers,
-		});
 	}
 
-	// 表头重名（或为空）时给出可区分的名字，否则题板上会出现两个同名答案列。
+	// 表头重名（或为空）时给出可区分的名字，否则题板上会出现两个同名列。
 	const seen = new Map<string, number>();
 	for (const column of columns) {
 		const base = column.name.trim() === "" ? `第 ${column.index + 2} 列` : column.name;
@@ -941,9 +943,9 @@ function buildMatchColumns(header: string[], table: string[][]): MatchColumn[] {
 	return columns;
 }
 
-/** 条目 key：只由列号与左侧文本决定，与表格行顺序无关。 */
-function entryKey(columnIndex: number, text: string): string {
-	return `c${columnIndex}.${leftHash(text)}`;
+/** 棋盘上所有正确答案（相邻列之间的连线）。 */
+function buildExpectedPairs(columns: BoardColumn[]): BoardPair[] {
+	return columns.flatMap((column) => column.expected);
 }
 
 /** 左侧文本的稳定哈希，用于生成不随行序变化的 key。 */
@@ -1232,10 +1234,10 @@ function validateStructure(
 			});
 			return;
 		}
-		if (structure.matchColumns.every((column) => column.entries.length === 0 || column.answers.length === 0)) {
+		if (structure.boardPairs.length === 0) {
 			ctx.warnings.push({
 				code: "structure-mismatch",
-				message: "配对表格的答案列没有可配对条目。",
+				message: "配对表格里没有可连线的相邻列条目。",
 				questionIndex: null,
 				line,
 			});

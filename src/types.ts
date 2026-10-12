@@ -63,28 +63,33 @@ export interface QuizOption {
 	markdown: string;
 }
 
-/** 配对表格中的一个待匹配条目（首列的一个条目）。 */
-export interface MatchEntry {
-	/** 稳定 key：只由列号与条目文本决定，调整表格行顺序不会失配。 */
+/** 连线题板上的一个条目。 */
+export interface BoardItem {
+	/** 稳定 key：`i<列号>.<文本哈希>`，只依赖文本与列号，与行顺序无关。 */
 	key: string;
-	/** 展示文本（首列条目）。 */
 	text: string;
-	/** 该条目可接受的答案（本答案列中与它同行的答案）。 */
-	actualTargets: string[];
-	/** 首列文本哈希。 */
-	hash: string;
+	/** 所属列号（0 基）。 */
+	column: number;
 }
 
-/** 配对表格中的一个答案列（首列之外的每一列）。 */
-export interface MatchColumn {
-	/** 列序号，0 基（不含首列）。 */
+/** 连线题板的一列。 */
+export interface BoardColumn {
+	/** 列号，0 基。 */
 	index: number;
-	/** 列名，取自表头。 */
+	/** 列名，取自表头；重名或为空时会自动区分。 */
 	name: string;
-	/** 待匹配条目，同一文本已合并。 */
-	entries: MatchEntry[];
-	/** 该列的候选答案，已去重。 */
-	answers: string[];
+	/** 该列的条目（已按文本去重）。 */
+	items: BoardItem[];
+	/** 该列与右邻列之间的正确答案。 */
+	expected: BoardPair[];
+}
+
+/** 一条正确的连线：相邻两列之间的两个条目。 */
+export interface BoardPair {
+	/** 左列条目的 key（列号较小者）。 */
+	left: string;
+	/** 右列条目的 key。 */
+	right: string;
 }
 /** 一个填空空位。 */
 export interface BlankSpec {
@@ -155,8 +160,10 @@ export interface QuizQuestion {
 	options: QuizOption[];
 	table: string[][] | null;
 	tableHeader: string[] | null;
-	/** 各答案列的待匹配条目与候选答案。 */
-	matchColumns: MatchColumn[];
+	/** 连线题板：每一列及其条目。 */
+	board: BoardColumn[];
+	/** 全部正确答案（相邻列之间的连线）。 */
+	boardPairs: BoardPair[];
 	blanks: BlankSpec[];
 
 	answer: string | string[] | null;

@@ -1,218 +1,211 @@
 /**
  * 连线题板的纯逻辑与状态机（不依赖 obsidian，因此可以直接测试）。
  *
- * 节点 key：
- *   - 左节点：`L|条目key`
- *   - 右节点：`R|列号|答案文本`
- * 一条连线存成 `L|条目key|R|列号|答案文本`。
+ * 节点 key 直接使用题板条目的 key（如 `i0.abcd`），条目本身带列号，
+ * 因此判断"是否相邻列"不需要额外编码。
  *
- * 交互规则（都在 {@link createBoardState} 里实现并被测试覆盖）：
- *   - 只有"左 → 右"能连线；同侧点击只是切换选中。
- *   - 一个右节点在**它所属的列**里只能被连一次；连到别的条目时，旧连线在新连线建立之后才解除。
- *   - 一个左条目在同一列里只保留一条连线；连到同列的另一个答案时同样先建后解。
- *   - 不允许跨列：右节点只能与"它所在列"的条目连线，由 `expectedColumn` 校验。
+ * 交互规则：
+ *   - 只允许**相邻两列**之间连线（第 1↔2、2↔3…），跨列连线一律拒绝。
+ *   - 方向无关：从左往右点与从右往左点得到同一条线。
+ *   - 每个条目在每一侧只保留一条连线；改连时**先建新线、再解旧线**。
+ *   - 重复点击已连线的节点只是取消选中，不会静默删线。
  */
 
-export const LEFT_PREFIX = "L|";
-export const RIGHT_PREFIX = "R|";
+import { BoardItem, BoardPair } from "./types";
 
-/** 左条目在某列里的连线标识：同一条目在不同列可以有各自的连线。 */
-export function slotKey(entryKey: string, columnIndex: number): string {
-	return `${entryKey}@${columnIndex}`;
-}
-
-export function leftNodeKey(entryKey: string): string {
-	return `${LEFT_PREFIX}${entryKey}`;
-}
-
-export function rightNodeKey(columnIndex: number, answer: string): string {
-	return `${RIGHT_PREFIX}${columnIndex}|${answer}`;
-}
-
-export function isLeftKey(key: string): boolean {
-	return key.startsWith(LEFT_PREFIX);
-}
-
-/** 从左节点 key 还原条目 key。 */
-export function entryKeyOf(leftNodeKeyValue: string): string {
-	return leftNodeKeyValue.startsWith(LEFT_PREFIX) ? leftNodeKeyValue.slice(LEFT_PREFIX.length) : "";
-}
-
-/** 从右节点 key 还原答案文本（答案本身可能含 `|`）。 */
-export function answerOf(rightNodeKeyValue: string): string {
-	if (!rightNodeKeyValue.startsWith(RIGHT_PREFIX)) return "";
-	const rest = rightNodeKeyValue.slice(RIGHT_PREFIX.length);
-	const separator = rest.indexOf("|");
-	return separator < 0 ? "" : rest.slice(separator + 1);
-}
-
-/** 从右节点 key 还原列号；非法时返回 -1。 */
-export function columnOf(rightNodeKeyValue: string): number {
-	if (!rightNodeKeyValue.startsWith(RIGHT_PREFIX)) return -1;
-	const rest = rightNodeKeyValue.slice(RIGHT_PREFIX.length);
-	const separator = rest.indexOf("|");
-	if (separator < 0) return -1;
-	const value = Number.parseInt(rest.slice(0, separator), 10);
-	return Number.isFinite(value) ? value : -1;
-}
-
-/** 把两个节点归一化成 `[左, 右]`；同侧时返回 `[null, null]`。 */
-export function orderPair(first: string, second: string): [string | null, string | null] {
-	if (isLeftKey(first) && !isLeftKey(second)) return [first, second];
-	if (!isLeftKey(first) && isLeftKey(second)) return [second, first];
-	return [null, null];
+/** 两个条目的有序 key 对（列号小在前）。 */
+export function orderedPair(first: BoardItem, second: BoardItem): [string, string] {
+	return first.column <= second.column ? [first.key, second.key] : [second.key, first.key];
 }
 
 /**
- * 构造连线字符串。左右节点给出顺序任意，同侧时返回 null。
+ * 构造连线 key：`左key~右key`（列号小在前）。
  *
- * 若给出 `expectedColumn`，则要求右节点属于该列，否则返回 null（防止跨列连线）。
+ * 方向无关：参数顺序不影响结果。
+ * 只允许相邻列，因此同列或相隔一列以上都返回 null。
  */
-export function makeConnection(
-	first: string,
-	second: string,
-	expectedColumn?: number
-): string | null {
-	const [left, right] = orderPair(first, second);
-	if (left === null || right === null) return null;
-	if (expectedColumn !== undefined && columnOf(right) !== expectedColumn) return null;
-	return `${left}|${right}`;
+export function makeConnection(first: BoardItem, second: BoardItem): string | null {
+	if (first.column === second.column) return null;
+	const [leftItem, rightItem] = first.column < second.column ? [first, second] : [second, first];
+	// 只允许相邻列。
+	if (rightItem.column - leftItem.column !== 1) return null;
+	return `${leftItem.key}~${rightItem.key}`;
 }
 
-/** 拆出 `[左节点key, 右节点key]`；格式不符时返回 `[null, null]`。 */
+/** 拆出 `[左key, 右key]`；格式不符时返回 `[null, null]`。 */
 export function splitConnection(connection: string): [string | null, string | null] {
-	const parts = connection.split("|");
-	// 结构为 L | 条目key | R | 列号 | 答案文本
-	// 注意 `R` 在下标 2（右节点 key 自身以 `R|` 开头）。
-	if (parts.length < 5 || parts[0] !== "L" || parts[2] !== "R") return [null, null];
-	return [`${parts[0]}|${parts[1]}`, parts.slice(2).join("|")];
+	const separator = connection.indexOf("~");
+	if (separator <= 0) return [null, null];
+	return [connection.slice(0, separator), connection.slice(separator + 1)];
 }
 
-/** 返回涉及某节点 key 的所有连线。 */
-export function connectionsOf(connections: Iterable<string>, nodeKey: string): string[] {
+/** 返回涉及某条目的所有连线。 */
+export function connectionsOf(connections: Iterable<string>, itemKey: string): string[] {
 	const result: string[] = [];
 	for (const connection of connections) {
 		const [left, right] = splitConnection(connection);
-		if (left === nodeKey || right === nodeKey) result.push(connection);
+		if (left === itemKey || right === itemKey) result.push(connection);
 	}
 	return result;
-}
-
-// ---------------------------------------------------------------------------
-// 状态机
-// ---------------------------------------------------------------------------
-
-export interface BoardNode {
-	key: string;
-	/** 左节点为 null；右节点为它所属的答案列号。 */
-	column: number | null;
 }
 
 export interface BoardView {
 	connections: string[];
 	activeKey: string | null;
-	/** 当前正在作答的列号；未开始时为 null。 */
-	activeColumn: number | null;
 }
 
 export interface BoardState {
-	/** 点击某节点。返回是否有变化（供调用方决定是否重绘）。 */
-	click: (nodeKey: string) => boolean;
+	click: (itemKey: string) => boolean;
 	view: () => BoardView;
-	/** 提交用的连线列表（只包含合法的左-右配对）。 */
-	pairs: () => { key: string; target: string }[];
+	/** 提交用的连线列表（key 为 `左key~右key`）。 */
+	pairs: () => BoardPair[];
 }
 
 /**
- * 创建一个题板状态机。
+ * 创建题板状态机。
  *
- * @param nodes 全部节点（左节点与右节点），key 必须唯一。
+ * @param items 题板上的全部条目（需带 `column`）。
  */
-export function createBoardState(nodes: BoardNode[]): BoardState {
-	const nodeAt = new Map<string, BoardNode>();
-	for (const node of nodes) nodeAt.set(node.key, node);
+export function createBoardState(items: BoardItem[]): BoardState {
+	const itemAt = new Map<string, BoardItem>();
+	for (const item of items) itemAt.set(item.key, item);
 
-	/** 槽位（条目@列）→ 连线串。 */
-	const bySlot = new Map<string, string>();
-	/** 右节点 key → 连线串。 */
-	const byRight = new Map<string, string>();
+	/** 条目 key → 与它相连的连线（每个条目在每一侧至多一条，故用 Set）。 */
+	const byItem = new Map<string, Set<string>>();
+	/** 一条连线 → 两端条目 key。 */
+	const endpoints = new Map<string, [string, string]>();
 	let activeKey: string | null = null;
-	let activeColumn: number | null = null;
 
-	function connect(leftKey: string, rightKey: string): boolean {
-		const connection = makeConnection(leftKey, rightKey);
+	const linksOf = (itemKey: string): Set<string> => {
+		const existing = byItem.get(itemKey);
+		if (existing !== undefined) return existing;
+		const created = new Set<string>();
+		byItem.set(itemKey, created);
+		return created;
+	};
+
+	function addConnection(connection: string, first: string, second: string): void {
+		const firstItem = itemAt.get(first);
+		const secondItem = itemAt.get(second);
+		const ends: [string, string] =
+			firstItem !== undefined && secondItem !== undefined ? orderedPair(firstItem, secondItem) : [first, second];
+		endpoints.set(connection, ends);
+		linksOf(first).add(connection);
+		linksOf(second).add(connection);
+	}
+
+	/**
+	 * 只解除「某一端」上的连线，并清理该连线记录。
+	 *
+	 * 注意不能把两端都解掉：中间列的条目可以同时连左右两侧，
+	 * 替换其中一条线时，另一侧的连线必须保留。
+	 */
+	function unlink(itemKey: string, connection: string): void {
+		linksOf(itemKey).delete(connection);
+		endpoints.delete(connection);
+	}
+
+	/**
+	 * 建立连线，并解除被它取代的旧连线（先建后解）。
+	 *
+	 * 约束：**每个条目在同一对相邻列里至多一条连线**。
+	 * 由于"一个答案可以被同列多个条目连上"（合并选项），
+	 * 判断是否已有该列对的连线时，看的是连线在**小列那一侧**的端点：
+	 *   - 同一左条目改连另一个答案 → 替换；
+	 *   - 同一答案改由另一个左条目连上 → 替换；
+	 *   - 两个不同左条目连到同一答案（一对多）→ 两条并存；
+	 *   - 中间列条目的左右两侧属于不同列对 → 两条并存。
+	 */
+	function connect(firstKey: string, secondKey: string): boolean {
+		const a = itemAt.get(firstKey);
+		const b = itemAt.get(secondKey);
+		if (a === undefined || b === undefined) return false;
+		const connection = makeConnection(a, b);
 		if (connection === null) return false;
-		const [left, right] = splitConnection(connection);
-		if (left === null || right === null) return false;
-		const column = columnOf(right);
-		const entryKey = entryKeyOf(left);
-		const slot = slotKey(entryKey, column);
 
-		// 先建立新连线，再解除被它取代的旧连线（避免出现"什么都没连"的中间状态）。
-		const replaced = new Set(
-			[bySlot.get(slot), byRight.get(right)].filter((value): value is string => value !== undefined)
-		);
-		bySlot.set(slot, connection);
-		byRight.set(right, connection);
+		const columnOf = (key: string): number => itemAt.get(key)?.column ?? -1;
+		const pairOf = (old: string): string | null => {
+			const ends = endpoints.get(old);
+			if (ends === undefined) return null;
+			return [...ends.map(columnOf)].sort((x, y) => x - y).join("-");
+		};
+		/** 把一条连线归一化成 `[小列端, 大列端]`。 */
+		const orderEnds = (old: string): [string, string] | null => {
+			const ends = endpoints.get(old);
+			if (ends === undefined) return null;
+			return columnOf(ends[0]) <= columnOf(ends[1]) ? [ends[0], ends[1]] : [ends[1], ends[0]];
+		};
 
+		const ordered = [firstKey, secondKey].sort((x, y) => columnOf(x) - columnOf(y));
+		const newSmall = ordered[0] ?? firstKey;
+		const newLarge = ordered[1] ?? secondKey;
+		const newPair = [columnOf(newSmall), columnOf(newLarge)].sort((x, y) => x - y).join("-");
+
+		// 一对一匹配，但**不因"右端相同"而替换**：
+		// 同一列的多个条目可以指向同一个答案（合并选项，如 MySQL / PostgreSQL → 关系型）。
+		// 判定规则（只看同一对相邻列里的连线）：
+		//   - 左端相同（同一左条目改连别的答案）→ 冲突，替换；
+		//   - 右端相同**且**左端不同 → 不冲突，允许并存；
+		//   - 其它情况（如中间列另一侧）→ 不同列对，不冲突。
+		const conflicts = (old: string): boolean => {
+			if (old === connection) return false;
+			if (pairOf(old) !== newPair) return false;
+			const ends = orderEnds(old);
+			if (ends === null) return false;
+			return ends[0] === newSmall;
+		};
+
+		const replaced = new Set<string>();
+		for (const old of [...endpoints.keys()]) {
+			if (conflicts(old)) replaced.add(old);
+		}
+
+		addConnection(connection, firstKey, secondKey);
 		for (const old of replaced) {
-			if (old === connection) continue;
-			const [oldLeft, oldRight] = splitConnection(old);
-			if (oldLeft === null || oldRight === null) continue;
-			const oldColumn = columnOf(oldRight);
-			const oldSlot = slotKey(entryKeyOf(oldLeft), oldColumn);
-			// 只清理仍指向这条旧连线的槽位，否则会误删刚建立的新连线。
-			if (bySlot.get(oldSlot) === old) bySlot.delete(oldSlot);
-			if (byRight.get(oldRight) === old) byRight.delete(oldRight);
+			const oldEnds = endpoints.get(old);
+			if (oldEnds === undefined) continue;
+			for (const end of oldEnds) unlink(end, old);
 		}
 		return true;
 	}
 
 	return {
-		click(nodeKey: string): boolean {
-			const node = nodeAt.get(nodeKey);
-			if (node === undefined) return false;
+		click(itemKey: string): boolean {
+			const item = itemAt.get(itemKey);
+			if (item === undefined) return false;
 
-			if (activeKey === null || activeKey === nodeKey) {
-				// 没有待配对的左条目：点击只是选中/取消选中（不删连线）。
-				activeKey = activeKey === nodeKey ? null : nodeKey;
-				if (activeKey !== null && node.column !== null) activeColumn = node.column;
+			if (activeKey === null || activeKey === itemKey) {
+				activeKey = activeKey === itemKey ? null : itemKey;
 				return true;
 			}
 
-			if (isLeftKey(activeKey) === isLeftKey(nodeKey)) {
-				// 同侧：切换选中项。
-				activeKey = nodeKey;
-				if (node.column !== null) activeColumn = node.column;
+			const first = itemAt.get(activeKey);
+			if (first === undefined) {
+				activeKey = itemKey;
 				return true;
 			}
 
-			const applied = connect(activeKey, nodeKey);
-			if (!applied) {
-				activeKey = nodeKey;
+			// 点击「当前选中的那个已连线条目」= 取消选中，不删线。
+			if (activeKey === itemKey) {
+				activeKey = null;
+				return true;
+			}
+
+			if (!connect(activeKey, itemKey)) {
+				// 同列或跨列：改为选中新点中的条目（不产生连线）。
+				activeKey = itemKey;
 				return true;
 			}
 			activeKey = null;
-			if (node.column !== null) activeColumn = node.column;
 			return true;
 		},
 
 		view(): BoardView {
-			return {
-				connections: [...new Set([...bySlot.values()])],
-				activeKey,
-				activeColumn,
-			};
+			return { connections: [...endpoints.keys()], activeKey };
 		},
 
-		pairs(): { key: string; target: string }[] {
-			const result: { key: string; target: string }[] = [];
-			for (const connection of bySlot.values()) {
-				const [left, right] = splitConnection(connection);
-				if (left === null || right === null) continue;
-				result.push({ key: entryKeyOf(left), target: answerOf(right) });
-			}
-			return result;
+		pairs(): BoardPair[] {
+			return [...endpoints.values()].map((ends) => ({ left: ends[0], right: ends[1] }));
 		},
 	};
 }

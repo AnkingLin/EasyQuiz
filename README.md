@@ -16,7 +16,7 @@ An Obsidian plugin for Markdown-native quiz practice. Questions are written as *
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (141 cases)
+npm test           # bundle and run the test suite (146 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 ```
@@ -40,7 +40,7 @@ src/stem.ts        stem preprocessing: strips what the interactive controls rend
 src/grade.ts       grading for the five question types (pure logic)
 src/writeback.ts   record write-back: only stats/history/rev, validated before writing
 src/hash.ts        stem hash (rev change detection)
-src/match-board.ts matching board logic: node keys, connecting, splitting (pure logic)
+src/match-board.ts matching board state machine: adjacent-column links (pure logic)
 src/runtime.ts     Obsidian adapter: file detection, dependency injection, atomic writes
 src/view.ts        practice card rendering
 tests/             parser / stem / grading / write-back tests and a question-bank fixture
@@ -180,27 +180,26 @@ type: match
 
 - A table is only read as a matching question when `type: match`; tables in other question types are
   ordinary prose and are not graded.
-- In the UI the first column and each answer column are laid out side by side: **click an item, then
-  click its answer**, and a connecting line is drawn between them.
-- **Each answer column is matched on its own.** A left item can hold one connection per answer
-  column, and an answer accepts one connection within its own column — working on one column never
-  disturbs another, and a connection can never jump between columns. Answer columns whose headers
-  are duplicated or empty get distinguishable names (e.g. `层级（第 2 组）`).
-- **Replacing keeps the line until the new one exists**: connecting to a different answer (or from a
-  different item) builds the new line first and only then releases the old one, so the board never
-  passes through a state where nothing is connected.
-- Clicking a node again simply selects/deselects it; it does not silently drop a line. To change a
-  match, select the item and click the new answer.
-- The header of the column you are currently working on is highlighted.
-- **Order is shuffled**: the first column and every answer column are shuffled independently, so the
-  table's row order never gives the answer away.
-- **Duplicate entries are merged**: within one answer column, entries with the same answer appear
-  once. The merged entry accepts every answer that its original rows pointed to.
-- Adding or reordering table rows does not invalidate records — entry keys depend only on the
-  column index and the item text.
+- **Connections are only allowed between adjacent columns.** A row `A | B | C` means the two links
+  `A–B` and `B–C`; there is deliberately no link between the first and last column. Clicking an item
+  in column 1 and then column 3 is rejected.
+- **Direction does not matter**: clicking left-then-right and right-then-left produce the same link,
+  and both score identically.
+- **Each item links at most once per neighbouring column pair.** Connecting it again to another item
+  in that same column replaces the old line.
+- Several items in one column may point at the same item in the neighbouring column (merged options),
+  e.g. `MySQL` and `PostgreSQL` both linking to `关系型`.
+- Clicking a connected item only selects it; it does not silently drop its line.
+- **Replacing keeps the line until the new one exists**: the new line is created first and the old one
+  released afterwards, so the board never passes through a state where nothing is connected.
+- **Order is shuffled**: every column is shuffled independently, so the table's row order never gives
+  the answer away.
+- **Duplicate entries are merged**: within one column, items with the same text appear once.
+- Adding or reordering table rows does not invalidate records — item keys depend only on the column
+  index and the text.
 - The table itself is not rendered — the board replaces it, so nothing appears twice.
-- **Multiple answer columns**: every column after the first is its own matching group with its own
-  header, and all of them must be matched correctly:
+- Columns whose headers are duplicated or empty get distinguishable names (e.g. `层级（第 2 组）`).
+- **Multiple columns** chain through the table, and all adjacent pairs must be matched:
 
   ````markdown
   | 协议 | 端口 | 层级 |
@@ -209,8 +208,8 @@ type: match
   | IP | 0 | 网络层 |
   ````
 
-- **One-to-many**: separate multiple entries in a cell with ` / `. The first column then yields one
-  match item per entry, and all of them accept the same answer:
+- **One-to-many**: separate multiple entries in a cell with ` / `. Both sides split, and the entries
+  stay grouped by the row they came from:
 
   ````markdown
   | 数据库 | 类型 |
@@ -219,10 +218,9 @@ type: match
   | Redis / Memcached | 键值型 |
   ````
 
-  This yields two match items, "MySQL" and "PostgreSQL", both accepting "关系型" — so pairing
-  "关系型" with either one is correct.
+  This yields the items `MySQL`, `PostgreSQL`, `Redis`, `Memcached` in the first column — each of them
+  links to the type on its own row, so `MySQL` and `PostgreSQL` both link to `关系型`.
 - A table needs at least 2 columns, otherwise the question degrades with a warning.
-
 ### Fill in the blank
 
 The marker is configurable (see **Blank marker** under Settings): `==answer==` (default),

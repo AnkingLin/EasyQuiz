@@ -113,11 +113,11 @@ function renderBoard(question: QuizQuestion): Board {
 	const lineTargets = (): number[] =>
 		[...card.querySelectorAll(".easy-quiz-card__link")].map((path) => {
 			const d = path.getAttribute("d") ?? "";
-			// 终点 x 坐标形如 ... 200 10，取最后一个数字对里的 x
+			// 终点 x 形如 `... 200 10`：取最后一组坐标里的 x。
 			const end = /([\d.]+)\s+([\d.]+)\s*$/.exec(d);
 			const x = end?.[1] === undefined ? 0 : Number.parseFloat(end[1]);
-			// 每个节点宽 100、列间距 200：终点 x 落在哪一列
-			return Math.round((x - 100) / 200);
+			// 节点宽 100、列间距 200：终点 x 落在第 ceil(x/200) 列，至少为 1。
+			return Math.max(1, Math.round(x / 200));
 		});
 
 	const linkedTexts = (): string[] => {
@@ -163,121 +163,128 @@ test("DOM：题面不渲染配对表格本身，只渲染题板", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 每一列都必须能连上（报告过：第 2、3 列连不上）
+// 相邻列才能连线（核心规则）
 // ---------------------------------------------------------------------------
 
-test("DOM：左条目可以连到每一个答案列（第 2、3 列同样可以）", () => {
+test("DOM：相邻两列可以连线", () => {
 	const board = renderBoard(parseTable(header3, rows3));
-
+	// 协议(0) - 端口(1)
 	board.click("HTTP", 0);
 	board.click("80", 1);
-	assertEqual(board.lineTargets().length, 1, "第 1 条答案列连线");
-
-	board.click("HTTP", 0);
+	assertEqual(board.lineTargets().length, 1, "第 1、2 列应能连线");
+	// 端口(1) - 层级(2)
+	board.click("80", 1);
 	board.click("应用层", 2);
-	assertEqual(board.lineTargets().length, 2, "第 2 条答案列连线");
-
-	board.click("HTTP", 0);
+	assertEqual(board.lineTargets().length, 2, "第 2、3 列应能连线");
+	// 层级(2) - 缩写(3)
+	board.click("应用层", 2);
 	board.click("H", 3);
-	assertEqual(board.lineTargets().length, 3, "第 3 条答案列连线");
+	assertEqual(board.lineTargets().length, 3, "第 3、4 列应能连线");
 });
 
-test("DOM：三条连线分别指向三个不同的答案列", () => {
+test("DOM：三条连线的终点分别落在列 1、2、3", () => {
 	const board = renderBoard(parseTable(header3, rows3));
-	for (const [text, column] of [
-		["80", 1],
-		["应用层", 2],
-		["H", 3],
+	for (const [left, leftColumn, right, rightColumn] of [
+		["HTTP", 0, "80", 1],
+		["80", 1, "应用层", 2],
+		["应用层", 2, "H", 3],
 	] as const) {
-		board.click("HTTP", 0);
-		board.click(text, column);
+		board.click(left, leftColumn);
+		board.click(right, rightColumn);
 	}
 	const targets = board.lineTargets().sort((a, b) => a - b);
-	assertEqual(targets.join(","), "1,2,3", `三条线应分别指向列 1/2/3（实际 ${JSON.stringify(board.lineTargets())}）`);
+	assertEqual(targets.join(","), "1,2,3", `终点应落在列 1/2/3（实际 ${JSON.stringify(board.lineTargets())}）`);
 });
 
-test("DOM：连线到哪一列，就高亮哪一列", () => {
+test("DOM：相隔一列的连线被拒绝（第 1 列与第 3 列）", () => {
 	const board = renderBoard(parseTable(header3, rows3));
 	board.click("HTTP", 0);
 	board.click("应用层", 2);
-	assertEqual(board.currentColumn(), 2, "应高亮第 2 个答案列");
+	assertEqual(board.lineTargets().length, 0, "第 1、3 列不应连成线");
 });
 
-test("DOM：每一列都能连满所有条目", () => {
-	for (const columnIndex of [1, 2, 3]) {
-		const board = renderBoard(parseTable(header3, rows3));
-		const answers = [...(board.columns[columnIndex]?.querySelectorAll(".easy-quiz-card__node") ?? [])].map(
-			(node) => node.textContent ?? ""
-		);
-		assertEqual(answers.length, 2, `列 ${columnIndex} 应有两个答案`);
-		board.click("HTTP", 0);
-		board.click(answers[0]!, columnIndex);
-		board.click("IP", 0);
-		board.click(answers[1]!, columnIndex);
-		assertEqual(board.lineTargets().length, 2, `列 ${columnIndex} 应能连满两条`);
-	}
-});
-
-// ---------------------------------------------------------------------------
-// 每列独立、不互相覆盖（报告过：跨列连接）
-// ---------------------------------------------------------------------------
-
-test("DOM：操作第 3 列不会影响第 1 列已有的连线", () => {
+test("DOM：第 1 列与第 4 列同样禁止连线", () => {
 	const board = renderBoard(parseTable(header3, rows3));
-	board.click("HTTP", 0);
-	board.click("80", 1);
-	assertEqual(board.lineTargets().length, 1, "第 1 列已有一条");
-
 	board.click("HTTP", 0);
 	board.click("H", 3);
-	const targets = board.lineTargets().sort((a, b) => a - b);
-	assertEqual(targets.join(","), "1,3", "两条线应分别在第 1 列与第 3 列，互不覆盖");
+	assertEqual(board.lineTargets().length, 0, "跨列连线应被拒绝");
 });
 
-test("DOM：三列都连满后共六条连线", () => {
+test("DOM：同列两个条目不能连线", () => {
 	const board = renderBoard(parseTable(header3, rows3));
-	for (const [columnIndex, first, second] of [
-		[1, "80", "0"],
-		[2, "应用层", "网络层"],
-		[3, "H", "I"],
-	] as const) {
-		board.click("HTTP", 0);
-		board.click(first, columnIndex);
-		board.click("IP", 0);
-		board.click(second, columnIndex);
-	}
-	assertEqual(board.lineTargets().length, 6, `三列两行共六条连线（实际 ${JSON.stringify(board.lineTargets())}）`);
+	board.click("HTTP", 0);
+	board.click("IP", 0);
+	assertEqual(board.lineTargets().length, 0, "同列不应连线");
 });
 
-test("DOM：同列替换时始终保留一条连线", () => {
+test("DOM：从左往右与从右往左得到同一条线", () => {
+	const forward = renderBoard(parseTable(header3, rows3));
+	forward.click("HTTP", 0);
+	forward.click("80", 1);
+
+	const backward = renderBoard(parseTable(header3, rows3));
+	backward.click("80", 1);
+	backward.click("HTTP", 0);
+
+	assertEqual(forward.lineTargets().length, 1, "从左往右应连成一条");
+	assertEqual(backward.lineTargets().length, 1, "从右往左也应连成一条");
+	assertEqual(
+		forward.lineTargets().join(","),
+		backward.lineTargets().join(","),
+		"两个方向画出的线应一致"
+	);
+});
+
+// ---------------------------------------------------------------------------
+// 中间列可以连左右两侧
+// ---------------------------------------------------------------------------
+
+test("DOM：中间列条目能同时连左右相邻列", () => {
 	const board = renderBoard(parseTable(header3, rows3));
 	board.click("HTTP", 0);
 	board.click("80", 1);
-	board.click("HTTP", 0);
-	board.click("0", 1);
-	assertEqual(board.lineTargets().length, 1, "同列里一个条目只保留一条线");
-	assertEqual(board.lineTargets()[0], 1, "应仍在第 1 列");
-});
-
-test("DOM：另一列改动不会动到本列", () => {
-	const board = renderBoard(parseTable(header3, rows3));
-	board.click("HTTP", 0);
 	board.click("80", 1);
-	// 在第 2 列把 HTTP 改连到另一个答案
-	board.click("HTTP", 0);
 	board.click("应用层", 2);
+	assertEqual(board.lineTargets().length, 2, "80 应同时连上 协议 与 层级 两列");
+});
+
+test("DOM：改动中间列一侧不会丢掉另一侧", () => {
+	const board = renderBoard(parseTable(header3, rows3));
 	board.click("HTTP", 0);
+	board.click("80", 1);
+	board.click("80", 1);
+	board.click("应用层", 2);
+	// 把 80 与 层级 的连接改成 网络层
+	board.click("80", 1);
 	board.click("网络层", 2);
-	const targets = board.lineTargets().sort((a, b) => a - b);
-	assertEqual(targets.join(","), "1,2", "第 1 列一条、第 2 列一条");
+	assertEqual(board.lineTargets().length, 2, "仍应保留两条连线");
+	assertEqual(
+		[...board.lineTargets()].sort((a, b) => a - b).join(","),
+		"1,2",
+		"一条在列 1、一条在列 2"
+	);
 });
 
-test("DOM：先点右侧再点左侧也能连上", () => {
+// ---------------------------------------------------------------------------
+// 替换与标记
+// ---------------------------------------------------------------------------
+
+test("DOM：同一答案可被多个条目连上（合并选项）", () => {
 	const board = renderBoard(parseTable(header3, rows3));
-	board.click("应用层", 2);
 	board.click("HTTP", 0);
-	assertEqual(board.lineTargets().length, 1, "应连成一条");
-	assertEqual(board.lineTargets()[0], 2, "应连到第 2 列");
+	board.click("80", 1);
+	// 同列的另一个条目也连到 80
+	board.click("IP", 0);
+	board.click("80", 1);
+	assertEqual(board.lineTargets().length, 2, "端口 80 可以挂两条线");
+});
+
+test("DOM：再次点击已连线节点只是取消选中，不删线", () => {
+	const board = renderBoard(parseTable(header3, rows3));
+	board.click("HTTP", 0);
+	board.click("80", 1);
+	board.click("HTTP", 0);
+	assertEqual(board.lineTargets().length, 1, "连线不应被删除");
 });
 
 test("DOM：已连线的节点会标记为 is-linked", () => {
@@ -289,30 +296,54 @@ test("DOM：已连线的节点会标记为 is-linked", () => {
 	assert(linked.includes("80"), "右节点应标记为已连线");
 });
 
+test("DOM：全部连满时四条连线（三组相邻列 × 两行）", () => {
+	const board = renderBoard(parseTable(header3, rows3));
+	for (const [left, leftColumn, right, rightColumn] of [
+		["HTTP", 0, "80", 1],
+		["IP", 0, "0", 1],
+		["80", 1, "应用层", 2],
+		["0", 1, "网络层", 2],
+		["应用层", 2, "H", 3],
+		["网络层", 2, "I", 3],
+	] as const) {
+		board.click(left, leftColumn);
+		board.click(right, rightColumn);
+	}
+	assertEqual(
+		board.lineTargets().length,
+		6,
+		`三组相邻列各两条，共六条（实际 ${JSON.stringify(board.lineTargets())}）`
+	);
+});
+
 // ---------------------------------------------------------------------------
 // 一对多与重复表头
 // ---------------------------------------------------------------------------
 
-test("DOM：一对多（斜杠）时首列每个条目都能连到自己那一列", () => {
+test("DOM：一对多（斜杠）时拆出的条目都能连到同一答案", async () => {
 	const board = renderBoard(
-		parseTable(
-			["数据库", "类型", "用途"],
-			["MySQL / PostgreSQL | 关系型 | 存储", "Redis | 键值型 | 缓存"]
-		)
+		parseTable(["数据库", "类型"], ["MySQL / PostgreSQL | 关系型", "Redis | 键值型"])
 	);
 	assertEqual(board.columns[0]?.querySelectorAll(".easy-quiz-card__node").length, 3, "首列应有三个条目");
+	board.click("MySQL", 0);
+	board.click("关系型", 1);
 	board.click("PostgreSQL", 0);
 	board.click("关系型", 1);
 	board.click("Redis", 0);
 	board.click("键值型", 1);
-	assertEqual(board.lineTargets().length, 2, "两个条目都应能连上");
+	// 视图在定时器里补一次绘制，这里等它跑完再断言标记。
+	await new Promise((resolve) => testWindow.setTimeout(resolve, 0));
+	const linkedLeft = board.columns[0]?.querySelectorAll(".easy-quiz-card__node.is-linked").length ?? 0;
+	assertEqual(linkedLeft, 3, "首列三个条目都应标记为已连线");
+	const linkedRight = board.columns[1]?.querySelectorAll(".easy-quiz-card__node.is-linked").length ?? 0;
+	assertEqual(linkedRight, 2, "两个答案都应标记为已连线");
 });
 
 test("DOM：重名表头会给出可区分的列名", () => {
 	const question = parseTable(["协议", "层级", "层级"], ["HTTP | 应用层 | 应用层", "IP | 网络层 | 网络层"]);
-	const names = question.matchColumns.map((column) => column.name);
-	assertEqual(names.length, 2, "应有两个答案列");
-	assert(names[0] !== names[1], `两个列名不应相同（实际：${JSON.stringify(names)}）`);
+	const names = question.board.map((column) => column.name);
+	assertEqual(names.length, 3, "三列表格三列");
+	assert(names[1] !== names[2], `两个同名列名不应相同（实际：${JSON.stringify(names)}）`);
 });
 
 // ---------------------------------------------------------------------------
@@ -374,8 +405,9 @@ test("DOM：首列重复的行只产生一个节点", () => {
 	assertEqual([...leftTexts].sort().join(","), "HTTP,HTTPS,SSH", "三个条目");
 });
 
-test("DOM：首列重复的行在两列里都能连上", () => {
+test("DOM：首列重复的行在相邻列都能连上", () => {
 	const board = renderBoard(parseTable(userHeader, userRows));
+	// 协议(0) - 端口(1)
 	for (const [left, answer] of [
 		["HTTP", "80"],
 		["HTTPS", "443"],
@@ -384,20 +416,20 @@ test("DOM：首列重复的行在两列里都能连上", () => {
 		board.click(left, 0);
 		board.click(answer, 1);
 	}
-	assertEqual(board.lineTargets().length, 3, "第一列应有三条连线");
+	assertEqual(board.lineTargets().length, 3, "第 1、2 列之间应有三条连线");
 
+	// 端口(1) - 测试(2)
 	for (const [left, answer] of [
-		["HTTP", "2"],
-		["HTTPS", "3"],
-		["SSH", "4"],
+		["80", "2"],
+		["443", "3"],
+		["22", "4"],
 	] as const) {
-		board.click(left, 0);
+		board.click(left, 1);
 		board.click(answer, 2);
 	}
-	const targets = board.lineTargets().sort((a, b) => a - b);
 	assertEqual(
-		targets.join(","),
-		"1,1,1,2,2,2",
-		`两列各三条且分别落在列 1/2（实际 ${JSON.stringify(board.lineTargets())}）`
+		board.lineTargets().length,
+		6,
+		`第 2、3 列之间应再有三条（实际 ${JSON.stringify(board.lineTargets())}）`
 	);
 });

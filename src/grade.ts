@@ -11,8 +11,8 @@ export type UserAnswer =
 	| { kind: "choice"; anchors: string[] }
 	/** 填空：按题面顺序给出的每空输入。 */
 	| { kind: "blank"; values: string[] }
-	/** 配对：条目 key → 所选基准条目的 key（用条目文本比较）。 */
-	| { kind: "match"; pairs: { key: string; target: string }[] }
+	/** 配对：相邻两列之间的连线（条目 key 对）。 */
+	| { kind: "match"; pairs: { left: string; right: string }[] }
 	/** 问答：自评。 */
 	| { kind: "essay"; result: "correct" | "wrong" };
 
@@ -45,7 +45,7 @@ export function gradeAnswer(question: QuizQuestion, answer: UserAnswer): GradeRe
 		case "blank":
 			return gradeBlank(question, answer as { kind: "blank"; values: string[] });
 		case "match":
-			return gradeMatch(question, answer as { kind: "match"; pairs: { key: string; target: string }[] });
+			return gradeMatch(question, answer as { kind: "match"; pairs: { left: string; right: string }[] });
 		case "essay":
 			return gradeEssay(answer as { kind: "essay"; result: "correct" | "wrong" });
 		default:
@@ -133,31 +133,76 @@ export function matchBlank(value: string, expected: string, rule: BlankRule): bo
 	return candidates.some((candidate) => normalize(candidate) === normalizedValue);
 }
 
+/**
+ * 连线题判分。
+ *
+ * 连线发生在相邻两列之间，因此逐条比较"正确答案"与"玩家连线"：
+ * 方向无关（左→右与右→左是同一条线），一条不多、一条不少才算全对。
+ */
 function gradeMatch(
 	question: QuizQuestion,
-	answer: { kind: "match"; pairs: { key: string; target: string }[] }
+	answer: { kind: "match"; pairs: { left: string; right: string }[] }
 ): GradeResult {
+	// 玩家连线统一成规范化的 `小列~大列`；方向无关，同一对的两个方向视为同一条。
+	const expected = new Set(question.boardPairs.map((pair) => `${pair.left}~${pair.right}`));
+	const normalize = (first: string, second: string): string | null => {
+		if (first === second) return null;
+		const forward = `${first}~${second}`;
+		if (expected.has(forward)) return forward;
+		const backward = `${second}~${first}`;
+		if (expected.has(backward)) return backward;
+		// 不在正确答案里：保留原始方向用于提示。
+		return forward;
+	};
+
+	const chosen = new Set<string>();
+	const chosenPairs: { left: string; right: string }[] = [];
+	for (const pair of answer.pairs) {
+		const key = normalize(pair.left, pair.right);
+		if (key === null || chosen.has(key)) continue;
+		chosen.add(key);
+		const [left, right] = splitPair(key);
+		if (left !== null && right !== null) chosenPairs.push({ left, right });
+	}
+	const itemText = new Map<string, string>();
+	for (const column of question.board) {
+		for (const item of column.items) itemText.set(item.key, item.text);
+	}
+	const label = (key: string): string => itemText.get(key) ?? key;
+
 	const details: GradeDetail[] = [];
 	const recorded: string[] = [];
 
-	for (const column of question.matchColumns) {
-		for (const entry of column.entries) {
-			const chosen = answer.pairs.find((pair) => pair.key === entry.key);
-			const target = (chosen?.target ?? "").trim();
-			recorded.push(`${entry.key}=${target}`);
-			// 一对多时同一左侧条目有多个可接受答案，命中任一即算对（合并选项）。
-			const acceptable = entry.actualTargets;
-			const matched =
-				target !== "" && acceptable.some((candidate) => normalizeText(candidate) === normalizeText(target));
-			const where = question.matchColumns.length > 1 ? `（${column.name}）` : "";
-			details.push({
-				correct: matched,
-				note: matched ? undefined : `「${entry.text}」${where}应匹配「${acceptable.join(" / ")}」`,
-			});
-		}
+	// 漏连：正确答案里玩家没连的。
+	for (const pair of question.boardPairs) {
+		const key = `${pair.left}~${pair.right}`;
+		recorded.push(key);
+		if (chosen.has(key)) continue;
+		details.push({
+			correct: false,
+			note: `缺少连线：「${label(pair.left)}」—「${label(pair.right)}」`,
+		});
 	}
 
-	return { correct: details.length > 0 && details.every((detail) => detail.correct), details, recorded };
+	// 多连：玩家连了但不在正确答案里。
+	for (const pair of chosenPairs) {
+		const key = `${pair.left}~${pair.right}`;
+		if (expected.has(key)) continue;
+		details.push({
+			correct: false,
+			note: `多余的连线：「${label(pair.left)}」—「${label(pair.right)}」`,
+		});
+	}
+
+	if (details.length === 0) {
+		details.push({ correct: true });
+	}
+
+	return {
+		correct: details.every((detail) => detail.correct),
+		details,
+		recorded,
+	};
 }
 
 function gradeEssay(answer: { kind: "essay"; result: "correct" | "wrong" }): GradeResult {
@@ -169,6 +214,9 @@ function gradeEssay(answer: { kind: "essay"; result: "correct" | "wrong" }): Gra
 	};
 }
 
-function normalizeText(text: string): string {
-	return text.replace(/\s+/g, "").trim();
+/** 拆开规范化后的连线 key。 */
+function splitPair(key: string): [string | null, string | null] {
+	const separator = key.indexOf("~");
+	if (separator <= 0) return [null, null];
+	return [key.slice(0, separator), key.slice(separator + 1)];
 }
