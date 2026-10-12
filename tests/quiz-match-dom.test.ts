@@ -294,3 +294,48 @@ test("DOM：重名表头会给出可区分的列名", () => {
 	assertEqual(names.length, 2, "应有两个答案列");
 	assert(names[0] !== names[1], `两个列名不应相同（实际：${JSON.stringify(names)}）`);
 });
+
+// ---------------------------------------------------------------------------
+// 实际报告过的表格：首列有重复行，答案列里混进了“测试”
+// ---------------------------------------------------------------------------
+
+const userHeader = ["协议", "端口", "测试"];
+const userRows = ["HTTP | 80 | 2", "HTTPS | 443 | 3", "SSH | 22 | 4", "HTTPS | 测试 | 测试"];
+
+test("DOM：首列重复的行只产生一个节点", () => {
+	const board = renderBoard(parseTable(userHeader, userRows));
+	const leftTexts = [...(board.columns[0]?.querySelectorAll(".easy-quiz-card__node") ?? [])].map(
+		(node) => node.textContent ?? ""
+	);
+	assertEqual(leftTexts.length, 3, `首列应有三个条目（实际 ${JSON.stringify(leftTexts)}）`);
+	assertEqual(new Set(leftTexts).size, leftTexts.length, "不应出现两个同名节点");
+	assertEqual([...leftTexts].sort().join(","), "HTTP,HTTPS,SSH", "三个条目");
+});
+
+test("DOM：首列重复的行在两列里都能连上", () => {
+	const board = renderBoard(parseTable(userHeader, userRows));
+	for (const [left, answer] of [
+		["HTTP", "80"],
+		["HTTPS", "443"],
+		["SSH", "22"],
+	] as const) {
+		board.click(left, 0);
+		board.click(answer, 1);
+	}
+	assertEqual(board.lineTargets().length, 3, "第一列应有三条连线");
+
+	for (const [left, answer] of [
+		["HTTP", "2"],
+		["HTTPS", "3"],
+		["SSH", "4"],
+	] as const) {
+		board.click(left, 0);
+		board.click(answer, 2);
+	}
+	const targets = board.lineTargets().sort((a, b) => a - b);
+	assertEqual(
+		targets.join(","),
+		"1,1,1,2,2,2",
+		`两列各三条且分别落在列 1/2（实际 ${JSON.stringify(board.lineTargets())}）`
+	);
+});

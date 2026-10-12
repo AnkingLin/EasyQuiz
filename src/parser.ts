@@ -896,26 +896,28 @@ function buildMatchColumns(header: string[], table: string[][]): MatchColumn[] {
 			for (const right of rightParts) addAnswer(right);
 		}
 
+		// 同一答案列里，首列文本相同的行合并成一个条目：题板上只出现一次，
+		// 否则会出现两个文字完全相同、无法区分的节点。
 		const merged = new Map<string, MatchEntry>();
 		for (const row of table) {
 			const leftParts = splitCell(row[0] ?? "");
 			if (leftParts.length === 0) continue;
 			for (const left of leftParts) {
-				const existing = merged.get(left);
 				const actual = [...(actualByLeft.get(left) ?? new Set<string>())];
+				const existing = merged.get(left);
 				if (existing !== undefined) {
-					// 同一文本再次出现：合并可接受答案，避免同一列出现重复条目。
+					// 合并可接受答案。
 					for (const answer of actual) {
 						if (!existing.actualTargets.includes(answer)) existing.actualTargets.push(answer);
 					}
-					continue;
+				} else {
+					merged.set(left, {
+						key: entryKey(index - 1, left),
+						text: left,
+						actualTargets: actual,
+						hash: leftHash(left),
+					});
 				}
-				merged.set(left, {
-					key: entryKey(index - 1, left),
-					text: left,
-					actualTargets: actual,
-					hash: leftHash(left),
-				});
 			}
 		}
 
