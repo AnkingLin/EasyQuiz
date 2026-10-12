@@ -13,6 +13,8 @@ import "./quiz-match-board.test";
 import "./quiz-insert.test";
 import "./quiz-insert-modal.test";
 import "./quiz-match-dom.test";
+import "./quiz-session.test";
+import "./quiz-practice-view.test";
 
 async function main(): Promise<void> {
 	const summary = await runTests();

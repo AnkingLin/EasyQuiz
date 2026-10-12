@@ -116,6 +116,25 @@ export class QuizService {
 		return parseQuizFile(content, file.path, this.parseOptions(file, this.collectTags(file)));
 	}
 
+	/** 按路径取出文件对象；路径不存在或不是文件时返回 null。 */
+	fileAtPath(path: string): TFile | null {
+		const file = this.app.vault.getAbstractFileByPath(path);
+		return file instanceof TFile ? file : null;
+	}
+
+	/**
+	 * 列出 vault 里全部题库文件（按路径排序）。
+	 *
+	 * 刷题窗口要"按文件路径展示所有题库文件"，所以这里主动扫一遍 Markdown 文件，
+	 * 而不是等用户逐个打开——识别规则仍由 `isQuizFile` 单独决定，两处不会跑偏。
+	 */
+	listQuizFiles(): TFile[] {
+		return this.app.vault
+			.getMarkdownFiles()
+			.filter((file) => this.isQuizFile(file))
+			.sort((first, second) => first.path.localeCompare(second.path));
+	}
+
 	/**
 	 * 判定并写回一条作答记录。
 	 *

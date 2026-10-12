@@ -16,42 +16,44 @@ An Obsidian plugin for Markdown-native quiz practice. Questions are written as *
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (192 cases)
+npm test           # bundle and run the test suite (255 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 ```
 
 The suite has two layers:
 
-- **Pure logic** (`parser`, `stem`, `grade`, `writeback`, `match-board`, `insert`): plain node, no DOM.
-- **DOM** (`tests/quiz-match-dom.test.ts`, `tests/quiz-insert-modal.test.ts`): renders the real card and
-  board through `renderQuizCard` under jsdom and clicks its nodes, so click handling, line targets,
-  per-column isolation and the `MarkdownRenderer` contract are checked rather than assumed; the insert
-  dialog is opened through `InsertQuestionModal` and its controls are driven. `tests/dom.ts` installs the
-  Obsidian-style DOM helpers (`createDiv`, `addClass`, …) and `tests/obsidian-stub.ts` stands in for
-  the type-only `obsidian` package.
+- **Pure logic** (`parser`, `stem`, `grade`, `writeback`, `match-board`, `insert`, `session`): plain node, no DOM.
+- **DOM** (`tests/quiz-match-dom.test.ts`, `tests/quiz-insert-modal.test.ts`, `tests/quiz-practice-view.test.ts`):
+  renders the real card and board through `renderQuizCard` under jsdom and clicks its nodes, so click handling,
+  line targets, per-column isolation and the `MarkdownRenderer` contract are checked rather than assumed; the insert
+  dialog is opened through `InsertQuestionModal` and its controls are driven; the practice window is opened through
+  `PracticeView` and walked through all three of its pages. `tests/dom.ts` installs the Obsidian-style DOM helpers
+  (`createDiv`, `addClass`, …) and `tests/obsidian-stub.ts` stands in for the type-only `obsidian` package.
 
 Source layout:
 
 ```
-src/main.ts        plugin entry: code-block processor, commands, editor menu, settings tab
-src/parser.ts      question-bank parser (pure logic, no obsidian import)
-src/types.ts       question model and parse-result types
-src/stem.ts        stem preprocessing: strips what the interactive controls render (pure logic)
-src/grade.ts       grading for the five question types (pure logic)
-src/writeback.ts   record write-back: only stats/history/rev, validated before writing
-src/hash.ts        stem hash (rev change detection)
-src/match-board.ts matching board state machine: adjacent-column links (pure logic)
-src/runtime.ts     Obsidian adapter: file detection, dependency injection, atomic writes
-src/view.ts        practice card rendering
-src/insert.ts      question templates and insertion positioning (pure logic)
-src/insert-modal.ts insert-question dialog and the editor write
-tests/             parser / stem / grading / write-back / insert tests and a question-bank fixture
+src/main.ts          plugin entry: code-block processor, commands, view registration, settings tab
+src/parser.ts        question-bank parser (pure logic, no obsidian import)
+src/types.ts         question model and parse-result types
+src/stem.ts          stem preprocessing: strips what the interactive controls render (pure logic)
+src/grade.ts         grading for the five question types (pure logic)
+src/writeback.ts     record write-back: only stats/history/rev, validated before writing
+src/hash.ts          stem hash (rev change detection)
+src/match-board.ts   matching board state machine: adjacent-column links (pure logic)
+src/session.ts       practice planning: file summaries, filtering, sampling, progress (pure logic)
+src/runtime.ts       Obsidian adapter: file detection, dependency injection, atomic writes
+src/view.ts          practice card rendering
+src/practice-view.ts practice window: question-bank list / practice settings / practice
+src/insert.ts        question templates and insertion positioning (pure logic)
+src/insert-modal.ts  insert-question dialog and the editor write
+tests/               parser / stem / grading / write-back / insert / session tests, the window tests, a fixture
 ```
 
-`parser` / `stem` / `grade` / `writeback` / `hash` / `insert` deliberately do **not** import `obsidian`,
+`parser` / `stem` / `grade` / `writeback` / `hash` / `insert` / `session` deliberately do **not** import `obsidian`,
 so they run under plain Node; every Obsidian API dependency is confined to `runtime.ts`, `view.ts`,
-and `insert-modal.ts`.
+`practice-view.ts`, and `insert-modal.ts`.
 
 The stem is rendered **without** the parts that get their own interactive control — the option list,
 the matching table, and the `==answer==` text are stripped so that nothing is displayed twice.
@@ -300,6 +302,7 @@ and never guesses an answer:
 
 | Command | What it does |
 |---|---|
+| Open practice window | Opens the practice window (also on the ribbon icon): question-bank list → practice settings → practice |
 | Insert question | Opens a dialog to build a question skeleton (type + stem title) and inserts it at the cursor |
 | Validate current question bank | Parses the active note and reports how many questions are answerable vs. need fixing |
 | Refresh quiz view | Forces the reading view to re-render the quiz blocks (also happens automatically after edits) |
@@ -326,6 +329,35 @@ reading view. The heading level, the block language, and the blank marker all fo
 below, and the insertion point is normalised so that the question always ends up separated from its
 neighbours by exactly one blank line (no matter where the cursor is, how many blank lines were there,
 or how many times you insert).
+
+## The practice window
+
+A sidebar view with three pages, so a whole practice session never leaves it (**Open practice window**, or the
+ribbon icon):
+
+1. **Question-bank list** — every question-bank file in the vault, grouped by folder and listed by path, with its
+   data on the same row: total questions, answerable, how many need fixing, per-type counts, attempts and accuracy,
+   and the date of the last attempt. A file that fails to parse reports its own error without breaking the list.
+   Tick one or more files (or **Select all answerable**) to practise them together; the header totals the selection.
+2. **Practice settings** — how to draw the questions this round:
+   - **In order**: every candidate, in file order.
+   - **Random sample**: shuffle and take N (0 or empty = everything).
+   - **Only wrong answers**: keep questions whose last attempt was wrong.
+   - **Question types**: any subset of single / multi / match / blank / essay; nothing ticked means all types.
+     Unanswerable (degraded) questions never enter a session.
+   - **Shuffle options**: randomise the question order and choice-option order (matching columns are always
+     shuffled).
+   The count line above the start button always shows how many questions are candidates and how many this round
+   will actually ask, before you start.
+3. **Practice** — one question at a time, rendered by the same card UI as in the note, with a progress bar,
+   correct/wrong tallies, previous/next (and a jump box on longer rounds). Submitting grades through the same
+   `QuizService`, so records are written back into the note exactly as in reading view. After submitting, the
+   correct answer is revealed in place — correct choice options are outlined, blank answers are written into the
+   gaps, matching questions draw the correct lines — followed by the explanation. **Peek** reveals the answer
+   without scoring. The final page summarises the round, lists what you got wrong, and offers **Retry wrong only**.
+
+Answers are keyed to file path + question id, so a round survives editing a file: the window re-parses a question
+bank when it changes and again after each write-back.
 
 ## Settings
 
@@ -374,16 +406,19 @@ Write-back rules:
 ## Status
 
 Implemented and covered by tests: the parser, stem preprocessing, grading for all five types, record
-write-back, matching-board logic, question templates with their insertion positioning, and the practice
+write-back, matching-board logic, question templates with their insertion positioning, the practice
 card UI (choice options, click-to-connect multi-column matching with shuffling, inline click-to-type
-blanks that grow with their content, short-answer self-assessment). Question-bank edits trigger a
-debounced reading-view refresh.
+blanks that grow with their content, short-answer self-assessment), and the practice window
+(question-bank list with per-file data, practice settings with type/sampling filters, and the
+one-question-at-a-time round with in-place answer reveal and a final report). Question-bank edits
+trigger a debounced reading-view refresh and invalidate the window's cached parsing.
 
-Not yet implemented: batching of multiple write-backs into one file write, alternate renderers
-(review mode / single-question panel), and statistics such as a mistake book.
+Not yet implemented: batching of multiple write-backs into one file write, and statistics that span
+rounds (a mistake book, charts) beyond what the window computes for a single round.
 
-> The card UI, the insert dialog, and write-back have **not** been verified inside a real Obsidian
-> instance. The logic layer (parsing, stem preprocessing, grading, write-back, template generation and
-> insertion positioning) is fully tested, but DOM behaviour — line rendering between columns, focus
-> handling on blank inputs, read-mode re-rendering, and how the dialog renders in a real modal — can
-> only be confirmed by hand in Obsidian.
+> The card UI, the insert dialog, write-back, and the practice window have **not** been verified inside
+> a real Obsidian instance. The logic layer (parsing, stem preprocessing, grading, write-back, template
+> generation, insertion positioning, and session planning) is fully tested, and the window's three
+> pages are exercised under jsdom, but DOM behaviour — line rendering between columns, focus handling
+> on blank inputs, read-mode re-rendering, how the dialog renders in a real modal, and how the sidebar
+> view lays out in a real workspace — can only be confirmed by hand in Obsidian.

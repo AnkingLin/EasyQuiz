@@ -13,7 +13,7 @@ import { GradeResult, UserAnswer } from "./grade";
 import { createBoardState, splitConnection } from "./match-board";
 import { formatStats, QuizService, staleNote } from "./runtime";
 import { BLANK_MARKER_PREFIX, formatStem } from "./stem";
-import { BlankMarkerMode, QuizQuestion } from "./types";
+import { BlankMarkerMode, QuizQuestion, QuizType } from "./types";
 
 export interface CardContext {
 	app: App;
@@ -34,15 +34,36 @@ export interface CardContext {
 	addRenderChild?: (child: MarkdownRenderChild) => void;
 	/** 提交完成后回调（用于刷新统计角标）。 */
 	onSubmitted?: (result: GradeResult) => void;
+	/**
+	 * 复盘模式（刷题窗口用）：不挂提交按钮，改为直接显示正确答案与解析。
+	 * 数据块渲染出的题卡不使用这个模式——那里的"看答案"就是重新读一遍源码。
+	 */
+	reviewOnly?: boolean;
+	/** 复盘渲染完成后的回调，参数是这次作答的结果；提交页用它把卡片切到复盘视图。 */
+	onReview?: (result: GradeResult | null) => void;
+	/** 题卡渲染结束（含题板布局完成）后回调，用于解除观察者等自身资源。 */
+	onCleanup?: (cleanup: () => void) => void;
 }
 
-const TYPE_LABEL: Record<string, string> = {
+export const TYPE_LABEL: Record<QuizType, string> = {
 	single: "单选",
 	multi: "多选",
 	match: "配对",
 	blank: "填空",
 	essay: "问答",
 };
+
+/** 题型显示名的兜底：题型缺失或未知时用原始值。 */
+export function typeLabel(type: QuizType | null): string {
+	if (type === null) return "未知";
+	return TYPE_LABEL[type] ?? type;
+}
+
+/** 选择题的正确答案锚点列表（单选也会被收成数组）。 */
+function answerAnchors(question: QuizQuestion): string[] {
+	if (question.answer === null) return [];
+	return Array.isArray(question.answer) ? question.answer : [question.answer];
+}
 
 /**
  * 渲染一道题。题目不可作答时渲染诊断卡片而不是刷题界面。
@@ -55,8 +76,7 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 	}
 
 	const header = card.createDiv({ cls: "easy-quiz-card__header" });
-	const typeLabel = question.type ? TYPE_LABEL[question.type] ?? question.type : "未知";
-	header.createSpan({ cls: "easy-quiz-card__type", text: typeLabel });
+	header.createSpan({ cls: "easy-quiz-card__type", text: typeLabel(question.type) });
 	header.createSpan({ cls: "easy-quiz-card__title", text: question.title });
 	header.createSpan({
 		cls: `easy-quiz-card__stats${question.stale ? " is-stale" : ""}`,
@@ -139,6 +159,16 @@ function renderChoice(question: QuizQuestion, card: HTMLElement, ctx: CardContex
 		}
 	};
 
+	// 复盘态：把正确选项标出来（提交后由 renderSubmit 统一驱动复盘）。
+	const review = ctx.reviewOnly === true;
+	if (review) {
+		const expected = answerAnchors(question);
+		for (const button of buttons) {
+			if (button.anchor === null) continue;
+			button.el.addClass(expected.includes(button.anchor) ? "is-answer" : "is-not-answer");
+		}
+	}
+
 	for (const option of question.options) {
 		// 用普通按钮而不是 <input type="radio">：避免表单控件在阅读视图里的原生行为
 		// （重渲染、键盘默认动作）干扰数据块渲染。
@@ -155,6 +185,8 @@ function renderChoice(question: QuizQuestion, card: HTMLElement, ctx: CardContex
 		const toggle = () => {
 			const anchor = option.anchor;
 			if (anchor === null) return;
+			// 复盘态下选项只是"看答案"，不接受改选。
+			if (review) return;
 			if (multi) {
 				if (selected.has(anchor)) selected.delete(anchor);
 				else selected.add(anchor);
@@ -183,14 +215,38 @@ function renderChoice(question: QuizQuestion, card: HTMLElement, ctx: CardContex
 
 function renderBlanks(question: QuizQuestion, bodyEl: HTMLElement, card: HTMLElement, ctx: CardContext): void {
 	const fields = new Map<string, HTMLElement>();
+	// 复盘态：空位里直接写出答案，而不是留一个可编辑的框。
+	const review = ctx.reviewOnly === true;
+	/** 复盘时已经写进题面的空位（题面里找不到的走下方列表）。 */
+	const revealed = new Set<string>();
 
 	// 把题面中的占位标记替换成可点击的空位。
 	for (const blank of question.blanks) {
 		const label = `${BLANK_MARKER_PREFIX}${blank.anchor}`;
 		const placeholder = findTextElement(bodyEl, label);
 		if (placeholder === null) continue;
+		if (review) {
+			placeholder.replaceWith(createSpan({ cls: "easy-quiz-card__blank-answer", text: blank.expected }));
+			revealed.add(blank.anchor);
+			continue;
+		}
 		const field = createBlankField(blank.anchor, fields);
 		placeholder.replaceWith(field);
+	}
+
+	// 复盘态：题面里没能就地写出的空位仍然要在列表里给出答案。
+	if (review) {
+		if (revealed.size < question.blanks.length) {
+			const list = card.createDiv({ cls: "easy-quiz-card__blanks" });
+			for (const [index, blank] of question.blanks.entries()) {
+				if (revealed.has(blank.anchor)) continue;
+				const row = list.createDiv({ cls: "easy-quiz-card__blank" });
+				row.createSpan({ text: `第 ${index + 1} 空` });
+				row.createSpan({ cls: "easy-quiz-card__blank-answer", text: blank.expected });
+			}
+		}
+		renderSubmit(card, ctx, question, "提交答案", () => null);
+		return;
 	}
 
 	// 题面里没找到（例如题面为空）时，退化为逐空列表，保证仍可作答。
@@ -292,6 +348,8 @@ export function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: Card
 	/** 条目 key → 节点元素。 */
 	const nodes = new Map<string, HTMLElement>();
 	const columnEls = new Map<number, HTMLElement>();
+	// 复盘态：节点不再可点，直接画出正确连线。
+	const review = ctx.reviewOnly === true;
 
 	for (const column of columns) {
 		const col = createBoardColumn(grid, column.name);
@@ -303,11 +361,18 @@ export function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: Card
 				text: item.text,
 			});
 			nodes.set(item.key, el);
-			el.addEventListener("click", () => onNodeClick(item.key));
+			if (!review) el.addEventListener("click", () => onNodeClick(item.key));
 		}
 	}
 
 	const state = createBoardState(columns.flatMap((column) => column.items));
+	if (review) {
+		// 复用状态机：正确连线 = 依次"点中一端、再点另一端"，画出来的效果与玩家自己连的完全一致。
+		for (const pair of question.boardPairs) {
+			state.click(pair.left);
+			state.click(pair.right);
+		}
+	}
 
 	function onNodeClick(key: string): void {
 		if (state.click(key)) paint();
@@ -362,6 +427,8 @@ export function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: Card
 			svg.appendChild(path);
 
 			// 命中层：透明的粗线，只负责接收点击，用来删除这一条连线。
+			// 复盘态下玩家连的线不该再被改动，因此不挂命中层。
+			if (review) continue;
 			const hit = createSvg("path", { cls: "easy-quiz-card__link-hit" });
 			hit.setAttribute("d", d);
 			hit.addEventListener("click", (event) => {
@@ -373,8 +440,10 @@ export function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: Card
 	}
 
 	// 尺寸变化后重新画线，避免连线错位。
+	// 观察者与卡片同生命周期：卡片被换掉时由 `onCleanup` 解除，避免观察已移除的节点。
 	const observer = new ResizeObserver(() => paint());
 	observer.observe(board);
+	ctx.onCleanup?.(() => observer.disconnect());
 	window.setTimeout(() => paint(), 0);
 
 	renderSubmit(card, ctx, question, "提交答案", () => {
@@ -409,6 +478,12 @@ function shuffle<T>(items: readonly T[]): T[] {
 // ---------------------------------------------------------------------------
 
 function renderEssay(question: QuizQuestion, card: HTMLElement, ctx: CardContext): void {
+	// 复盘态：不再要一次自评，只把"参考答案见题面折叠块"的提示摊开。
+	if (ctx.reviewOnly === true) {
+		renderSubmit(card, ctx, question, "已掌握", () => null);
+		return;
+	}
+
 	const area = card.createEl("textarea", { cls: "easy-quiz-card__essay" });
 	area.placeholder = "写下你的答案，再自评是否掌握。";
 	const row = card.createDiv({ cls: "easy-quiz-card__actions" });
@@ -430,6 +505,8 @@ function renderEssay(question: QuizQuestion, card: HTMLElement, ctx: CardContext
 		feedback.addClass(outcome.correct ? "is-correct" : "is-wrong");
 		feedback.setText(outcome.correct ? "已记录：掌握" : "已记录：未掌握");
 		ctx.onSubmitted?.(outcome);
+		renderReview(card, question);
+		ctx.onReview?.(outcome);
 	};
 	passed.addEventListener("click", () => void submitEssay("correct"));
 	failed.addEventListener("click", () => void submitEssay("wrong"));
@@ -442,6 +519,13 @@ function renderSubmit(
 	label: string,
 	collect: () => UserAnswer | null
 ): void {
+	// 刷题窗口的复盘态：不提供提交入口，直接把答案与解析摊开。
+	if (ctx.reviewOnly === true) {
+		renderReview(card, question);
+		ctx.onReview?.(null);
+		return;
+	}
+
 	const startedAt = Date.now();
 	const row = card.createDiv({ cls: "easy-quiz-card__actions" });
 	const button = row.createEl("button", { text: label, cls: "mod-cta" });
@@ -474,5 +558,68 @@ function renderSubmit(
 			if (detail.note) feedback.createDiv({ cls: "easy-quiz-card__note", text: detail.note });
 		}
 		ctx.onSubmitted?.(result);
+		// 复盘内容由调用方决定：数据块渲染时留在原卡片里，刷题窗口则换成下一题。
+		renderReview(card, question);
+		ctx.onReview?.(result);
+	}
+}
+
+/**
+ * 把正确答案摊在题卡下方。
+ *
+ * 只在提交之后调用：选择题列出正确锚点，填空题给出每空原文，
+ * 配对题补画正确连线（见 `renderMatch` 的复盘分支），问答/选择题的解析写在最后。
+ */
+function renderReview(card: HTMLElement, question: QuizQuestion): void {
+	card.addClass("is-reviewed");
+	const box = card.createDiv({ cls: "easy-quiz-card__review" });
+	box.createDiv({ cls: "easy-quiz-card__review-head", text: "正确答案" });
+
+	const answers = reviewAnswers(question);
+	if (answers.length === 0) {
+		box.createDiv({ cls: "easy-quiz-card__review-empty", text: "这道题没有可对照的答案。" });
+	} else {
+		const list = box.createEl("ul", { cls: "easy-quiz-card__review-list" });
+		for (const answer of answers) list.createEl("li", { text: answer });
+	}
+
+	if (question.explanation !== null && question.explanation.trim() !== "") {
+		const note = box.createDiv({ cls: "easy-quiz-card__review-note" });
+		note.createDiv({ cls: "easy-quiz-card__review-head", text: "解析" });
+		// 解析是 Markdown，但复盘区只承载短文本；按纯文本渲染，避免再引入一次异步渲染。
+		note.createDiv({ text: question.explanation.trim() });
+	}
+}
+
+/** 一道题的正确答案文本（按题型给出人类可读形式）。 */
+function reviewAnswers(question: QuizQuestion): string[] {
+	switch (question.type) {
+		case "single":
+		case "multi": {
+			const anchors = Array.isArray(question.answer)
+				? question.answer
+				: question.answer === null
+					? []
+					: [question.answer];
+			return anchors.map((anchor) => {
+				const option = question.options.find((item) => item.anchor === anchor);
+				return option ? `${anchor}（${option.text}）` : anchor;
+			});
+		}
+		case "blank":
+			return question.blanks.map((blank, index) => `第 ${index + 1} 空：${blank.expected}`);
+		case "match": {
+			const text = new Map<string, string>();
+			for (const column of question.board) {
+				for (const item of column.items) text.set(item.key, item.text);
+			}
+			return question.boardPairs.map(
+				(pair) => `${text.get(pair.left) ?? pair.left} — ${text.get(pair.right) ?? pair.right}`
+			);
+		}
+		case "essay":
+			return ["问答题按自评记录，参考答案见题面中的折叠标注。"];
+		default:
+			return [];
 	}
 }

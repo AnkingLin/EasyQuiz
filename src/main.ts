@@ -16,6 +16,7 @@ import { BlankMarkerMode, ParsedQuizFile, QuizQuestion } from "./types";
 import { DEFAULT_SETTINGS, QuizService, RuntimeSettings } from "./runtime";
 import { renderQuizCard } from "./view";
 import { insertQuestionAtCursor, InsertQuestionOptions } from "./insert-modal";
+import { PRACTICE_VIEW_TYPE, PracticeView } from "./practice-view";
 
 export default class EasyQuizPlugin extends Plugin {
 	// 两者都在 onload 中先于任何注册动作完成初始化。
@@ -25,6 +26,11 @@ export default class EasyQuizPlugin extends Plugin {
 	async onload() {
 		await this.loadSettings();
 		this.service = new QuizService(this.app, this.settings);
+
+		// 刷题窗口：题库列表 / 刷题设置 / 刷题三个页面都在这个自定义视图里。
+		this.registerView(PRACTICE_VIEW_TYPE, (leaf) => {
+			return new PracticeView(leaf, this, () => this.openPluginSettings());
+		});
 
 		// 题库文件中的数据块由这里渲染成刷题界面。
 		// 阅读视图/预览中渲染；实时预览下光标进入会还原为源码，属 Obsidian 的既定行为。
@@ -36,6 +42,7 @@ export default class EasyQuizPlugin extends Plugin {
 		);
 
 		// 题目被编辑后，阅读视图里的数据块不会自动重渲染，需要手动刷新一次。
+		// 刷题窗口同样缓存了解析结果，一并标脏。
 		const refresh = debounce((file: TFile) => this.refreshPreviews(file), 150, true);
 		this.registerEvent(
 			this.app.metadataCache.on("changed", (file) => {
@@ -68,6 +75,18 @@ export default class EasyQuizPlugin extends Plugin {
 				if (!checking) void this.validateFile(file);
 				return true;
 			},
+		});
+
+		this.addCommand({
+			id: "open-practice-window",
+			name: "打开刷题窗口",
+			callback: () => {
+				void this.openPracticeView();
+			},
+		});
+
+		this.addRibbonIcon("graduation-cap", "打开刷题窗口", () => {
+			void this.openPracticeView();
 		});
 
 		this.addCommand({
@@ -116,6 +135,39 @@ export default class EasyQuizPlugin extends Plugin {
 
 	onunload() {}
 
+	/**
+	 * 打开（或聚焦）刷题窗口。
+	 *
+	 * Obsidian 没有"单例视图"的开关：先找已经打开的同类型叶子复用，
+	 * 没有才在右侧新建一个，避免命令连点开出好几个窗口。
+	 * 这里刻意不调用 `revealLeaf`（Obsidian 1.7.2 起才有），
+	 * 以保持 manifest 里声明的最低版本；`active: true` 已能让叶子显示出来。
+	 */
+	private async openPracticeView(): Promise<void> {
+		const existing = this.app.workspace.getLeavesOfType(PRACTICE_VIEW_TYPE);
+		const leaf = existing[0] ?? this.app.workspace.getRightLeaf(false);
+		if (leaf === null) return;
+		await leaf.setViewState({ type: PRACTICE_VIEW_TYPE, active: true });
+		const view = leaf.view;
+		if (view instanceof PracticeView) await view.activate();
+	}
+
+	/** 让设置页定位到本插件（视图里的「打开设置」按钮）。 */
+	private openPluginSettings(): void {
+		const setting = (this.app as unknown as { setting?: { open(): void; openTabById(id: string): void } }).setting;
+		setting?.open();
+		setting?.openTabById(this.manifest.id);
+	}
+
+	/** 当前打开的刷题窗口（可能不止一个，逐个通知）。 */
+	private practiceViews(): PracticeView[] {
+		const views: PracticeView[] = [];
+		for (const leaf of this.app.workspace.getLeavesOfType(PRACTICE_VIEW_TYPE)) {
+			if (leaf.view instanceof PracticeView) views.push(leaf.view);
+		}
+		return views;
+	}
+
 	/** 该路径是否可能是题库文件（用于限制刷新范围，避免无谓重渲染）。 */
 	private isQuizPath(path: string): boolean {
 		const file = this.app.vault.getAbstractFileByPath(path);
@@ -129,6 +181,7 @@ export default class EasyQuizPlugin extends Plugin {
 	 * 只有当前正在阅读视图里显示的笔记才需要刷新；`force` 为 true 时用于手动刷新命令。
 	 */
 	private refreshPreviews(file: TFile, force = false): void {
+		for (const view of this.practiceViews()) view.markStale();
 		for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
 			const view = leaf.view;
 			if (!(view instanceof MarkdownView)) continue;

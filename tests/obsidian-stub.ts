@@ -59,12 +59,34 @@ export class MarkdownRenderer {
 
 export class TFile {
 	path = "";
+	basename = "";
+	stat = { mtime: 0 };
 }
-
 export class Plugin {}
 export class PluginSettingTab {}
 export class Notice {}
 export class MarkdownView {}
+export class Events {}
+export class WorkspaceLeaf {}
+export class View {
+	app: unknown = {};
+	containerEl: HTMLElement;
+	constructor() {
+		this.containerEl = document.body.createDiv();
+	}
+}
+export class ItemView extends View {
+	leaf: unknown;
+	contentEl: HTMLElement;
+	constructor(leaf: unknown) {
+		super();
+		this.leaf = leaf;
+		this.contentEl = document.body.createDiv();
+	}
+	addAction(): HTMLElement {
+		return this.contentEl.createDiv();
+	}
+}
 export function debounce<T extends (...args: never[]) => unknown>(fn: T): T {
 	return fn;
 }
@@ -109,14 +131,25 @@ interface TextComponentLike {
 	onChange(callback: (value: string) => unknown): unknown;
 }
 
+/** 开关控件的回调签名与文本控件不同，因此单独给一个接口。 */
+interface ToggleComponentLike {
+	onChange(callback: (value: boolean) => unknown): unknown;
+}
+
 export class Setting {
-	/** 测试里用它调用 `.addText()` 等回调，观察控件状态。 */
+	/** 设置行的名称区与控件区（与真实实现同名，视图会把控件挂进 controlEl）。 */
 	settingEl: HTMLElement;
+	nameEl: HTMLElement;
+	descEl: HTMLElement;
+	controlEl: HTMLElement;
 	/** 最近一次注册的控件，供测试读取值。 */
-	components: (TextComponentLike | ButtonComponent)[] = [];
+	components: (TextComponentLike | ToggleComponentLike | ButtonComponent)[] = [];
 
 	constructor(public containerEl: HTMLElement) {
 		this.settingEl = containerEl.createDiv();
+		this.nameEl = this.settingEl.createDiv();
+		this.descEl = this.settingEl.createDiv();
+		this.controlEl = this.settingEl.createDiv();
 		// 测试要按顺序取回某个 Setting 上的控件；给元素挂一个反向引用最省事。
 		(this.settingEl as unknown as { setting: Setting }).setting = this;
 	}
@@ -128,17 +161,21 @@ export class Setting {
 		return this;
 	}
 
-	private track<T extends TextComponentLike>(component: T): T {
-		this.components.push(component);
+	private track<T>(component: T): T {
+		this.components.push(component as TextComponentLike | ToggleComponentLike | ButtonComponent);
 		return component;
 	}
 
 	addText(callback: (text: TextComponent) => unknown): this {
-		callback(this.track(new TextComponent()));
+		callback(this.track(new TextComponent(this.controlEl)));
 		return this;
 	}
 	addDropdown(callback: (dropdown: DropdownComponent) => unknown): this {
-		callback(this.track(new DropdownComponent()));
+		callback(this.track(new DropdownComponent(this.controlEl)));
+		return this;
+	}
+	addToggle(callback: (toggle: ToggleComponent) => unknown): this {
+		callback(this.track(new ToggleComponent(this.controlEl)));
 		return this;
 	}
 	addButton(callback: (button: ButtonComponent) => unknown): this {
@@ -151,14 +188,26 @@ export class Setting {
 
 class TextComponent implements TextComponentLike {
 	value = "";
+	/** 对应的真实 input；测试可以直接改值并派发 change。 */
+	inputEl: HTMLInputElement;
+	disabled = false;
 	private handlers: ((value: string) => unknown)[] = [];
+
+	constructor(container: HTMLElement) {
+		this.inputEl = container.createEl("input");
+	}
 
 	setValue(value: string): this {
 		this.value = value;
+		this.inputEl.value = value;
 		return this;
 	}
 	onChange(callback: (value: string) => unknown): this {
 		this.handlers.push(callback);
+		return this;
+	}
+	setDisabled(disabled: boolean): this {
+		this.disabled = disabled;
 		return this;
 	}
 	/** 模拟用户输入。 */
@@ -177,6 +226,28 @@ class DropdownComponent extends TextComponent {
 	}
 	getOptions(): string[] {
 		return [...this.options.keys()];
+	}
+}
+
+/** 开关控件：只保留"值 + 变化回调"这两件视图会用到的事。 */
+class ToggleComponent {
+	value = false;
+	private handlers: ((value: boolean) => unknown)[] = [];
+
+	constructor(public containerEl: HTMLElement) {}
+
+	setValue(value: boolean): this {
+		this.value = value;
+		return this;
+	}
+	onChange(callback: (value: boolean) => unknown): this {
+		this.handlers.push(callback);
+		return this;
+	}
+	/** 模拟用户切换。 */
+	setUserValue(value: boolean): void {
+		this.value = value;
+		for (const handler of this.handlers) handler(value);
 	}
 }
 
