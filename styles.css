@@ -263,6 +263,24 @@
 	stroke-width: 2;
 	stroke-linecap: round;
 	opacity: 0.85;
+	/* 细线不参与命中，点击交给下面的命中层。 */
+	pointer-events: none;
+}
+
+/* 连线的命中层：和连线同一条路径的透明粗线，只有它接收点击（点击 = 删掉这一条线）。 */
+.easy-quiz-card__link-hit {
+	fill: none;
+	stroke: transparent;
+	stroke-width: 12;
+	stroke-linecap: round;
+	pointer-events: stroke;
+	cursor: pointer;
+}
+
+/* 悬停时把这条线标红，提示"点它会删掉"。 */
+.easy-quiz-card__link-hit:hover {
+	stroke: var(--text-error, #e93147);
+	opacity: 0.4;
 }
 
 /* ------------------------------------------------------- 提交与结果反馈 */

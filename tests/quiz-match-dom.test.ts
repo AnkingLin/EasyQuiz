@@ -248,13 +248,16 @@ test("DOM：中间列条目能同时连左右相邻列", () => {
 	assertEqual(board.lineTargets().length, 2, "80 应同时连上 协议 与 层级 两列");
 });
 
-test("DOM：改动中间列一侧不会丢掉另一侧", () => {
+test("DOM：改动中间列一侧要先删旧线，且不会丢掉另一侧", () => {
 	const board = renderBoard(parseTable(header3, rows3));
 	board.click("HTTP", 0);
 	board.click("80", 1);
 	board.click("80", 1);
 	board.click("应用层", 2);
-	// 把 80 与 层级 的连接改成 网络层
+	// 改连：先把 80 与 层级 的连接点掉，再连到 网络层。
+	board.click("80", 1);
+	board.click("应用层", 2);
+	assertEqual(board.lineTargets().length, 1, "旧线应被点掉");
 	board.click("80", 1);
 	board.click("网络层", 2);
 	assertEqual(board.lineTargets().length, 2, "仍应保留两条连线");
@@ -263,6 +266,55 @@ test("DOM：改动中间列一侧不会丢掉另一侧", () => {
 		"1,2",
 		"一条在列 1、一条在列 2"
 	);
+});
+
+// ---------------------------------------------------------------------------
+// 连线切换与取消连接
+// ---------------------------------------------------------------------------
+
+test("DOM：同一对条目再点一次即删掉这条线", () => {
+	const board = renderBoard(parseTable(header3, rows3));
+	board.click("HTTP", 0);
+	board.click("80", 1);
+	assertEqual(board.lineTargets().length, 1, "先连上");
+	board.click("HTTP", 0);
+	board.click("80", 1);
+	assertEqual(board.lineTargets().length, 0, "再点一次应删掉");
+	assertEqual(board.linkedTexts().length, 0, "节点不应再标记为已连线");
+});
+
+test("DOM：点击已画出的连线可以删掉那一条", () => {
+	const board = renderBoard(parseTable(header3, rows3));
+	board.click("HTTP", 0);
+	board.click("80", 1);
+	board.click("HTTP", 0);
+	board.click("0", 1);
+	assertEqual(board.lineTargets().length, 2, "HTTP 应连上两条");
+	const hits = [...board.card.querySelectorAll(".easy-quiz-card__link-hit")];
+	assertEqual(hits.length, 2, "每条连线都应有命中层");
+	hits[0]?.dispatchEvent(new testWindow.MouseEvent("click", { bubbles: true }));
+	assertEqual(board.lineTargets().length, 1, "点掉一条后应剩一条");
+	assertEqual(board.linkedTexts().join(","), "HTTP,0", "另一端应保留 is-linked");
+});
+
+test("DOM：合并后的首列条目能连出全部正确答案（一对多可作答）", () => {
+	// 两个行首条文本相同 → 合并成一个节点，但它要对两个答案各连一条。
+	const board = renderBoard(parseTable(["数据库", "类型"], ["关系型 | MySQL", "关系型 | PostgreSQL"]));
+	assertEqual(board.columns[0]?.querySelectorAll(".easy-quiz-card__node").length, 1, "首列应合并成一个条目");
+	board.click("关系型", 0);
+	board.click("MySQL", 1);
+	board.click("关系型", 0);
+	board.click("PostgreSQL", 1);
+	assertEqual(board.lineTargets().length, 2, "合并项应能连出两条线");
+});
+
+test("DOM：右格斜杠一对多能连出全部正确答案", () => {
+	const board = renderBoard(parseTable(["数据库", "类型"], ["关系型 | MySQL / PostgreSQL"]));
+	board.click("关系型", 0);
+	board.click("MySQL", 1);
+	board.click("关系型", 0);
+	board.click("PostgreSQL", 1);
+	assertEqual(board.lineTargets().length, 2, "两条线都应连上");
 });
 
 // ---------------------------------------------------------------------------
@@ -431,5 +483,45 @@ test("DOM：首列重复的行在相邻列都能连上", () => {
 		board.lineTargets().length,
 		6,
 		`第 2、3 列之间应再有三条（实际 ${JSON.stringify(board.lineTargets())}）`
+	);
+});
+
+test("DOM：报告过的表格能连出全部正确答案（重复行 + 一对多）", () => {
+	// 这张表里 HTTPS 两行合并成一个节点，但正确答案要求它连 443 与 测试 两条；
+	// 以前"改连即替换"会让第 7 条顶掉第 3 条，这道题永远答不对。
+	const question = parseTable(userHeader, userRows);
+	const board = renderBoard(question);
+	const textOf = new Map<string, string>();
+	const columnOf = new Map<string, number>();
+	for (const column of question.board) {
+		for (const item of column.items) {
+			textOf.set(item.key, item.text);
+			columnOf.set(item.key, column.index);
+		}
+	}
+	for (const pair of question.boardPairs) {
+		board.click(textOf.get(pair.left) ?? "", columnOf.get(pair.left) ?? -1);
+		board.click(textOf.get(pair.right) ?? "", columnOf.get(pair.right) ?? -1);
+	}
+	assertEqual(
+		board.lineTargets().length,
+		question.boardPairs.length,
+		`应能连出全部 ${question.boardPairs.length} 条正确答案（实际 ${board.lineTargets().length} 条）`
+	);
+});
+
+test("DOM：中间列条目在右侧也能连多条（共享答案列）", () => {
+	// 端口 80 被两行共用 → 合并成一个节点，它要对两个层级各连一条。
+	const board = renderBoard(
+		parseTable(["协议", "端口", "层级"], ["HTTP | 80 | 应用层", "HTTPS | 80 | 传输层"])
+	);
+	board.click("80", 1);
+	board.click("应用层", 2);
+	board.click("80", 1);
+	board.click("传输层", 2);
+	assertEqual(
+		board.lineTargets().length,
+		2,
+		`端口 80 应能连到两个层级（实际 ${JSON.stringify(board.lineTargets())}）`
 	);
 });

@@ -7,8 +7,14 @@
  * 交互规则：
  *   - 只允许**相邻两列**之间连线（第 1↔2、2↔3…），跨列连线一律拒绝。
  *   - 方向无关：从左往右点与从右往左点得到同一条线。
- *   - 每个条目在每一侧只保留一条连线；改连时**先建新线、再解旧线**。
- *   - 重复点击已连线的节点只是取消选中，不会静默删线。
+ *   - 点击相邻两列的条目 = **按这一条线切换**：没有就建立，已有就删除。
+ *     因此一个条目可以同时连多条线——这是"合并"的必然要求：
+ *     同列同文本的条目合并成一个节点后，它在正确答案里本来就挂着多条线
+ *     （见 `parser.ts` 的 `itemFor` 去重与 `splitCell` 斜杠拆分），
+ *     而判分要求一条不多一条不少（`grade.ts` 的 `gradeMatch`）。
+ *   - "取消连接"就是这个手势的反面，不需要修饰键、长按或额外模式；
+ *     改连 = 先删旧线、再连新线。
+ *   - 重复点击**同一个**节点只是取消选中，不会静默删线。
  */
 
 import { BoardItem, BoardPair } from "./types";
@@ -56,6 +62,8 @@ export interface BoardView {
 
 export interface BoardState {
 	click: (itemKey: string) => boolean;
+	/** 删除一条连线（点击已画出的连线时使用）。返回该连线此前是否存在。 */
+	remove: (connection: string) => boolean;
 	view: () => BoardView;
 	/** 提交用的连线列表（key 为 `左key~右key`）。 */
 	pairs: () => BoardPair[];
@@ -70,7 +78,7 @@ export function createBoardState(items: BoardItem[]): BoardState {
 	const itemAt = new Map<string, BoardItem>();
 	for (const item of items) itemAt.set(item.key, item);
 
-	/** 条目 key → 与它相连的连线（每个条目在每一侧至多一条，故用 Set）。 */
+	/** 条目 key → 与它相连的连线（一个条目可以有多条，故用 Set）。 */
 	const byItem = new Map<string, Set<string>>();
 	/** 一条连线 → 两端条目 key。 */
 	const endpoints = new Map<string, [string, string]>();
@@ -95,26 +103,11 @@ export function createBoardState(items: BoardItem[]): BoardState {
 	}
 
 	/**
-	 * 只解除「某一端」上的连线，并清理该连线记录。
+	 * 建立一条连线。
 	 *
-	 * 注意不能把两端都解掉：中间列的条目可以同时连左右两侧，
-	 * 替换其中一条线时，另一侧的连线必须保留。
-	 */
-	function unlink(itemKey: string, connection: string): void {
-		linksOf(itemKey).delete(connection);
-		endpoints.delete(connection);
-	}
-
-	/**
-	 * 建立连线，并解除被它取代的旧连线（先建后解）。
-	 *
-	 * 约束：**每个条目在同一对相邻列里至多一条连线**。
-	 * 由于"一个答案可以被同列多个条目连上"（合并选项），
-	 * 判断是否已有该列对的连线时，看的是连线在**小列那一侧**的端点：
-	 *   - 同一左条目改连另一个答案 → 替换；
-	 *   - 同一答案改由另一个左条目连上 → 替换；
-	 *   - 两个不同左条目连到同一答案（一对多）→ 两条并存；
-	 *   - 中间列条目的左右两侧属于不同列对 → 两条并存。
+	 * **不做任何"替换"推断**：同一条目在同一对相邻列里可以连多条，
+	 * 因为合并后的条目在正确答案里可能要对多个条目负责。
+	 * 是否覆盖旧线由玩家显式决定（先删再连），不猜测意图。
 	 */
 	function connect(firstKey: string, secondKey: string): boolean {
 		const a = itemAt.get(firstKey);
@@ -122,49 +115,25 @@ export function createBoardState(items: BoardItem[]): BoardState {
 		if (a === undefined || b === undefined) return false;
 		const connection = makeConnection(a, b);
 		if (connection === null) return false;
-
-		const columnOf = (key: string): number => itemAt.get(key)?.column ?? -1;
-		const pairOf = (old: string): string | null => {
-			const ends = endpoints.get(old);
-			if (ends === undefined) return null;
-			return [...ends.map(columnOf)].sort((x, y) => x - y).join("-");
-		};
-		/** 把一条连线归一化成 `[小列端, 大列端]`。 */
-		const orderEnds = (old: string): [string, string] | null => {
-			const ends = endpoints.get(old);
-			if (ends === undefined) return null;
-			return columnOf(ends[0]) <= columnOf(ends[1]) ? [ends[0], ends[1]] : [ends[1], ends[0]];
-		};
-
-		const ordered = [firstKey, secondKey].sort((x, y) => columnOf(x) - columnOf(y));
-		const newSmall = ordered[0] ?? firstKey;
-		const newLarge = ordered[1] ?? secondKey;
-		const newPair = [columnOf(newSmall), columnOf(newLarge)].sort((x, y) => x - y).join("-");
-
-		// 一对一匹配，但**不因"右端相同"而替换**：
-		// 同一列的多个条目可以指向同一个答案（合并选项，如 MySQL / PostgreSQL → 关系型）。
-		// 判定规则（只看同一对相邻列里的连线）：
-		//   - 左端相同（同一左条目改连别的答案）→ 冲突，替换；
-		//   - 右端相同**且**左端不同 → 不冲突，允许并存；
-		//   - 其它情况（如中间列另一侧）→ 不同列对，不冲突。
-		const conflicts = (old: string): boolean => {
-			if (old === connection) return false;
-			if (pairOf(old) !== newPair) return false;
-			const ends = orderEnds(old);
-			if (ends === null) return false;
-			return ends[0] === newSmall;
-		};
-
-		const replaced = new Set<string>();
-		for (const old of [...endpoints.keys()]) {
-			if (conflicts(old)) replaced.add(old);
-		}
-
 		addConnection(connection, firstKey, secondKey);
-		for (const old of replaced) {
-			const oldEnds = endpoints.get(old);
-			if (oldEnds === undefined) continue;
-			for (const end of oldEnds) unlink(end, old);
+		return true;
+	}
+
+	/**
+	 * 删除一条连线。
+	 *
+	 * 必须**两端都删**：中间列的条目可以同时连左右两侧，
+	 * 只删一端会在另一端留下查不到的悬挂连线。
+	 */
+	function disconnect(connection: string): boolean {
+		const ends = endpoints.get(connection);
+		if (ends === undefined) return false;
+		endpoints.delete(connection);
+		for (const end of ends) {
+			const links = byItem.get(end);
+			if (links === undefined) continue;
+			links.delete(connection);
+			if (links.size === 0) byItem.delete(end);
 		}
 		return true;
 	}
@@ -174,6 +143,7 @@ export function createBoardState(items: BoardItem[]): BoardState {
 			const item = itemAt.get(itemKey);
 			if (item === undefined) return false;
 
+			// 没有选中项：选中它。再次点击选中项本身：取消选中（不删线）。
 			if (activeKey === null || activeKey === itemKey) {
 				activeKey = activeKey === itemKey ? null : itemKey;
 				return true;
@@ -185,19 +155,22 @@ export function createBoardState(items: BoardItem[]): BoardState {
 				return true;
 			}
 
-			// 点击「当前选中的那个已连线条目」= 取消选中，不删线。
-			if (activeKey === itemKey) {
-				activeKey = null;
-				return true;
-			}
-
-			if (!connect(activeKey, itemKey)) {
-				// 同列或跨列：改为选中新点中的条目（不产生连线）。
+			const connection = makeConnection(first, item);
+			if (connection === null) {
+				// 同列或跨列：不成线，改为选中新点中的条目。
 				activeKey = itemKey;
 				return true;
 			}
+
+			// 同一对条目再点一次 = 取消这条连线；否则建立新线。
+			if (endpoints.has(connection)) disconnect(connection);
+			else connect(activeKey, itemKey);
 			activeKey = null;
 			return true;
+		},
+
+		remove(connection: string): boolean {
+			return disconnect(connection);
 		},
 
 		view(): BoardView {

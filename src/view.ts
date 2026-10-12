@@ -266,8 +266,12 @@ function findTextElement(root: HTMLElement, label: string): HTMLElement | null {
  *
  * - 首列是待匹配项，其余每一列都是一组需要配对的答案，各自渲染成一列。
  * - 各列顺序都会**独立打乱**，因此题目顺序不会泄露答案。
- * - 同一列内答案相同的条目已在解析阶段合并，所以不会出现重复选项。
- * - 交互规则（选中、连线、替换、禁止跨列）都在 `match-board.ts` 的状态机里，
+ * - 同一列内答案相同的条目已在解析阶段合并，所以不会出现重复选项；
+ *   合并后的条目可能要对多个条目负责（斜杠一对多 / 多行重复文本），
+ *   因此连线是「按线切换」而不是「改连即替换」，详见 `match-board.ts`。
+ * - 点击已画出的连线可以删掉那一条；对连了多条线的合并条目，这比
+ *   "记住两端再点一遍"更直接。
+ * - 交互规则（选中、连线、取消连线、禁止跨列）都在 `match-board.ts` 的状态机里，
  *   这里只负责把状态画出来。
  */
 export function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: CardContext): void {
@@ -353,8 +357,18 @@ export function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: Card
 			const y2 = to.top + to.height / 2 - boardRect.top;
 			const path = createSvg("path", { cls: "easy-quiz-card__link" });
 			const mid = (x1 + x2) / 2;
-			path.setAttribute("d", `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`);
+			const d = `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`;
+			path.setAttribute("d", d);
 			svg.appendChild(path);
+
+			// 命中层：透明的粗线，只负责接收点击，用来删除这一条连线。
+			const hit = createSvg("path", { cls: "easy-quiz-card__link-hit" });
+			hit.setAttribute("d", d);
+			hit.addEventListener("click", (event) => {
+				event.stopPropagation();
+				if (state.remove(connection)) paint();
+			});
+			svg.appendChild(hit);
 		}
 	}
 

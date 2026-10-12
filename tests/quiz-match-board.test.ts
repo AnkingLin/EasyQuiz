@@ -4,7 +4,10 @@
  * 规则（都由这里固定下来）：
  *   1. 每一列只允许与**相邻列**连线；
  *   2. 禁止跨列连线；
- *   3. 从左到右与从右到左是**同一条线**（判分等效）。
+ *   3. 从左到右与从右到左是**同一条线**（判分等效）；
+ *   4. 点相邻两列的一对条目 = 按这一条线切换：没有就建、已有就删；
+ *   5. 因此一个条目可以连多条线（合并项一对多），改连要先删后连。
+ *      详见 src/match-board.ts 顶部的交互规则说明。
  */
 
 import {
@@ -121,16 +124,20 @@ test("中间列条目可以同时连左右相邻列", () => {
 	assert(connections.includes("i1.b1~i2.c1"), "应有 B-C 连线");
 });
 
-test("每一对相邻列各自只保留一条：改连时先建后解", () => {
+test("改连 = 先删旧线、再连新线", () => {
 	const state = board();
 	state.click(A1.key);
 	state.click(B1.key);
-	// 同一对列（A-B）里把 A1 改连 B2。
+	// 同一对条目再点一次 = 取消这条连线。
+	state.click(A1.key);
+	state.click(B1.key);
+	assertEqual(state.view().connections.length, 0, "再点一次应删掉这条线");
+	// 再连到 B2。
 	state.click(A1.key);
 	state.click(B2.key);
 	const connections = state.view().connections;
-	assertEqual(connections.length, 1, "A1 与 B 列之间只应保留一条");
-	assertEqual(connections[0], "i0.a1~i1.b2", "应换成 B2");
+	assertEqual(connections.length, 1, "应只留下新线");
+	assertEqual(connections[0], "i0.a1~i1.b2", "应连到 B2");
 });
 
 test("同一对列里右端可被多个左条目连上（合并选项）", () => {
@@ -145,15 +152,60 @@ test("同一对列里右端可被多个左条目连上（合并选项）", () =>
 	assert(connections.includes("i0.a2~i1.b1"), "A2-B1 应新增");
 });
 
-test("同一对列里一个左条目只能连一条（改连即替换）", () => {
+test("同一对列里一个左条目可以连多条（合并项一对多）", () => {
+	const state = board();
+	state.click(A1.key);
+	state.click(B1.key);
+	// 合并后的条目在正确答案里可能要对多个答案各连一条，不能被当成"改连"覆盖掉。
+	state.click(A1.key);
+	state.click(B2.key);
+	const connections = state.view().connections;
+	assertEqual(connections.length, 2, `A1 应能同时连 B1 与 B2（实际 ${JSON.stringify(connections)}）`);
+	assert(connections.includes("i0.a1~i1.b1"), "A1-B1 应保留");
+	assert(connections.includes("i0.a1~i1.b2"), "A1-B2 应新增");
+});
+
+test("同一对条目再点一次即取消这条连线", () => {
+	const state = board();
+	state.click(A1.key);
+	state.click(B1.key);
+	state.click(A2.key);
+	state.click(B2.key);
+	// 只删 A1-B1，另一条不受影响。
+	state.click(A1.key);
+	state.click(B1.key);
+	const connections = state.view().connections;
+	assertEqual(connections.length, 1, "只应删掉被点中的那条");
+	assertEqual(connections[0], "i0.a2~i1.b2", "另一条应保留");
+});
+
+test("一对多的多条连线可以分别删掉", () => {
 	const state = board();
 	state.click(A1.key);
 	state.click(B1.key);
 	state.click(A1.key);
 	state.click(B2.key);
+	// 删掉 B2 那一条，B1 那条必须留着。
+	state.click(A1.key);
+	state.click(B2.key);
 	const connections = state.view().connections;
-	assertEqual(connections.length, 1, "A1 只应保留一条连线");
-	assertEqual(connections[0], "i0.a1~i1.b2", "应换成 B2");
+	assertEqual(connections.join(","), "i0.a1~i1.b1", "只应删掉 B2 那条");
+});
+
+test("remove() 删除指定连线，两端都解除且不误伤另一侧", () => {
+	const state = board();
+	state.click(A1.key);
+	state.click(B1.key);
+	state.click(B1.key);
+	state.click(C1.key);
+	assertEqual(state.view().connections.length, 2, "B1 应同时连左右两侧");
+	assertEqual(state.remove("i0.a1~i1.b1"), true, "删除应成功");
+	assertEqual(state.remove("i0.a1~i1.b1"), false, "重复删除应返回 false");
+	assertEqual(state.view().connections.join(","), "i1.b1~i2.c1", "B-C 的连线不应被误删");
+	// 删掉的连线不能留下悬挂：重新连回来仍然只有一条。
+	state.click(A1.key);
+	state.click(B1.key);
+	assertEqual(state.view().connections.length, 2, "应能重新连上");
 });
 
 test("再次点击已连线的条目只是取消选中，不删线", () => {
