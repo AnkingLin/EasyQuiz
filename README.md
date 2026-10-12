@@ -170,10 +170,26 @@ type: match
 
 - A table is only read as a matching question when `type: match`; tables in other question types are
   ordinary prose and are not graded.
-- In the UI the two sides are shown as two columns: **click an item, then click its answer**, and a
-  connecting line is drawn between them. Clicking a connected item again removes its line.
-- Each answer accepts a single line; connecting a second item to the same answer moves the line.
+- In the UI the first column and each answer column are laid out side by side: **click an item, then
+  click its answer**, and a connecting line is drawn between them. Clicking a connected item again
+  removes its line. Each item and each answer accepts one line.
+- **Order is shuffled**: the first column and every answer column are shuffled independently, so the
+  table's row order never gives the answer away.
+- **Duplicate entries are merged**: within one answer column, entries with the same answer appear
+  once. The merged entry accepts every answer that its original rows pointed to.
+- Adding or reordering table rows does not invalidate records — entry keys depend only on the
+  column index and the item text.
 - The table itself is not rendered — the board replaces it, so nothing appears twice.
+- **Multiple answer columns**: every column after the first is its own matching group with its own
+  header, and all of them must be matched correctly:
+
+  ````markdown
+  | 协议 | 端口 | 层级 |
+  | --- | --- | --- |
+  | HTTP | 80 | 应用层 |
+  | IP | 0 | 网络层 |
+  ````
+
 - **One-to-many**: separate multiple entries in a cell with ` / `. The first column then yields one
   match item per entry, and all of them accept the same answer:
 
@@ -207,8 +223,8 @@ blanks:
 
 - Each `==…== ^bN` is one blank; the number of blanks comes from the question body.
 - Blanks not listed under `blanks` use strict matching (surrounding whitespace is ignored).
-- In the UI the blanks are rendered **inline in the stem** as underlined gaps: click a gap and type.
-  The answer text never appears in the stem before submitting.
+- In the UI the blanks are rendered **inline in the stem** as underlined gaps that grow with what you
+  type: click a gap and type. The answer text never appears in the stem before submitting.
 
 ### Short answer
 
@@ -245,6 +261,13 @@ and never guesses an answer:
 | Option missing an anchor, or duplicate anchors | Not answerable |
 | `answer` points at a nonexistent anchor | Not answerable |
 | YAML parse error | Degrade; show the raw error |
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| Validate current question bank | Parses the active note and reports how many questions are answerable vs. need fixing |
+| Refresh quiz view | Forces the reading view to re-render the quiz blocks (also happens automatically after edits) |
 
 ## Settings
 
@@ -292,14 +315,14 @@ Write-back rules:
 ## Status
 
 Implemented and covered by tests: the parser, stem preprocessing, grading for all five types, record
-write-back, and the practice card UI (choice options, click-to-connect matching, inline click-to-type
-blanks, short-answer self-assessment).
+write-back, and the practice card UI (choice options, click-to-connect multi-column matching with
+shuffling, inline click-to-type blanks that grow with their content, short-answer self-assessment).
+Question-bank edits trigger a debounced reading-view refresh.
 
-Not yet implemented: debounced batching of writes, external-modification detection
-(`vault.on('modify')`), alternate renderers (review mode / single-question panel), and statistics such
-as a mistake book.
+Not yet implemented: batching of multiple write-backs into one file write, alternate renderers
+(review mode / single-question panel), and statistics such as a mistake book.
 
 > The card UI and write-back have **not** been verified inside a real Obsidian instance. The logic
 > layer (parsing, stem preprocessing, grading, write-back) is fully tested, but DOM behaviour —
-> line rendering between columns, focus handling on blank inputs — can only be confirmed by hand in
-> Obsidian.
+> line rendering between columns, focus handling on blank inputs, and read-mode re-rendering — can
+> only be confirmed by hand in Obsidian.

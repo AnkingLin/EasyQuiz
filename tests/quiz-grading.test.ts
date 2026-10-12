@@ -177,13 +177,13 @@ const matchSource = [
 
 test("配对：全部匹配正确才判对", () => {
 	const question = questionOf(matchSource);
-	const items = question.matchItems;
-	const pairs = items.map((item) => ({ key: item.key, target: at(item.actualTargets, 0) }));
+	const entries = at(question.matchColumns, 0).entries;
+	const pairs = entries.map((entry) => ({ key: entry.key, target: at(entry.actualTargets, 0) }));
 	assertEqual(gradeAnswer(question, { kind: "match", pairs }).correct, true, "全对应判对");
 
-	const swapped = items.map((item) => ({
-		key: item.key,
-		target: at(item.actualTargets, 0) === "80" ? "22" : "80",
+	const swapped = entries.map((entry) => ({
+		key: entry.key,
+		target: at(entry.actualTargets, 0) === "80" ? "22" : "80",
 	}));
 	assertEqual(gradeAnswer(question, { kind: "match", pairs: swapped }).correct, false, "换位应判错");
 });
@@ -193,6 +193,48 @@ test("配对：未作答的条目判错并给出正确答案", () => {
 	const result = gradeAnswer(question, { kind: "match", pairs: [] });
 	assertEqual(result.correct, false, "未作答应判错");
 	assert(at(result.details, 0).note?.includes("应匹配"), "应说明正确对应");
+});
+
+test("配对多列：每一列都要配对正确", () => {
+	const question = questionOf(
+		[
+			"---",
+			"quiz: true",
+			"---",
+			"",
+			"## 配对",
+			"",
+			"| 协议 | 端口 | 层级 |",
+			"| --- | --- | --- |",
+			"| HTTP | 80 | 应用层 |",
+			"| IP | 0 | 网络层 |",
+			"",
+			"```quiz",
+			"type: match",
+			"```",
+		].join("\n")
+	);
+	assertEqual(question.matchColumns.length, 2, "应有两组答案列");
+
+	const pairs = question.matchColumns.flatMap((column) =>
+		column.entries.map((entry) => ({ key: entry.key, target: at(entry.actualTargets, 0) }))
+	);
+	assertEqual(gradeAnswer(question, { kind: "match", pairs }).correct, true, "两列都对应判对");
+	assertEqual(pairs.length, 4, "两列共 4 个待匹配条目");
+
+	// 只答对第二列，第一列改成同一列里的另一个答案（必错）。
+	const firstColumn = at(question.matchColumns, 0);
+	const partlyWrong = pairs.map((pair) =>
+		pair.key.startsWith("c0.")
+			? { key: pair.key, target: pair.target === at(firstColumn.answers, 0) ? at(firstColumn.answers, 1) : at(firstColumn.answers, 0) }
+			: pair
+	);
+	const result = gradeAnswer(question, { kind: "match", pairs: partlyWrong });
+	assertEqual(result.correct, false, "有一列配错应判错");
+	assert(
+		result.details.some((detail) => detail.note?.includes(firstColumn.name)),
+		`提示应指出是哪一列（实际：${JSON.stringify(result.details.map((d) => d.note))}）`
+	);
 });
 
 test("配对：一对多的每个条目都要求匹配到同一答案", () => {
@@ -213,15 +255,16 @@ test("配对：一对多的每个条目都要求匹配到同一答案", () => {
 			"```",
 		].join("\n")
 	);
-	assertEqual(question.matchItems.length, 2, "一对多应拆出两个待匹配条目");
-	assertEqual(at(question.matchItems, 0).actualTargets.join("/"), "关系型", "两个条目的可接受答案都是关系型");
-	assertEqual(at(question.matchItems, 0).text, "MySQL", "第一个条目为 MySQL");
-	assertEqual(at(question.matchItems, 1).text, "PostgreSQL", "第二个条目为 PostgreSQL");
+	const column = at(question.matchColumns, 0);
+	assertEqual(column.entries.length, 2, "一对多应拆出两个待匹配条目");
+	assertEqual(at(column.entries, 0).actualTargets.join("/"), "关系型", "两个条目的可接受答案都是关系型");
+	assertEqual(at(column.entries, 0).text, "MySQL", "第一个条目为 MySQL");
+	assertEqual(at(column.entries, 1).text, "PostgreSQL", "第二个条目为 PostgreSQL");
 
 	// 合并选项：两个条目都接受同一个答案。
-	const picked = question.matchItems.map((item) => ({ key: item.key, target: "关系型" }));
+	const picked = column.entries.map((entry) => ({ key: entry.key, target: "关系型" }));
 	assertEqual(gradeAnswer(question, { kind: "match", pairs: picked }).correct, true, "都匹配关系型应判对");
-	const mismatched = [{ key: at(question.matchItems, 0).key, target: "键值型" }];
+	const mismatched = [{ key: at(column.entries, 0).key, target: "键值型" }];
 	assertEqual(gradeAnswer(question, { kind: "match", pairs: mismatched }).correct, false, "匹配错答案应判错");
 });
 

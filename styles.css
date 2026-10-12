@@ -70,11 +70,62 @@
 	gap: 6px;
 }
 
+/* 选项：普通按钮语义（非表单控件），选中状态由 is-selected 表示 */
 .easy-quiz-card__option {
 	display: flex;
 	align-items: center;
 	gap: 8px;
+	padding: 5px 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s, 6px);
+	background: var(--background-primary);
 	cursor: pointer;
+	user-select: none;
+	transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.easy-quiz-card__option::before {
+	content: "";
+	flex: none;
+	width: 14px;
+	height: 14px;
+	border: 1.5px solid var(--text-muted);
+	background: transparent;
+}
+
+/* 单选：圆形标记 */
+.easy-quiz-card__option[role="radio"]::before {
+	border-radius: 50%;
+}
+
+/* 多选：方形标记 */
+.easy-quiz-card__option[role="checkbox"]::before {
+	border-radius: 3px;
+}
+
+.easy-quiz-card__option:hover {
+	border-color: var(--interactive-accent);
+}
+
+.easy-quiz-card__option.is-selected {
+	border-color: var(--interactive-accent);
+	background: var(--background-modifier-hover);
+}
+
+.easy-quiz-card__option.is-selected::before {
+	border-color: var(--interactive-accent);
+	background: var(--interactive-accent);
+	box-shadow: inset 0 0 0 2px var(--background-primary);
+}
+
+.easy-quiz-card__option.is-disabled {
+	cursor: not-allowed;
+	opacity: 0.6;
+}
+
+.easy-quiz-card__option:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 1px;
 }
 
 /* ---------------------------------------------------------------- 填空题 */
@@ -122,6 +173,16 @@
 	gap: 8px;
 }
 
+/* 用于量出文字实际宽度的隐藏镜像元素（中文与西文都适用） */
+.easy-quiz-card__blank-mirror {
+	position: absolute;
+	left: -9999px;
+	top: 0;
+	visibility: hidden;
+	white-space: pre;
+	pointer-events: none;
+}
+
 /* ---------------------------------------------------------------- 配对题 */
 
 .easy-quiz-card__board {
@@ -129,11 +190,12 @@
 	margin-top: 10px;
 }
 
+/* 首列 + 每个答案列各占一列 */
 .easy-quiz-card__board-columns {
 	position: relative;
-	display: flex;
-	justify-content: space-between;
-	gap: 48px;
+	display: grid;
+	grid-template-columns: repeat(var(--easy-quiz-match-cols, 2), minmax(0, 1fr));
+	gap: 16px 40px;
 	z-index: 1;
 }
 
@@ -141,12 +203,15 @@
 	display: flex;
 	flex-direction: column;
 	gap: 8px;
-	flex: 1 1 0;
 	min-width: 0;
 }
 
-.easy-quiz-card__board-col.is-right {
-	align-items: flex-end;
+.easy-quiz-card__board-head {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	padding-bottom: 2px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	margin-bottom: 2px;
 }
 
 /* 连线层：铺满题板，位于节点之下 */
@@ -169,6 +234,7 @@
 	background: var(--background-primary);
 	cursor: pointer;
 	user-select: none;
+	overflow-wrap: anywhere;
 	transition: border-color 0.12s ease, background 0.12s ease;
 }
 

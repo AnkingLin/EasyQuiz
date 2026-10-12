@@ -140,18 +140,21 @@ function gradeMatch(
 	const details: GradeDetail[] = [];
 	const recorded: string[] = [];
 
-	for (const item of question.matchItems) {
-		const chosen = answer.pairs.find((pair) => pair.key === item.key);
-		const target = (chosen?.target ?? "").trim();
-		recorded.push(`${item.key}=${target}`);
-		// 一对多时同一左侧条目的可接受答案可能有多个，命中任一即算对（合并选项）。
-		const acceptable = item.actualTargets.length > 0 ? item.actualTargets : [item.targetText];
-		const matched =
-			target !== "" && acceptable.some((candidate) => normalizeText(candidate) === normalizeText(target));
-		details.push({
-			correct: matched,
-			note: matched ? undefined : `「${item.text}」应匹配「${acceptable.join(" / ")}」`,
-		});
+	for (const column of question.matchColumns) {
+		for (const entry of column.entries) {
+			const chosen = answer.pairs.find((pair) => pair.key === entry.key);
+			const target = (chosen?.target ?? "").trim();
+			recorded.push(`${entry.key}=${target}`);
+			// 一对多时同一左侧条目有多个可接受答案，命中任一即算对（合并选项）。
+			const acceptable = entry.actualTargets;
+			const matched =
+				target !== "" && acceptable.some((candidate) => normalizeText(candidate) === normalizeText(target));
+			const where = question.matchColumns.length > 1 ? `（${column.name}）` : "";
+			details.push({
+				correct: matched,
+				note: matched ? undefined : `「${entry.text}」${where}应匹配「${acceptable.join(" / ")}」`,
+			});
+		}
 	}
 
 	return { correct: details.length > 0 && details.every((detail) => detail.correct), details, recorded };

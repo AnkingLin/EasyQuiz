@@ -14,7 +14,8 @@ import {
 	BlankRule,
 	BlankSpec,
 	HistoryEntry,
-	MatchItem,
+	MatchColumn,
+	MatchEntry,
 	ParsedQuizFile,
 	ParseWarning,
 	QuizOption,
@@ -484,7 +485,8 @@ function parseQuestion(ctx: QuestionContext): QuizQuestion {
 		blockSource: blockStart >= 0 ? blockSource : null,
 		options: structure.options,
 		table: structure.table,
-		matchItems: structure.matchItems,
+		tableHeader: structure.tableHeader,
+		matchColumns: structure.matchColumns,
 		blanks: structure.blanks,
 		answer,
 		answerAnchors: ok ? anchorCheck : [],
@@ -515,7 +517,11 @@ function structureHashSource(
 ): string {
 	return [
 		structure.options.map((o) => `${o.anchor ?? ""}:${normalizeText(o.markdown)}`).join("|"),
-		(structure.table ?? []).map((row) => row.map(normalizeText).join("~")).join("|"),
+		// 用配对条目而不是表格原文：调整行顺序不应改变题面哈希。
+		structure.matchColumns
+			.map((column) => `${column.name}:${column.entries.map((entry) => `${entry.text}>${entry.actualTargets.join(",")}`).join(";")}`)
+			.join("|"),
+		structure.table?.length ? "has-table" : "",
 		structure.blanks.map((b) => `${b.anchor}:${b.expected}`).join("|"),
 		typeof meta.rawAnswer === "string" ? meta.rawAnswer : JSON.stringify(meta.rawAnswer ?? null),
 		JSON.stringify(meta.blankRules),
@@ -762,8 +768,9 @@ function resolveType(rawType: unknown, blockLine: number, ctx: QuestionContext):
 interface BodyStructure {
 	options: QuizOption[];
 	table: string[][] | null;
+	tableHeader: string[] | null;
 	tableStartLine: number;
-	matchItems: MatchItem[];
+	matchColumns: MatchColumn[];
 	blanks: BlankSpec[];
 }
 
@@ -821,14 +828,15 @@ function parseBodyStructure(body: string, bodyStartLine: number, ctx: QuestionCo
 		: [];
 	const table = hasTable ? dataRows : null;
 
-	const matchItems = table ? buildMatchItems(table) : [];
+	const matchColumns = table && header ? buildMatchColumns(header, table) : [];
 	const blanks = collectBlanks(body);
 
 	return {
 		options,
 		table,
+		tableHeader: header ?? null,
 		tableStartLine,
-		matchItems,
+		matchColumns,
 		blanks,
 	};
 }
@@ -849,58 +857,85 @@ function isSeparatorRow(cells: string[]): boolean {
 }
 
 /**
- * 由配对表格构造待匹配条目：一个条目 = 首列（基准列）的一个条目。
+ * 由配对表格构造各答案列的待匹配条目。
  *
- * - 首列是待匹配项，其余列是答案；两边的单元格都可以用 ` / ` 拆出多个条目。
- * - 一对多（如 `MySQL / PostgreSQL | 关系型`）会拆出两个待匹配项，
- *   它们的可接受答案都是 `关系型`（合并选项），因此配给任一个都算对。
- * - key 由「行内容哈希 + 行号 + 列.答案条目.左侧条目」组成，表格改动后据此识别失配。
+ * - 表头是各列名称；首列是待匹配项，其余每一列都各自是一组需要配对的答案。
+ * - 一对多（`MySQL / PostgreSQL`）会拆成两个待匹配项，它们的可接受答案集合相同；
+ *   同一答案列内**答案相同的条目会合并**，因此同一列不会出现重复选项。
+ * - 每个条目的 key 由「左侧文本哈希 + 列号」组成：只依赖条目本身，
+ *   所以打乱（即调整表格行顺序）不会让记录失配。
  */
-function buildMatchItems(table: string[][]): MatchItem[] {
-	const items: MatchItem[] = [];
-	// 左侧条目 → 该行答案列里可接受的答案集合。
-	const actualByLeft = new Map<string, Set<string>>();
+function buildMatchColumns(header: string[], table: string[][]): MatchColumn[] {
+	const columns: MatchColumn[] = [];
 
-	for (const row of table) {
-		const leftParts = splitCell(row[0] ?? "");
-		if (leftParts.length === 0) continue;
-		for (let column = 1; column < row.length; column++) {
-			const rightParts = splitCell(row[column] ?? "");
+	for (let index = 1; index < header.length; index++) {
+		// 左侧文本 → 可接受的答案集合。
+		const actualByLeft = new Map<string, Set<string>>();
+		const answers: string[] = [];
+		const addAnswer = (answer: string) => {
+			if (!answers.includes(answer)) answers.push(answer);
+		};
+
+		for (const row of table) {
+			const leftParts = splitCell(row[0] ?? "");
+			const rightParts = splitCell(row[index] ?? "");
+			if (leftParts.length === 0 || rightParts.length === 0) continue;
 			for (const left of leftParts) {
 				const actual = actualByLeft.get(left) ?? new Set<string>();
 				for (const right of rightParts) actual.add(right);
 				actualByLeft.set(left, actual);
 			}
+			for (const right of rightParts) addAnswer(right);
 		}
-	}
 
-	for (let rowIndex = 0; rowIndex < table.length; rowIndex++) {
-		const row = table[rowIndex];
-		if (row === undefined) continue;
-		const rowKey = hashRowKey(row, rowIndex);
-		const leftParts = splitCell(row[0] ?? "");
-		if (leftParts.length === 0) continue;
-		for (let column = 1; column < row.length; column++) {
-			const rightParts = splitCell(row[column] ?? "");
-			for (let leftPart = 0; leftPart < leftParts.length; leftPart++) {
-				const left = leftParts[leftPart];
-				if (left === undefined) continue;
-				for (let rightPart = 0; rightPart < rightParts.length; rightPart++) {
-					items.push({
-						row: rowIndex,
-						column,
-						part: rightPart,
-						targetText: row[0] ?? "",
-						actualTargets: [...(actualByLeft.get(left) ?? new Set<string>())],
-						text: left,
-						key: `${rowKey}#${column}.${rightPart}.${leftPart}`,
-					});
+		const merged = new Map<string, MatchEntry>();
+		for (const row of table) {
+			const leftParts = splitCell(row[0] ?? "");
+			if (leftParts.length === 0) continue;
+			for (const left of leftParts) {
+				const existing = merged.get(left);
+				const actual = [...(actualByLeft.get(left) ?? new Set<string>())];
+				if (existing !== undefined) {
+					// 同一文本再次出现：合并可接受答案，避免同一列出现重复条目。
+					for (const answer of actual) {
+						if (!existing.actualTargets.includes(answer)) existing.actualTargets.push(answer);
+					}
+					continue;
 				}
+				merged.set(left, {
+					key: entryKey(index - 1, left),
+					text: left,
+					actualTargets: actual,
+					hash: leftHash(left),
+				});
 			}
 		}
+
+		columns.push({
+			index: index - 1,
+			name: header[index] ?? `第 ${index} 列`,
+			entries: [...merged.values()],
+			answers,
+		});
 	}
 
-	return items;
+	return columns;
+}
+
+/** 条目 key：只由列号与左侧文本决定，与表格行顺序无关。 */
+function entryKey(columnIndex: number, text: string): string {
+	return `c${columnIndex}.${leftHash(text)}`;
+}
+
+/** 左侧文本的稳定哈希，用于生成不随行序变化的 key。 */
+function leftHash(text: string): string {
+	const source = normalizeText(text);
+	let hash = 2166136261;
+	for (let i = 0; i < source.length; i++) {
+		hash ^= source.charCodeAt(i);
+		hash = Math.imul(hash, 16777619);
+	}
+	return (hash >>> 0).toString(16);
 }
 
 /** 拆分单元格：` / ` 或 `／` 分隔的多个条目。 */
@@ -909,17 +944,6 @@ function splitCell(cell: string): string[] {
 		.split(CELL_PART_SEPARATOR)
 		.map((part) => part.trim())
 		.filter((part) => part !== "");
-}
-
-/** 行内容哈希 + 行序号：表格改动后用于判断记录是否失配（README §3.3）。 */
-function hashRowKey(cells: string[], row: number): string {
-	const source = cells.map(normalizeText).join("\u0001");
-	let hash = 2166136261;
-	for (let i = 0; i < source.length; i++) {
-		hash ^= source.charCodeAt(i);
-		hash = Math.imul(hash, 16777619);
-	}
-	return `${(hash >>> 0).toString(16)}-${row}`;
 }
 
 /** 收集 `==答案== ^anchor` 形式的空位，按出现顺序。 */
@@ -1118,10 +1142,10 @@ function validateStructure(
 			});
 			return;
 		}
-		if (structure.matchItems.length === 0) {
+		if (structure.matchColumns.every((column) => column.entries.length === 0 || column.answers.length === 0)) {
 			ctx.warnings.push({
 				code: "structure-mismatch",
-				message: "配对表格的非首列没有可配对条目。",
+				message: "配对表格的答案列没有可配对条目。",
 				questionIndex: null,
 				line,
 			});

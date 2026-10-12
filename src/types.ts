@@ -55,28 +55,29 @@ export interface QuizOption {
 	markdown: string;
 }
 
-/** 配对表格中的一个待匹配条目（一个左侧条目）。 */
-export interface MatchItem {
-	/** 所在行下标（0 基，不含表头）。 */
-	row: number;
-	/** 所在列下标（0 基）。 */
-	column: number;
-	/** 同一单元格内 ` / ` 分隔出的序号（0 基）。 */
-	part: number;
-	/** 该条目所属行首列的原文，用于记录与展示。 */
-	targetText: string;
-	/**
-	 * 该左侧条目可接受的答案集合（右侧条目文本）。
-	 * 一对多（`MySQL / PostgreSQL | 关系型`）时两个条目都接受 `关系型`，
-	 * 因此合并选项后两个条目指向同一答案。
-	 */
-	actualTargets: string[];
-	/** 该条目展示的文本（左侧条目）。 */
-	text: string;
-	/** 表格行内容哈希 + 行号 + 列.答案条目.左侧条目，用于在表格被改动后定位记录。 */
+/** 配对表格中的一个待匹配条目（首列的一个条目）。 */
+export interface MatchEntry {
+	/** 稳定 key：只由列号与条目文本决定，调整表格行顺序不会失配。 */
 	key: string;
+	/** 展示文本（首列条目）。 */
+	text: string;
+	/** 该条目可接受的答案（本答案列中与它同行的答案）。 */
+	actualTargets: string[];
+	/** 首列文本哈希。 */
+	hash: string;
 }
 
+/** 配对表格中的一个答案列（首列之外的每一列）。 */
+export interface MatchColumn {
+	/** 列序号，0 基（不含首列）。 */
+	index: number;
+	/** 列名，取自表头。 */
+	name: string;
+	/** 待匹配条目，同一文本已合并。 */
+	entries: MatchEntry[];
+	/** 该列的候选答案，已去重。 */
+	answers: string[];
+}
 /** 一个填空空位。 */
 export interface BlankSpec {
 	/** 锚点（`^b1` 中的 `b1`）。 */
@@ -145,7 +146,9 @@ export interface QuizQuestion {
 
 	options: QuizOption[];
 	table: string[][] | null;
-	matchItems: MatchItem[];
+	tableHeader: string[] | null;
+	/** 各答案列的待匹配条目与候选答案。 */
+	matchColumns: MatchColumn[];
 	blanks: BlankSpec[];
 
 	answer: string | string[] | null;

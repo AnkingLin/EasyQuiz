@@ -111,25 +111,49 @@ function renderChoice(question: QuizQuestion, card: HTMLElement, ctx: CardContex
 	const multi = question.type === "multi";
 	const selected = new Set<string>();
 	const list = card.createDiv({ cls: "easy-quiz-card__options" });
-	for (const option of question.options) {
-		const row = list.createEl("label", { cls: "easy-quiz-card__option" });
-		const input = row.createEl("input", { type: multi ? "checkbox" : "radio" });
-		input.name = `easy-quiz-${question.id}`;
-		if (option.anchor === null) {
-			input.disabled = true;
+	const buttons: { anchor: string | null; el: HTMLElement }[] = [];
+
+	const sync = () => {
+		for (const button of buttons) {
+			const isSelected = button.anchor !== null && selected.has(button.anchor);
+			button.el.toggleClass("is-selected", isSelected);
+			button.el.setAttribute("aria-checked", isSelected ? "true" : "false");
 		}
-		input.addEventListener("change", () => {
-			if (option.anchor === null) return;
+	};
+
+	for (const option of question.options) {
+		// 用普通按钮而不是 <input type="radio">：避免表单控件在阅读视图里的原生行为
+		// （重渲染、键盘默认动作）干扰数据块渲染。
+		const row = list.createDiv({ cls: "easy-quiz-card__option" });
+		row.setAttribute("role", multi ? "checkbox" : "radio");
+		row.setAttribute("aria-checked", "false");
+		row.tabIndex = 0;
+		if (option.anchor === null) row.addClass("is-disabled");
+		buttons.push({ anchor: option.anchor, el: row });
+
+		// 选中标记由 CSS 的 ::before 绘制，无需额外的 DOM 节点。
+		row.createSpan({ cls: "easy-quiz-card__option-text", text: option.text });
+
+		const toggle = () => {
+			const anchor = option.anchor;
+			if (anchor === null) return;
 			if (multi) {
-				if (input.checked) selected.add(option.anchor);
-				else selected.delete(option.anchor);
+				if (selected.has(anchor)) selected.delete(anchor);
+				else selected.add(anchor);
 			} else {
 				selected.clear();
-				selected.add(option.anchor);
+				selected.add(anchor);
 			}
+			sync();
+		};
+		row.addEventListener("click", toggle);
+		row.addEventListener("keydown", (event) => {
+			if (event.key !== " " && event.key !== "Enter") return;
+			event.preventDefault();
+			toggle();
 		});
-		row.createSpan({ cls: "easy-quiz-card__option-text", text: option.text });
 	}
+
 	renderSubmit(card, ctx, question, "提交答案", () =>
 		selected.size === 0 ? null : { kind: "choice", anchors: [...selected] }
 	);
@@ -140,48 +164,64 @@ function renderChoice(question: QuizQuestion, card: HTMLElement, ctx: CardContex
 // ---------------------------------------------------------------------------
 
 function renderBlanks(question: QuizQuestion, bodyEl: HTMLElement, card: HTMLElement, ctx: CardContext): void {
-	const inputs = new Map<string, string>();
+	const fields = new Map<string, HTMLInputElement>();
 
 	// 把题面中的占位标记替换成可点击的空位。
 	for (const blank of question.blanks) {
 		const label = `${BLANK_MARKER_PREFIX}${blank.anchor}`;
 		const placeholder = findTextElement(bodyEl, label);
 		if (placeholder === null) continue;
-		const input = createBlankInput(blank.anchor, inputs);
+		const input = createBlankInput(blank.anchor, fields);
 		placeholder.replaceWith(input);
+		input.addEventListener("input", () => sizeBlankInput(input, card, input.value));
+		sizeBlankInput(input, card, "");
 	}
 
 	// 题面里没找到（例如题面为空）时，退化为逐空列表，保证仍可作答。
-	const missing = question.blanks.filter((blank) => !inputs.has(blank.anchor));
+	const missing = question.blanks.filter((blank) => !fields.has(blank.anchor));
 	if (missing.length > 0) {
 		const list = card.createDiv({ cls: "easy-quiz-card__blanks" });
 		for (const blank of missing) {
 			const row = list.createDiv({ cls: "easy-quiz-card__blank" });
 			row.createSpan({ text: `第 ${question.blanks.indexOf(blank) + 1} 空` });
-			const input = createBlankInput(blank.anchor, inputs);
+			const input = createBlankInput(blank.anchor, fields);
 			row.appendChild(input);
+			sizeBlankInput(input, card, "");
 		}
 	}
 
 	renderSubmit(card, ctx, question, "提交答案", () => {
-		const values = question.blanks.map((blank) => (inputs.get(blank.anchor) ?? "").trim());
+		const values = question.blanks.map((blank) => (fields.get(blank.anchor)?.value ?? "").trim());
 		return values.every((value) => value === "") ? null : { kind: "blank", values };
 	});
 }
 
 /** 创建一个下划线样式的空位输入框，点击即可输入。 */
-function createBlankInput(anchor: string, inputs: Map<string, string>): HTMLInputElement {
+function createBlankInput(anchor: string, fields: Map<string, HTMLInputElement>): HTMLInputElement {
 	const input = createEl("input", { cls: "easy-quiz-card__blank-input" });
 	input.type = "text";
 	input.dataset["anchor"] = anchor;
-	input.size = 8;
-	inputs.set(anchor, "");
-	const sync = () => {
-		inputs.set(anchor, input.value);
-		input.style.width = `${Math.max(4, input.value.length + 2)}ch`;
-	};
-	input.addEventListener("input", sync);
+	input.placeholder = "…";
+	input.setAttribute("aria-label", `填空 ${anchor}`);
+	fields.set(anchor, input);
 	return input;
+}
+
+/**
+ * 让空位输入框宽度适应内容。
+ *
+ * 用 `ch` 单位对中文无效（1ch 远小于一个汉字），所以这里用一个隐藏的镜像元素
+ * 量出实际文字宽度，再据此设置像素宽度；为空时给出一个可点击的最小宽度。
+ */
+function sizeBlankInput(input: HTMLInputElement, host: HTMLElement, value: string): void {
+	const mirror = host.createSpan({ cls: "easy-quiz-card__blank-mirror", text: value === "" ? "…" : value });
+	const computed = window.getComputedStyle(input);
+	mirror.style.font = computed.font;
+	mirror.style.fontFamily = computed.fontFamily;
+	mirror.style.fontSize = computed.fontSize;
+	const width = mirror.getBoundingClientRect().width;
+	mirror.remove();
+	input.style.width = `${Math.max(28, Math.ceil(width) + 14)}px`;
 }
 
 /** 在已渲染的题面里找到承载占位标记的元素（通常是内联 code）。 */
@@ -202,67 +242,90 @@ function findTextElement(root: HTMLElement, label: string): HTMLElement | null {
 // 配对题：点击创建连线
 // ---------------------------------------------------------------------------
 
-interface Connection {
-	/** 左侧条目 key。 */
-	key: string;
-	/** 右侧答案文本。 */
-	target: string;
-}
-
+/**
+ * 配对题：多列题板 + 点击创建连线。
+ *
+ * - 首列是待匹配项，其余每一列都是一组需要配对的答案，各自渲染成一列。
+ * - 各列顺序都会**独立打乱**，因此题目顺序不会泄露答案。
+ * - 同一列内答案相同的条目已在解析阶段合并，所以不会出现重复选项。
+ * - 连线用 `左节点key|右节点key` 记录（左右节点都带前缀，避免同文本碰撞）。
+ */
 function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: CardContext): void {
-	const targets = [...new Set(question.matchItems.flatMap((item) => item.actualTargets))];
-	const connections = new Map<string, Connection>();
-	let activeItemKey: string | null = null;
+	const columns = question.matchColumns;
+	if (columns.length === 0) {
+		card.createDiv({ cls: "easy-quiz-card__hint", text: "配对表格没有可作答的答案列。" });
+		return;
+	}
 
 	const board = card.createDiv({ cls: "easy-quiz-card__board" });
-	const columns = board.createDiv({ cls: "easy-quiz-card__board-columns" });
-	const leftCol = columns.createDiv({ cls: "easy-quiz-card__board-col is-left" });
-	const rightCol = columns.createDiv({ cls: "easy-quiz-card__board-col is-right" });
+	const grid = board.createDiv({ cls: "easy-quiz-card__board-columns" });
+	grid.style.setProperty("--easy-quiz-match-cols", `${columns.length + 1}`);
 
 	// 连线画在列之上的 SVG 层里。
 	const svg = createSvg("svg", { cls: "easy-quiz-card__links" });
 	board.appendChild(svg);
 
-	const leftEls = new Map<string, HTMLElement>();
-	const rightEls = new Map<string, HTMLElement>();
+	const connections = new Set<string>();
+	let activeKey: string | null = null;
+	const nodes = new Map<string, HTMLElement>();
 
-	const leftItems = dedupeByKey(question.matchItems);
-	for (const item of leftItems) {
-		const el = leftCol.createDiv({ cls: "easy-quiz-card__node is-left", text: item.text });
-		leftEls.set(item.key, el);
-		el.addEventListener("click", () => {
-			// 已连线的条目：再次点击即断开。
-			if (connections.has(item.key)) {
-				connections.delete(item.key);
-				activeItemKey = null;
-				paint();
-				return;
-			}
-			activeItemKey = activeItemKey === item.key ? null : item.key;
-			paint();
-		});
+	const leftKey = (entryKey: string) => `L|${entryKey}`;
+	const rightKey = (columnIndex: number, answer: string) => `R|${columnIndex}|${answer}`;
+
+	// 首列：待匹配项（打乱）。
+	const leftCol = createBoardColumn(grid, question.tableHeader?.[0] ?? "待匹配");
+	for (const entry of shuffle(columns[0]?.entries ?? [])) {
+		const el = leftCol.createDiv({ cls: "easy-quiz-card__node is-left", text: entry.text });
+		nodes.set(leftKey(entry.key), el);
+		el.addEventListener("click", () => onNodeClick(leftKey(entry.key)));
 	}
 
-	for (const target of targets) {
-		const el = rightCol.createDiv({ cls: "easy-quiz-card__node is-right", text: target });
-		rightEls.set(target, el);
-		el.addEventListener("click", () => {
-			if (activeItemKey === null) {
-				// 未选左侧条目时，点击右侧取消连到该答案的连线。
-				for (const [key, connection] of connections) {
-					if (connection.target === target) connections.delete(key);
-				}
-				paint();
-				return;
-			}
-			// 一个答案只能连一条线：先解除该答案上已有的连线。
-			for (const [key, connection] of connections) {
-				if (connection.target === target) connections.delete(key);
-			}
-			connections.set(activeItemKey, { key: activeItemKey, target });
-			activeItemKey = null;
+	// 其余列：每列一组答案，各自独立打乱。
+	for (const column of columns) {
+		const col = createBoardColumn(grid, column.name);
+		for (const answer of shuffle(column.answers)) {
+			const key = rightKey(column.index, answer);
+			const el = col.createDiv({ cls: "easy-quiz-card__node is-right", text: answer });
+			nodes.set(key, el);
+			el.addEventListener("click", () => onNodeClick(key));
+		}
+	}
+
+	function onNodeClick(key: string): void {
+		// 已连线：再次点击断开这条线。
+		if (connections.has(key)) {
+			connections.delete(key);
+			activeKey = null;
 			paint();
-		});
+			return;
+		}
+		if (activeKey === null) {
+			activeKey = key;
+			paint();
+			return;
+		}
+		if (activeKey === key) {
+			activeKey = null;
+			paint();
+			return;
+		}
+		const [left, right] = orderPair(activeKey, key);
+		if (left === null || right === null) {
+			// 同侧不能相连：改为切换当前选中项。
+			activeKey = key;
+			paint();
+			return;
+		}
+		// 左节点只能连一条线；一个答案也只能被连一次。
+		for (const existing of [...connections]) {
+			const parts = existing.split("|");
+			const existingLeft = parts.length >= 2 ? `L|${parts[1]}` : "";
+			const existingRight = parts.length >= 4 ? parts.slice(3).join("|") : "";
+			if (existingLeft === left || existingRight === right) connections.delete(existing);
+		}
+		connections.add(`${left}|${right}`);
+		activeKey = null;
+		paint();
 	}
 
 	function paint(): void {
@@ -276,19 +339,20 @@ function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: CardContext
 		svg.setAttribute("width", `${width}`);
 		svg.setAttribute("height", `${height}`);
 		svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-		for (const el of leftEls.values()) el.removeClass("is-active", "is-linked");
-		for (const el of rightEls.values()) el.removeClass("is-active", "is-linked");
-		if (activeItemKey !== null) leftEls.get(activeItemKey)?.addClass("is-active");
+		for (const el of nodes.values()) el.removeClass("is-active", "is-linked");
+		if (activeKey !== null) nodes.get(activeKey)?.addClass("is-active");
 
 		const boardRect = board.getBoundingClientRect();
-		for (const connection of connections.values()) {
-			const left = leftEls.get(connection.key);
-			const right = rightEls.get(connection.target);
-			if (!left || !right) continue;
-			left.addClass("is-linked");
-			right.addClass("is-linked");
-			const from = left.getBoundingClientRect();
-			const to = right.getBoundingClientRect();
+		for (const connection of connections) {
+			const [leftId, rightId] = splitConnection(connection);
+			if (leftId === null || rightId === null) continue;
+			const leftEl = nodes.get(leftId);
+			const rightEl = nodes.get(rightId);
+			if (!leftEl || !rightEl) continue;
+			leftEl.addClass("is-linked");
+			rightEl.addClass("is-linked");
+			const from = leftEl.getBoundingClientRect();
+			const to = rightEl.getBoundingClientRect();
 			const x1 = from.right - boardRect.left;
 			const y1 = from.top + from.height / 2 - boardRect.top;
 			const x2 = to.left - boardRect.left;
@@ -306,22 +370,52 @@ function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: CardContext
 	window.setTimeout(() => paint(), 0);
 
 	renderSubmit(card, ctx, question, "提交答案", () => {
-		const pairs = [...connections.values()].map((connection) => ({
-			key: connection.key,
-			target: connection.target,
-		}));
+		const pairs = [...connections]
+			.map((connection) => splitConnection(connection))
+			.filter((pair): pair is [string, string] => pair[0] !== null && pair[1] !== null)
+			.map(([leftId, rightId]) => {
+				// 右侧 key 形如 R|列号|答案，需要去掉前缀与列号还原答案文本。
+				const answer = rightId.split("|").slice(2).join("|");
+				return { key: leftId.slice(2), target: answer };
+			});
 		return pairs.length === 0 ? null : { kind: "match", pairs };
 	});
 }
 
-/** 同一条目可能因一对多而出现多次，按 key 去重。 */
-function dedupeByKey(items: QuizQuestion["matchItems"]): QuizQuestion["matchItems"] {
-	const seen = new Set<string>();
-	const result: QuizQuestion["matchItems"] = [];
-	for (const item of items) {
-		if (seen.has(item.key)) continue;
-		seen.add(item.key);
-		result.push(item);
+function createBoardColumn(grid: HTMLElement, name: string): HTMLElement {
+	const col = grid.createDiv({ cls: "easy-quiz-card__board-col" });
+	col.createDiv({ cls: "easy-quiz-card__board-head", text: name });
+	return col;
+}
+
+/** 把 `activeKey` 与 `key` 归一化成「左节点 | 右节点」，同侧时返回 null。 */
+function orderPair(first: string, second: string): [string | null, string | null] {
+	const isLeft = (key: string) => key.startsWith("L|");
+	if (isLeft(first) && !isLeft(second)) return [first, second];
+	if (!isLeft(first) && isLeft(second)) return [second, first];
+	return [null, null];
+}
+
+/** 拆出 `左节点|右节点`。 */
+function splitConnection(connection: string): [string | null, string | null] {
+	const parts = connection.split("|");
+	// 形如 L|c0.abcd|R|0|答案
+	if (parts.length < 4 || parts[0] !== "L" || parts[3] !== "R") return [null, null];
+	const leftId = `${parts[0]}|${parts[1]}`;
+	const rightId = parts.slice(3).join("|");
+	return [leftId, rightId];
+}
+
+/** Fisher–Yates 打乱，返回新数组（不改动入参）。 */
+function shuffle<T>(items: readonly T[]): T[] {
+	const result = [...items];
+	for (let i = result.length - 1; i > 0; i--) {
+		const j = Math.floor(Math.random() * (i + 1));
+		const a = result[i];
+		const b = result[j];
+		if (a === undefined || b === undefined) continue;
+		result[i] = b;
+		result[j] = a;
 	}
 	return result;
 }

@@ -39,6 +39,11 @@ function byTitle(result: ParsedQuizFile, title: string): QuizQuestion {
 	return question!;
 }
 
+/** 直接解析单题源码并取第一道题。 */
+function questionOf(source: string, options: Partial<ParseOptions> = {}): QuizQuestion {
+	return first(source, options);
+}
+
 function warnCodes(question: QuizQuestion): string {
 	return question.warnings.map((warning) => warning.code).join(",");
 }
@@ -159,26 +164,106 @@ test("配对题：表格按行给出正确答案，answer 不需要", () => {
 	assertEqual(question.answer, null, "配对题不应有 answer");
 });
 
-test("配对题：每个条目都带可接受答案与稳定 key", () => {
+test("配对题：答案列给出条目、候选答案与稳定 key", () => {
 	const question = byTitle(file, "将协议与其默认端口配对");
-	assertEqual(question.matchItems.length, 3, "条目数量");
-	assertEqual(at(question.matchItems, 0).text, "HTTP", "第一个条目的待匹配文本");
-	assertEqual(at(question.matchItems, 0).actualTargets.join("/"), "80", "第一个条目的可接受答案");
+	assertEqual(question.matchColumns.length, 1, "应有一组答案列");
+	const column = at(question.matchColumns, 0);
+	assertEqual(column.name, "端口", "列名取自表头");
+	assertEqual(column.entries.length, 3, "条目数量");
+	assertEqual(at(column.entries, 0).text, "HTTP", "第一个条目的待匹配文本");
+	assertEqual(at(column.entries, 0).actualTargets.join("/"), "80", "第一个条目的可接受答案");
+	assertEqual(column.answers.join(","), "80,443,22", "候选答案");
 	assert(
-		question.matchItems.every((item) => /^[0-9a-f]+-\d+#\d+\.\d+\.\d+$/.test(item.key)),
-		`key 应形如 hash-行#列.答案条目.左侧条目，实际：${question.matchItems.map((i) => i.key).join(",")}`
+		column.entries.every((entry) => /^c\d+\.[0-9a-f]+$/.test(entry.key)),
+		`key 应形如 c列号.文本哈希，实际：${column.entries.map((entry) => entry.key).join(",")}`
+	);
+});
+
+test("配对题：打乱表格行顺序不会改变条目 key", () => {
+	const build = (rows: string[]) =>
+		questionOf(
+			["---", "quiz: true", "---", "", "## 配对", "", "| 协议 | 端口 |", "| --- | --- |", ...rows, "", "```quiz", "type: match", "```"].join("\n")
+		);
+	const first = build(["| HTTP | 80 |", "| SSH | 22 |"]);
+	const shuffled = build(["| SSH | 22 |", "| HTTP | 80 |"]);
+	assertEqual(
+		at(first.matchColumns, 0).entries.map((entry) => entry.key).sort().join(","),
+		at(shuffled.matchColumns, 0).entries.map((entry) => entry.key).sort().join(","),
+		"key 应与行顺序无关"
+	);
+});
+
+test("配对题：同一列内答案相同的条目被合并", () => {
+	const question = questionOf(
+		[
+			"---",
+			"quiz: true",
+			"---",
+			"",
+			"## 配对",
+			"",
+			"| 动物 | 类别 |",
+			"| --- | --- |",
+			"| 猫 | 哺乳动物 |",
+			"| 猫 | 哺乳动物 |",
+			"| 蛇 | 爬行动物 |",
+			"",
+			"```quiz",
+			"type: match",
+			"```",
+		].join("\n")
+	);
+	const column = at(question.matchColumns, 0);
+	assertEqual(column.entries.length, 2, `重复条目应合并（实际：${JSON.stringify(column.entries.map((e) => e.text))}）`);
+	assertEqual(column.entries.map((entry) => entry.text).join(","), "猫,蛇", "条目文本");
+});
+
+test("配对题多列：每个答案列各自一组条目", () => {
+	const question = questionOf(
+		[
+			"---",
+			"quiz: true",
+			"---",
+			"",
+			"## 配对",
+			"",
+			"| 协议 | 端口 | 层级 |",
+			"| --- | --- | --- |",
+			"| HTTP | 80 | 应用层 |",
+			"| IP | 0 | 网络层 |",
+			"",
+			"```quiz",
+			"type: match",
+			"```",
+		].join("\n")
+	);
+	assertEqual(question.matchColumns.length, 2, "应有两组答案列");
+	assertEqual(at(question.matchColumns, 0).index, 0, "第一组列号应为 0");
+	assertEqual(at(question.matchColumns, 1).index, 1, "第二组列号应为 1");
+	assertEqual(at(question.matchColumns, 0).name, "端口", "第一组列名");
+	assertEqual(at(question.matchColumns, 1).name, "层级", "第二组列名");
+	assertEqual(at(question.matchColumns, 0).entries.map((entry) => entry.text).join(","), "HTTP,IP", "第一组条目");
+	assertEqual(at(question.matchColumns, 1).entries.map((entry) => entry.text).join(","), "HTTP,IP", "第二组条目");
+	assert(
+		at(question.matchColumns, 0).entries.map((entry) => entry.key).every((key) => key.startsWith("c0.")),
+		"第一组 key 应以 c0. 开头"
+	);
+	assert(
+		at(question.matchColumns, 1).entries.map((entry) => entry.key).every((key) => key.startsWith("c1.")),
+		"第一组的 key 与第二组不应冲突"
 	);
 });
 
 test("配对题一对多：单元格内 ` / ` 拆成多个条目且答案相同", () => {
 	const question = byTitle(file, "将数据库与其类型配对（一对多）");
 	assertEqual(question.type, "match", "题型");
+	const column = at(question.matchColumns, 0);
 	assertEqual(
-		question.matchItems.length,
+		column.entries.length,
 		4,
-		`条目数量应为 4（实际：${JSON.stringify(question.matchItems.map((i) => `${i.text}→${i.actualTargets.join("+")}`))}）`
+		`条目数量应为 4（实际：${JSON.stringify(column.entries.map((entry) => `${entry.text}→${entry.actualTargets.join("+")}`))}）`
 	);
-	const relation = question.matchItems.filter((item) => item.actualTargets.includes("关系型"));
+	const relation = column.entries.filter((entry) => entry.actualTargets.includes("关系型"));
 	assertEqual(relation.length, 2, "「关系型」应有 2 个待匹配条目（MySQL、PostgreSQL）");
 	assertEqual(at(relation, 0).text, "MySQL", "第一个条目");
 	assertEqual(at(relation, 1).text, "PostgreSQL", "第二个条目");
@@ -186,6 +271,8 @@ test("配对题一对多：单元格内 ` / ` 拆成多个条目且答案相同"
 	assertEqual(at(relation, 0).actualTargets.join("/"), "关系型", "第一个条目的可接受答案");
 	assertEqual(at(relation, 1).actualTargets.join("/"), "关系型", "第二个条目的可接受答案");
 	assert(at(relation, 0).key !== at(relation, 1).key, "两个条目 key 应不同");
+	// 答案列本身不应出现重复答案。
+	assertEqual(column.answers.join(","), "关系型,键值型", "候选答案应去重");
 });
 
 // ---------------------------------------------------------------------------

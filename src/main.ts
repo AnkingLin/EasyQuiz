@@ -1,4 +1,4 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting, TFile } from "obsidian";
+import { App, debounce, MarkdownView, Notice, Plugin, PluginSettingTab, Setting, TFile } from "obsidian";
 import { ParsedQuizFile, QuizQuestion } from "./types";
 import { DEFAULT_SETTINGS, QuizService, RuntimeSettings } from "./runtime";
 import { renderQuizCard } from "./view";
@@ -21,6 +21,30 @@ export default class EasyQuizPlugin extends Plugin {
 			}
 		);
 
+		// 题目被编辑后，阅读视图里的数据块不会自动重渲染，需要手动刷新一次。
+		const refresh = debounce((file: TFile) => this.refreshPreviews(file), 150, true);
+		this.registerEvent(
+			this.app.metadataCache.on("changed", (file) => {
+				if (this.isQuizPath(file.path)) refresh(file);
+			})
+		);
+		this.registerEvent(
+			this.app.vault.on("modify", (file) => {
+				if (file instanceof TFile && this.isQuizPath(file.path)) refresh(file);
+			})
+		);
+
+		this.addCommand({
+			id: "refresh-quiz-view",
+			name: "刷新题库视图",
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file || file.extension !== "md") return false;
+				if (!checking) this.refreshPreviews(file, true);
+				return true;
+			},
+		});
+
 		this.addCommand({
 			id: "validate-quiz-file",
 			name: "校验当前题库文件",
@@ -36,6 +60,28 @@ export default class EasyQuizPlugin extends Plugin {
 	}
 
 	onunload() {}
+
+	/** 该路径是否可能是题库文件（用于限制刷新范围，避免无谓重渲染）。 */
+	private isQuizPath(path: string): boolean {
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (file instanceof TFile) return this.service.isQuizFile(file);
+		return false;
+	}
+
+	/**
+	 * 让阅读视图重新渲染指定文件的数据块。
+	 *
+	 * 只有当前正在阅读视图里显示的笔记才需要刷新；`force` 为 true 时用于手动刷新命令。
+	 */
+	private refreshPreviews(file: TFile, force = false): void {
+		for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+			const view = leaf.view;
+			if (!(view instanceof MarkdownView)) continue;
+			if (view.file?.path !== file.path) continue;
+			if (!force && view.getMode() !== "preview") continue;
+			view.previewMode.rerender(true);
+		}
+	}
 
 	/** 渲染一个数据块：先解析整份文件，再把数据块对应到具体题目。 */
 	private async renderBlock(
