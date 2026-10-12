@@ -82,6 +82,7 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 		cls: `easy-quiz-card__stats${question.stale ? " is-stale" : ""}`,
 		text: formatStats(question),
 	});
+	renderKnowledgeLink(question, card, ctx);
 
 	const stale = staleNote(question);
 	if (stale) {
@@ -117,6 +118,75 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 			renderEssay(question, card, ctx);
 			break;
 	}
+}
+
+// ---------------------------------------------------------------------------
+// 知识点链接
+// ---------------------------------------------------------------------------
+
+/**
+ * 渲染题面标题末尾 `^[[知识点]]` 对应的链接。
+ *
+ * 放在题卡头部而不是题面里：题面只回答"题目在问什么"，溯源信息属于卡片的元信息。
+ * 点击走 Obsidian 自己的链接处理（`openLinkText`），因此 `#标题`、`|别名` 都按原样生效。
+ */
+function renderKnowledgeLink(question: QuizQuestion, card: HTMLElement, ctx: CardContext): void {
+	const raw = question.knowledgeLink;
+	if (raw === null) return;
+
+	const { target, label, subpath } = splitWikiTarget(raw);
+	if (label === "") return;
+	const row = card.createDiv({ cls: "easy-quiz-card__knowledge" });
+	row.createSpan({ cls: "easy-quiz-card__knowledge-label", text: "知识点" });
+	const link = row.createEl("a", {
+		cls: "easy-quiz-card__knowledge-link",
+		text: label,
+		href: target,
+	});
+	// Obsidian 的 `metadataCache.fileToLinktext` 能解析短链接，但不是所有版本都导出它；
+	// 拿不到就退回链接原文，至少不会跳错。
+	link.onclick = (event) => {
+		event.preventDefault();
+		void openLinkText(ctx, raw, target, subpath);
+	};
+}
+
+/**
+ * 拆开一个 wikilink：`路径#小标题|别名` → 目标、显示文字、小标题。
+ *
+ * `#` 在开头时表示"本文件内的标题"（`[[#某标题]]`），此时目标文件为空，交给 Obsidian
+ * 按当前文件解析。
+ */
+export function splitWikiTarget(raw: string): { target: string; label: string; subpath: string } {
+	const pipe = raw.indexOf("|");
+	const alias = pipe >= 0 ? raw.slice(pipe + 1) : null;
+	const body = (pipe >= 0 ? raw.slice(0, pipe) : raw).trim();
+	const hash = body.indexOf("#");
+	const target = hash === -1 ? body : body.slice(0, hash).trim();
+	const subpath = hash === -1 ? "" : body.slice(hash + 1).trim();
+	return { target, label: alias === null || alias.trim() === "" ? body : alias.trim(), subpath };
+}
+
+/** 点击后打开知识点笔记；短链接交给 metadataCache 解析，失败时退回链接原文。 */
+async function openLinkText(
+	ctx: CardContext,
+	raw: string,
+	target: string,
+	subpath: string
+): Promise<void> {
+	const workspace = ctx.app.workspace as { openLinkText?: (link: string, source: string, newLeaf?: boolean) => Promise<void> };
+	if (typeof workspace?.openLinkText !== "function") return;
+
+	let resolved = raw;
+	if (target !== "") {
+		const cache = ctx.app.metadataCache;
+		const file = cache?.getFirstLinkpathDest?.(target, ctx.file.path) ?? null;
+		if (file && typeof cache?.fileToLinktext === "function") {
+			const linktext = cache.fileToLinktext(file, ctx.file.path, false);
+			resolved = `${linktext}${subpath === "" ? "" : `#${subpath}`}`;
+		}
+	}
+	await workspace.openLinkText(resolved, ctx.file.path, false);
 }
 
 // ---------------------------------------------------------------------------

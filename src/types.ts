@@ -144,8 +144,10 @@ export interface QuizQuestion {
 	id: string;
 	/** id 是否由标题派生（标题改名会导致记录失联）。 */
 	idDerived: boolean;
-	/** 题面标题文本。 */
+	/** 题面标题文本（不含末尾的知识点链接）。 */
 	title: string;
+	/** 题面标题末尾 `^[[知识点]]` 里的链接目标；没写时为 null。 */
+	knowledgeLink: string | null;
 	/** 题面标题层级（1–6）。 */
 	level: number;
 	/** 题面标题所在行号（0 基）。 */

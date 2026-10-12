@@ -7,8 +7,67 @@ An Obsidian plugin for Markdown-native quiz practice. Questions are written as *
 - Question bank: any Markdown file marked with `quiz: true` (or a `#quiz` tag).
 - Question stem: a heading.
 - Options / pairs / blanks: native lists, tables, and `==highlights==`.
+- Knowledge point: a `^[[link]]` at the end of the stem heading, tying the question back to the note it came from.
 - Machine data: a small `quiz` block under each question.
 - Records: `stats` (summary) and a capped `history`, stored in the note itself.
+
+## Quick start
+
+1. Install the plugin (see [Installing into a vault](#installing-into-a-vault)) and enable it.
+2. Create a note, tick **quiz** on it with frontmatter, and write one question:
+
+   ````markdown
+   ---
+   quiz: true
+   ---
+
+   ## TCP 建立连接需要几次握手？ ^[[计算机网络/传输层#TCP 三次握手]]
+
+   - 一次 ^a
+   - 两次 ^b
+   - 三次 ^c
+   - 四次 ^d
+
+   ```quiz
+   id: tcp-handshake
+   type: single
+   answer: c
+   ```
+   ````
+
+3. Switch to reading view: the `quiz` block becomes a card. Answer it and submit — the record is written
+   back into the note.
+4. Run **Open practice window** in the command palette (or click the ribbon icon) to practise a whole
+   question bank, or several at once.
+
+The rest of this document is the reference for the format.
+
+## Linking questions to their knowledge points
+
+Every stem heading should end with `^[[知识点]]` — the link that ties the question back to the note it was
+derived from:
+
+```markdown
+## TCP 建立连接需要几次握手？ ^[[计算机网络/传输层#TCP 三次握手]]
+```
+
+- The `^` prefix marks it as an annotation of the stem rather than ordinary question text. It is still a
+  real Obsidian wikilink: it renders as a link, and the question-bank note appears in the target's
+  backlinks panel.
+- The parser **strips it from the displayed title and from the derived id**, so retargeting a link never
+  disconnects accumulated `stats` / `history`. The link target is available as
+  `QuizQuestion.knowledgeLink`, and the card shows it as a **clickable 知识点 row** under the header.
+- `rev` (the stem hash) is computed from the stem body, not the heading, so **relinking a question does
+  not mark its records as "stem changed"**.
+- Only a trailing `^[[…]]` counts. Write plain `[[知识点]]` inside the stem body when you want an inline
+  link in the question text; only the heading link is stripped.
+- Links are optional as far as the parser is concerned — a question without one simply has
+  `knowledgeLink: null`.
+
+The full authoring convention, including the five question types and the review checklist, lives in
+[`skills/easyquiz-authoring/SKILL.md`](skills/easyquiz-authoring/SKILL.md). It is written for AI agents
+authoring or reviewing a bank, and its examples are executed by the test suite, so the documented
+skeletons are guaranteed to parse.
 
 ## Development
 
@@ -16,7 +75,7 @@ An Obsidian plugin for Markdown-native quiz practice. Questions are written as *
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (255 cases)
+npm test           # bundle and run the test suite (277 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 ```
@@ -24,12 +83,18 @@ npm run lint       # eslint (eslint-plugin-obsidianmd)
 The suite has two layers:
 
 - **Pure logic** (`parser`, `stem`, `grade`, `writeback`, `match-board`, `insert`, `session`): plain node, no DOM.
-- **DOM** (`tests/quiz-match-dom.test.ts`, `tests/quiz-insert-modal.test.ts`, `tests/quiz-practice-view.test.ts`):
+- **DOM** (`tests/quiz-match-dom.test.ts`, `tests/quiz-insert-modal.test.ts`, `tests/quiz-practice-view.test.ts`,
+  `tests/quiz-knowledge-link.test.ts`):
   renders the real card and board through `renderQuizCard` under jsdom and clicks its nodes, so click handling,
-  line targets, per-column isolation and the `MarkdownRenderer` contract are checked rather than assumed; the insert
+  line targets, per-column isolation, the `MarkdownRenderer` contract and the knowledge-point link are checked
+  rather than assumed; the insert
   dialog is opened through `InsertQuestionModal` and its controls are driven; the practice window is opened through
   `PracticeView` and walked through all three of its pages. `tests/dom.ts` installs the Obsidian-style DOM helpers
   (`createDiv`, `addClass`, …) and `tests/obsidian-stub.ts` stands in for the type-only `obsidian` package.
+
+`tests/quiz-skill-doc.test.ts` closes the loop between documentation and code: it reads
+`skills/easyquiz-authoring/SKILL.md`, extracts every marked example, and feeds it to the real parser and
+grader. A documented skeleton that cannot be answered fails the suite.
 
 Source layout:
 
@@ -44,10 +109,11 @@ src/hash.ts          stem hash (rev change detection)
 src/match-board.ts   matching board state machine: adjacent-column links (pure logic)
 src/session.ts       practice planning: file summaries, filtering, sampling, progress (pure logic)
 src/runtime.ts       Obsidian adapter: file detection, dependency injection, atomic writes
-src/view.ts          practice card rendering
+src/view.ts          practice card rendering (including the header's knowledge-point link)
 src/practice-view.ts practice window: question-bank list / practice settings / practice
 src/insert.ts        question templates and insertion positioning (pure logic)
 src/insert-modal.ts  insert-question dialog and the editor write
+skills/              agent-facing authoring spec (SKILL.md), examples verified by the test suite
 tests/               parser / stem / grading / write-back / insert / session tests, the window tests, a fixture
 ```
 
@@ -89,6 +155,8 @@ A file is treated as a question bank when any of these hold:
 ### Anatomy of a question
 
 - A question spans from its stem heading to the **next heading of the same or higher level**.
+- The heading text is the question title; end it with `^[[知识点]]` to record the source knowledge point
+  (see [Linking questions to their knowledge points](#linking-questions-to-their-knowledge-points)).
 - The `quiz` block is **required**: the question type comes from its `type` field.
 - If the block is missing, `type` is missing or invalid, or the YAML fails to parse, that one question
   **degrades to a normal code block** with a highlighted explanation. Other questions are unaffected.
@@ -104,7 +172,7 @@ stem that is followed by another H2, the H3 is correctly absorbed into that ques
 | Field | Required | Notes |
 |---|---|---|
 | `type` | **yes** | `single` / `multi` / `match` / `blank` / `essay`. The *only* thing that decides the type. |
-| `id` | no | Stable identifier; derived from the heading text when omitted. |
+| `id` | no | Stable identifier; derived from the heading text (with the `^[[…]]` knowledge link excluded) when omitted. |
 | `answer` | type-dependent | `single`: `c`; `multi`: `[a, b]`; `blank` and `match` and `essay`: not used. |
 | `blanks` | no | Per-blank matching rules: `strict` / `ignoreCase` / `regex` / `accept`. Keys are blank anchors. |
 | `shuffle` | no | Shuffle order. Default `false`; `match` is always shuffled. |
@@ -134,7 +202,7 @@ editing a table marks the affected records as "stem changed" rather than silentl
 ### Single choice
 
 ````markdown
-## TCP 建立连接需要几次握手？
+## TCP 建立连接需要几次握手？ ^[[计算机网络/传输层#TCP 三次握手]]
 
 - 一次 ^a
 - 两次 ^b
@@ -152,7 +220,7 @@ explanation: 三次握手用于同步双方的初始序列号。
 ### Multiple choice
 
 ````markdown
-## 下列哪些属于传输层协议？
+## 下列哪些属于传输层协议？ ^[[计算机网络/传输层#传输层协议]]
 
 - TCP ^a
 - UDP ^b
@@ -172,7 +240,7 @@ Written as a **multi-column table**. The table's original row order *is* the cor
 order is shuffled during practice.
 
 ````markdown
-## 将协议与其默认端口配对
+## 将协议与其默认端口配对 ^[[计算机网络/应用层#常见默认端口]]
 
 | 协议 | 端口 |
 | --- | --- |
@@ -228,6 +296,7 @@ type: match
   This yields the items `MySQL`, `PostgreSQL`, `Redis`, `Memcached` in the first column — each of them
   links to the type on its own row, so `MySQL` and `PostgreSQL` both link to `关系型`.
 - A table needs at least 2 columns, otherwise the question degrades with a warning.
+
 ### Fill in the blank
 
 The marker is configurable (see **Blank marker** under Settings): `==answer==` (default),
@@ -235,7 +304,7 @@ The marker is configurable (see **Blank marker** under Settings): `==answer==` (
 automatically in order of appearance.
 
 ````markdown
-## 补全 TCP 首部字段
+## 补全 TCP 首部字段 ^[[计算机网络/传输层#TCP 首部]]
 
 TCP 首部的最小长度是 ==20== 字节，其中 ==序号== 字段用于标识本报文段的数据的第一个字节。
 
@@ -268,7 +337,7 @@ No fixed answer. The body is free-form, and a reference answer uses a **collapse
 does not spoil the question.
 
 ````markdown
-## 简述 TCP 与 UDP 的主要区别。
+## 简述 TCP 与 UDP 的主要区别。 ^[[计算机网络/传输层#TCP 与 UDP 对比]]
 
 从连接、可靠性、传输方式与适用场景四个方面作答。
 
@@ -408,7 +477,8 @@ Write-back rules:
 Implemented and covered by tests: the parser, stem preprocessing, grading for all five types, record
 write-back, matching-board logic, question templates with their insertion positioning, the practice
 card UI (choice options, click-to-connect multi-column matching with shuffling, inline click-to-type
-blanks that grow with their content, short-answer self-assessment), and the practice window
+blanks that grow with their content, short-answer self-assessment, and the clickable knowledge-point
+link), and the practice window
 (question-bank list with per-file data, practice settings with type/sampling filters, and the
 one-question-at-a-time round with in-place answer reveal and a final report). Question-bank edits
 trigger a debounced reading-view refresh and invalidate the window's cached parsing.
@@ -422,3 +492,28 @@ rounds (a mistake book, charts) beyond what the window computes for a single rou
 > pages are exercised under jsdom, but DOM behaviour — line rendering between columns, focus handling
 > on blank inputs, read-mode re-rendering, how the dialog renders in a real modal, and how the sidebar
 > view lays out in a real workspace — can only be confirmed by hand in Obsidian.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| The `quiz` block shows as a plain code block | The note is not detected as a question bank, or the block is not under a stem heading | Add `quiz: true`, check the heading level matches **Stem heading level** |
+| The card appears but **Submit** does nothing | The question degraded (a warning is shown above the data block) | Fix what the warning names — usually `type`, a missing anchor, or a YAML error |
+| Editing a question leaves the old card on screen | Reading view does not re-render code blocks on its own | The plugin refreshes automatically; otherwise run **Refresh quiz view** |
+| Records stopped accumulating after a rename | The `id` was derived from the old heading text | Give the question an explicit `id`; **Records are keyed by file path + question id** |
+| A `quiz` block is ignored entirely | It sits outside any heading that counts as a question | Move it under a stem heading |
+| The data block language was changed | The processor is registered at load time | Reload Obsidian |
+| Another plugin's `quiz` snippet stopped rendering | This plugin claimed the `quiz` block language | Change **Block language** in settings, then reload |
+
+## Contributing
+
+- Keep `main.ts` to plugin lifecycle only; feature logic belongs in its own module under `src/`.
+- `parser` / `stem` / `grade` / `writeback` / `hash` / `insert` / `session` must not import `obsidian`, so
+  they stay testable under plain Node.
+- Run `npm run build`, `npm test`, and `npm run lint` before opening a pull request; CI runs all three.
+- When you change the on-disk format or an authoring rule, update `README.md` **and**
+  `skills/easyquiz-authoring/SKILL.md` — the latter's examples are executed by `npm test`.
+
+## License
+
+0-BSD, see [LICENSE](LICENSE).

@@ -88,6 +88,27 @@ function splitLines(text: string): string[] {
 
 const HEADING_RE = /^(#{1,6})\s+(.*?)\s*$/;
 
+/**
+ * 题面标题末尾的知识点链接：`^[[知识点]]`。
+ *
+ * 用 `^` 前缀是为了在阅读视图里不被当成普通正文链接，同时保持 Obsidian 原生的
+ * 双链语法（点击可跳转、反链面板能找到这道题）。链接必须写在标题**末尾**：
+ * 解析器把它当作固定后缀摘掉，不让它进入题面显示与派生 id。
+ */
+const KNOWLEDGE_LINK_AT_END = /\s*\^\[\[([^\]\n]*)\]\]\s*$/;
+
+/** 摘掉标题末尾的知识点链接，返回剩余标题与链接目标（没有链接时为 null）。 */
+export function splitKnowledgeLink(title: string): { title: string; knowledgeLink: string | null } {
+	const match = KNOWLEDGE_LINK_AT_END.exec(title);
+	if (!match) return { title, knowledgeLink: null };
+	return { title: title.slice(0, match.index).trimEnd(), knowledgeLink: match[1] ?? null };
+}
+
+/** 只取标题文本（去掉末尾的知识点链接），用于显示与派生 id。 */
+export function stripKnowledgeLink(title: string): string {
+	return splitKnowledgeLink(title).title;
+}
+
 function normalizeText(markdown: string): string {
 	return markdown
 		.replace(/\s+/g, " ")
@@ -464,7 +485,9 @@ function parseQuestion(ctx: QuestionContext): QuizQuestion {
 	const resolvedAnswer = resolveAnswer(meta.rawAnswer, type, structure.options, localCtx);
 	validateStructure(type, structure, resolvedAnswer, blockStart, localCtx);
 
-	const derived = deriveId(heading.title);
+	// 标题末尾的 `^[[知识点]]` 是溯源信息，不算题面文本：既不显示，也不参与派生 id。
+	const headingTitle = splitKnowledgeLink(heading.title);
+	const derived = deriveId(headingTitle.title);
 	const id = meta.id ?? derived;
 	const revNow = deps.hash(
 		[type ?? "", body, structureHashSource(structure, meta)].join("\u0000")
@@ -485,7 +508,8 @@ function parseQuestion(ctx: QuestionContext): QuizQuestion {
 		type,
 		id,
 		idDerived: meta.id === null,
-		title: heading.title,
+		title: headingTitle.title,
+		knowledgeLink: headingTitle.knowledgeLink,
 		level: heading.level,
 		line: heading.line,
 		body,

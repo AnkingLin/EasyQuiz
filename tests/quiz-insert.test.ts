@@ -15,13 +15,15 @@ import { assert, assertEqual, at, must, test } from "./harness";
 const deps: ParseOptions["deps"] = { parseYaml: (source) => yaml.load(source), hash: contentHash };
 
 function template(type: QuizType, overrides: Partial<TemplateOptions> = {}): string {
+	// `title` 显式传空串时不能被默认标题顶掉，因此这里单独判断是否为 undefined。
+	const { title, ...rest } = overrides;
 	return buildQuestionTemplate({
 		type,
-		title: DEFAULT_TITLES[type],
+		title: title ?? DEFAULT_TITLES[type],
 		headingLevel: 2,
 		blockLanguage: "quiz",
 		blankMarker: "highlight",
-		...overrides,
+		...rest,
 	});
 }
 
@@ -132,6 +134,20 @@ test("自定义标题去掉换行并保留正文", () => {
 
 test("标题为空时回退到题型默认标题", () => {
 	assert(template("blank", { title: "   " }).startsWith(`## ${DEFAULT_TITLES.blank}`), "空标题应回退到默认值");
+});
+
+test("标题末尾的知识点链接被保留，并原样解析回题目", () => {
+	const markdown = template("single", { title: "三次握手 ^[[TCP 握手过程]]" });
+	assert(markdown.startsWith("## 三次握手 ^[[TCP 握手过程]]"), `标题行应保留链接，实际：${markdown.split("\n")[0]}`);
+
+	const question = must(parseInserted(markdown).questions[0], "应有题目");
+	assertEqual(question.title, "三次握手", "题面标题不含链接");
+	assertEqual(question.knowledgeLink, "TCP 握手过程", "知识点链接应被解析出来");
+});
+
+test("只写知识点链接的标题不回退到默认标题", () => {
+	const markdown = template("single", { title: "^[[TCP 握手过程]]" });
+	assert(markdown.startsWith("## ^[[TCP 握手过程]]"), `应保留链接，实际：${markdown.split("\n")[0]}`);
 });
 
 test("模板使用设置里的数据块语言", () => {

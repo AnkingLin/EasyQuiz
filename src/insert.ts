@@ -56,10 +56,28 @@ function normalizeTitle(title: string): string {
 	return title.replace(/\s*\n\s*/g, " ").trim();
 }
 
+/**
+ * 题面标题末尾的知识点链接：`^[[知识点]]`。
+ * 插入模板原样保留它，否则从对话框插入的题目会丢掉溯源信息。
+ */
+const TRAILING_KNOWLEDGE_LINK = /\s*\^\[\[([^\]\n]*)\]\]\s*$/;
+
+/** 拆出标题正文与末尾的知识点链接；只写链接时正文为空串，链接保留原文。 */
+function splitTrailingKnowledgeLink(title: string): { text: string; suffix: string } {
+	const match = TRAILING_KNOWLEDGE_LINK.exec(title);
+	if (!match) return { text: title, suffix: "" };
+	const text = title.slice(0, match.index).trimEnd();
+	// 正文为空时不补前导空格，避免标题行出现 `##  ^[[…]]` 这样的双空格。
+	return { text, suffix: `${text === "" ? "" : " "}^[[${match[1] ?? ""}]]` };
+}
+
 function heading(options: TemplateOptions): string {
 	const level = normalizeLevel(options.headingLevel);
-	const title = normalizeTitle(options.title);
-	return `${"#".repeat(level)} ${title === "" ? DEFAULT_TITLES[options.type] : title}`;
+	const { text, suffix } = splitTrailingKnowledgeLink(normalizeTitle(options.title));
+	// 只有「标题正文 + 知识点链接都没有」时才回退到默认标题：
+	// 只写了 `^[[知识点]]` 的标题仍是一道有溯源的题，不该被默认标题顶掉。
+	const body = text === "" && suffix === "" ? DEFAULT_TITLES[options.type] : text;
+	return `${"#".repeat(level)} ${body}${suffix}`;
 }
 
 /**

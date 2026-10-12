@@ -53,6 +53,30 @@
 	margin-bottom: 6px;
 }
 
+/* 知识点：题卡头部链接到题目来源的笔记 */
+
+.easy-quiz-card__knowledge {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	margin-bottom: 6px;
+}
+
+.easy-quiz-card__knowledge-label {
+	flex: none;
+}
+
+.easy-quiz-card__knowledge-link {
+	text-decoration: none;
+	color: var(--link-color, var(--text-accent));
+}
+
+.easy-quiz-card__knowledge-link:hover {
+	text-decoration: underline;
+}
+
 .easy-quiz-card__body > :first-child {
 	margin-top: 0;
 }

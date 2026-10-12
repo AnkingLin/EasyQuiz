@@ -149,6 +149,79 @@ test("未写 rev 的题目不算 stale", () => {
 });
 
 // ---------------------------------------------------------------------------
+// 知识点链接：题面标题末尾的 `^[[知识点]]`
+// ---------------------------------------------------------------------------
+
+/** 带知识点链接的单选题源码。 */
+function knowledgeSource(headingText: string): string {
+	return [
+		"---",
+		"quiz: true",
+		"---",
+		"",
+		headingText,
+		"",
+		"- 一次 ^a",
+		"- 三次 ^c",
+		"",
+		"```quiz",
+		"type: single",
+		"answer: c",
+		"```",
+	].join("\n");
+}
+
+test("知识点链接：标题里的 ^[[知识点]] 被摘出，不进题面标题", () => {
+	const question = first(knowledgeSource("## 三次握手 ^[[TCP 握手过程]]"));
+	assertEqual(question.title, "三次握手", "题面标题不应带上知识点链接");
+	assertEqual(question.knowledgeLink, "TCP 握手过程", "应记录知识点链接目标");
+	assertEqual(question.ok, true, `应解析成功（warnings=${warnCodes(question)}）`);
+});
+
+test("知识点链接：不参与派生 id，因此改链接不会让记录失联", () => {
+	const before = first(knowledgeSource("## 三次握手 ^[[TCP 握手过程]]"));
+	const after = first(knowledgeSource("## 三次握手 ^[[计算机网络/传输层]]"));
+	assertEqual(before.id, "三次握手", "派生 id 应只来自标题正文");
+	assertEqual(after.id, before.id, "只改知识点链接不应改变 id");
+});
+
+test("知识点链接：没有链接时 knowledgeLink 为 null", () => {
+	const question = first(knowledgeSource("## 三次握手"));
+	assertEqual(question.knowledgeLink, null, "未写链接时应为 null");
+	assertEqual(question.title, "三次握手", "题面标题");
+});
+
+test("知识点链接：只认标题末尾的链接，正文中间的链接不动", () => {
+	const question = first(knowledgeSource("## 三次握手 [[别的链接]] 之后"));
+	assertEqual(question.knowledgeLink, null, "不在末尾的链接不应被摘掉");
+	assertEqual(question.title, "三次握手 [[别的链接]] 之后", "标题应原样保留");
+});
+
+test("知识点链接：显式 id 优先级高于标题正文", () => {
+	const question = first(
+		[
+			"---",
+			"quiz: true",
+			"---",
+			"",
+			"## 三次握手 ^[[TCP 握手过程]]",
+			"",
+			"- 一次 ^a",
+			"- 三次 ^c",
+			"",
+			"```quiz",
+			"type: single",
+			"answer: c",
+			"id: tcp-handshake",
+			"```",
+		].join("\n")
+	);
+	assertEqual(question.id, "tcp-handshake", "显式 id 生效");
+	assertEqual(question.idDerived, false, "显式 id 不算派生");
+	assertEqual(question.knowledgeLink, "TCP 握手过程", "知识点链接仍被记录");
+});
+
+// ---------------------------------------------------------------------------
 // 多选题
 // ---------------------------------------------------------------------------
 
