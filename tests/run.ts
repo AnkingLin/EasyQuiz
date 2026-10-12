@@ -5,12 +5,14 @@
 import { results, test } from "./harness";
 import * as parserTests from "./quiz-parser.test";
 import * as gradeWriteBackTests from "./quiz-grading.test";
+import * as stemTests from "./quiz-stem.test";
 
 export { test };
 
 const summary = results();
 void parserTests;
 void gradeWriteBackTests;
+void stemTests;
 
 for (const failure of summary.failures) {
 	console.error(`✗ ${failure}`);

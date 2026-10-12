@@ -57,9 +57,13 @@
 	margin-top: 0;
 }
 
-.easy-quiz-card__options,
-.easy-quiz-card__blanks,
-.easy-quiz-card__matches {
+.easy-quiz-card__body > :last-child {
+	margin-bottom: 0;
+}
+
+/* ---------------------------------------------------------------- 选择题 */
+
+.easy-quiz-card__options {
 	margin-top: 10px;
 	display: flex;
 	flex-direction: column;
@@ -73,23 +77,127 @@
 	cursor: pointer;
 }
 
-.easy-quiz-card__blank,
-.easy-quiz-card__match {
+/* ---------------------------------------------------------------- 填空题 */
+
+/* 题面里的空位：下划线样式，点击即可输入 */
+.easy-quiz-card__blank-input {
+	display: inline-block;
+	vertical-align: baseline;
+	margin: 0 2px;
+	padding: 0 4px;
+	min-width: 4ch;
+	background: transparent;
+	border: none;
+	border-bottom: 1.5px solid var(--text-muted);
+	border-radius: 0;
+	color: var(--text-accent);
+	font-family: inherit;
+	font-size: inherit;
+	line-height: inherit;
+	text-align: center;
+	cursor: text;
+}
+
+.easy-quiz-card__blank-input:hover {
+	border-bottom-color: var(--interactive-accent);
+	background: var(--background-modifier-hover);
+}
+
+.easy-quiz-card__blank-input:focus {
+	outline: none;
+	border-bottom-color: var(--interactive-accent);
+	background: var(--background-modifier-hover);
+}
+
+.easy-quiz-card__blanks {
+	margin-top: 10px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.easy-quiz-card__blank {
 	display: flex;
 	align-items: center;
 	gap: 8px;
 }
 
-.easy-quiz-card__match-item {
-	flex: 1 1 auto;
+/* ---------------------------------------------------------------- 配对题 */
+
+.easy-quiz-card__board {
+	position: relative;
+	margin-top: 10px;
 }
 
-.easy-quiz-card__essay {
-	width: 100%;
-	min-height: 4.5em;
-	margin-top: 10px;
-	resize: vertical;
+.easy-quiz-card__board-columns {
+	position: relative;
+	display: flex;
+	justify-content: space-between;
+	gap: 48px;
+	z-index: 1;
 }
+
+.easy-quiz-card__board-col {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	flex: 1 1 0;
+	min-width: 0;
+}
+
+.easy-quiz-card__board-col.is-right {
+	align-items: flex-end;
+}
+
+/* 连线层：铺满题板，位于节点之下 */
+.easy-quiz-card__links {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+	z-index: 0;
+	overflow: visible;
+}
+
+.easy-quiz-card__node {
+	position: relative;
+	max-width: 100%;
+	padding: 6px 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s, 6px);
+	background: var(--background-primary);
+	cursor: pointer;
+	user-select: none;
+	transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.easy-quiz-card__node:hover {
+	border-color: var(--interactive-accent);
+}
+
+/* 已选中、等待连线的节点 */
+.easy-quiz-card__node.is-active {
+	border-color: var(--interactive-accent);
+	background: var(--background-modifier-hover);
+	box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+
+/* 已连线的节点 */
+.easy-quiz-card__node.is-linked {
+	border-color: var(--interactive-accent);
+	color: var(--text-accent);
+}
+
+.easy-quiz-card__link {
+	fill: none;
+	stroke: var(--interactive-accent);
+	stroke-width: 2;
+	stroke-linecap: round;
+	opacity: 0.85;
+}
+
+/* ------------------------------------------------------- 提交与结果反馈 */
 
 .easy-quiz-card__actions {
 	display: flex;
@@ -118,7 +226,17 @@
 	color: var(--text-muted);
 }
 
-/* 诊断卡片：题目数据有问题时替换刷题界面 */
+/* ---------------------------------------------------------- 问答题 */
+
+.easy-quiz-card__essay {
+	width: 100%;
+	min-height: 4.5em;
+	margin-top: 10px;
+	resize: vertical;
+}
+
+/* ---------------------------------------------------------- 诊断卡片 */
+
 .easy-quiz-card.is-diagnostic {
 	border-color: var(--text-warning);
 	background: var(--background-secondary);
@@ -139,9 +257,4 @@
 	padding-left: 1.2em;
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
-}
-
-/* 填空题在题面里的占位 */
-.easy-quiz-card__body code {
-	background: var(--background-modifier-border);
 }

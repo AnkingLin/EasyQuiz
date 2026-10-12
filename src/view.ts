@@ -3,11 +3,15 @@
  *
  * 设计约束（README §1.3）：实时预览下光标进入会把渲染结果还原为源码，
  * 因此刷题在阅读视图/预览中完成；题卡本身不写文件，提交时统一交给 QuizService。
+ *
+ * 渲染分工：题面只渲染"非交互部分"——选择题的选项列表、配对题的表格、
+ * 填空题的 `==答案==` 由各自的交互控件承担，避免同一内容出现两次。
  */
 
 import { App, MarkdownRenderer, setIcon, TFile } from "obsidian";
 import { GradeResult, UserAnswer } from "./grade";
 import { formatStats, QuizService, staleNote } from "./runtime";
+import { BLANK_MARKER_PREFIX, formatStem } from "./stem";
 import { QuizQuestion } from "./types";
 
 export interface CardContext {
@@ -55,7 +59,10 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 	}
 
 	const bodyEl = card.createDiv({ cls: "easy-quiz-card__body" });
-	await MarkdownRenderer.render(ctx.app, stripAnswerMarkers(question), bodyEl, ctx.file.path, null as never);
+	const stem = formatStem(question);
+	if (stem.trim() !== "") {
+		await MarkdownRenderer.render(ctx.app, stem, bodyEl, ctx.file.path, null as never);
+	}
 
 	switch (question.type) {
 		case "single":
@@ -63,7 +70,7 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 			renderChoice(question, card, ctx);
 			break;
 		case "blank":
-			renderBlank(question, card, ctx);
+			renderBlanks(question, bodyEl, card, ctx);
 			break;
 		case "match":
 			renderMatch(question, card, ctx);
@@ -72,13 +79,6 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 			renderEssay(question, card, ctx);
 			break;
 	}
-}
-
-/** 题面渲染前去掉机器标记：锚点与 `==答案==` 的等号包裹。 */
-export function stripAnswerMarkers(question: QuizQuestion): string {
-	return question.body
-		.replace(/==([^=]+)==\s*\^([A-Za-z0-9\-_]+)/g, (_match, _answer: string, anchor: string) => `\`{{${anchor}}}\``)
-		.replace(/\s\^[A-Za-z0-9\-_]+/gm, "");
 }
 
 // ---------------------------------------------------------------------------
@@ -104,7 +104,7 @@ function renderDiagnostics(question: QuizQuestion, card: HTMLElement): void {
 }
 
 // ---------------------------------------------------------------------------
-// 各题型交互
+// 选择题
 // ---------------------------------------------------------------------------
 
 function renderChoice(question: QuizQuestion, card: HTMLElement, ctx: CardContext): void {
@@ -135,40 +135,200 @@ function renderChoice(question: QuizQuestion, card: HTMLElement, ctx: CardContex
 	);
 }
 
-function renderBlank(question: QuizQuestion, card: HTMLElement, ctx: CardContext): void {
-	const inputs: HTMLInputElement[] = [];
-	const list = card.createDiv({ cls: "easy-quiz-card__blanks" });
-	for (let index = 0; index < question.blanks.length; index++) {
-		const row = list.createDiv({ cls: "easy-quiz-card__blank" });
-		row.createSpan({ text: `第 ${index + 1} 空` });
-		inputs.push(row.createEl("input", { type: "text" }));
+// ---------------------------------------------------------------------------
+// 填空题：题面里的空位可点击输入
+// ---------------------------------------------------------------------------
+
+function renderBlanks(question: QuizQuestion, bodyEl: HTMLElement, card: HTMLElement, ctx: CardContext): void {
+	const inputs = new Map<string, string>();
+
+	// 把题面中的占位标记替换成可点击的空位。
+	for (const blank of question.blanks) {
+		const label = `${BLANK_MARKER_PREFIX}${blank.anchor}`;
+		const placeholder = findTextElement(bodyEl, label);
+		if (placeholder === null) continue;
+		const input = createBlankInput(blank.anchor, inputs);
+		placeholder.replaceWith(input);
 	}
+
+	// 题面里没找到（例如题面为空）时，退化为逐空列表，保证仍可作答。
+	const missing = question.blanks.filter((blank) => !inputs.has(blank.anchor));
+	if (missing.length > 0) {
+		const list = card.createDiv({ cls: "easy-quiz-card__blanks" });
+		for (const blank of missing) {
+			const row = list.createDiv({ cls: "easy-quiz-card__blank" });
+			row.createSpan({ text: `第 ${question.blanks.indexOf(blank) + 1} 空` });
+			const input = createBlankInput(blank.anchor, inputs);
+			row.appendChild(input);
+		}
+	}
+
 	renderSubmit(card, ctx, question, "提交答案", () => {
-		const values = inputs.map((input) => input.value);
-		return values.every((value) => value.trim() === "") ? null : { kind: "blank", values };
+		const values = question.blanks.map((blank) => (inputs.get(blank.anchor) ?? "").trim());
+		return values.every((value) => value === "") ? null : { kind: "blank", values };
 	});
 }
 
-function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: CardContext): void {
-	// 选项 = 表格右侧出现过的全部答案；每个待匹配条目选一个。
-	const targets = [...new Set(question.matchItems.flatMap((item) => item.actualTargets))];
-	const chosen = new Map<string, HTMLSelectElement>();
-	const list = card.createDiv({ cls: "easy-quiz-card__matches" });
-	for (const item of question.matchItems) {
-		const row = list.createDiv({ cls: "easy-quiz-card__match" });
-		row.createSpan({ cls: "easy-quiz-card__match-item", text: item.text });
-		const select = row.createEl("select");
-		select.createEl("option", { text: "请选择", value: "" });
-		for (const target of targets) {
-			select.createEl("option", { text: target, value: target });
-		}
-		chosen.set(item.key, select);
+/** 创建一个下划线样式的空位输入框，点击即可输入。 */
+function createBlankInput(anchor: string, inputs: Map<string, string>): HTMLInputElement {
+	const input = createEl("input", { cls: "easy-quiz-card__blank-input" });
+	input.type = "text";
+	input.dataset["anchor"] = anchor;
+	input.size = 8;
+	inputs.set(anchor, "");
+	const sync = () => {
+		inputs.set(anchor, input.value);
+		input.style.width = `${Math.max(4, input.value.length + 2)}ch`;
+	};
+	input.addEventListener("input", sync);
+	return input;
+}
+
+/** 在已渲染的题面里找到承载占位标记的元素（通常是内联 code）。 */
+function findTextElement(root: HTMLElement, label: string): HTMLElement | null {
+	const matches = (element: Element) => (element.textContent ?? "").trim() === label;
+	const candidates = root.querySelectorAll("code, span, a, strong, em, del, mark");
+	for (const candidate of Array.from(candidates)) {
+		if (matches(candidate)) return candidate as HTMLElement;
 	}
+	// 退化：标记可能被包在其它内联元素里，逐层向下找。
+	for (const element of Array.from(root.querySelectorAll("*"))) {
+		if (element.children.length === 0 && matches(element)) return element as HTMLElement;
+	}
+	return null;
+}
+
+// ---------------------------------------------------------------------------
+// 配对题：点击创建连线
+// ---------------------------------------------------------------------------
+
+interface Connection {
+	/** 左侧条目 key。 */
+	key: string;
+	/** 右侧答案文本。 */
+	target: string;
+}
+
+function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: CardContext): void {
+	const targets = [...new Set(question.matchItems.flatMap((item) => item.actualTargets))];
+	const connections = new Map<string, Connection>();
+	let activeItemKey: string | null = null;
+
+	const board = card.createDiv({ cls: "easy-quiz-card__board" });
+	const columns = board.createDiv({ cls: "easy-quiz-card__board-columns" });
+	const leftCol = columns.createDiv({ cls: "easy-quiz-card__board-col is-left" });
+	const rightCol = columns.createDiv({ cls: "easy-quiz-card__board-col is-right" });
+
+	// 连线画在列之上的 SVG 层里。
+	const svg = createSvg("svg", { cls: "easy-quiz-card__links" });
+	board.appendChild(svg);
+
+	const leftEls = new Map<string, HTMLElement>();
+	const rightEls = new Map<string, HTMLElement>();
+
+	const leftItems = dedupeByKey(question.matchItems);
+	for (const item of leftItems) {
+		const el = leftCol.createDiv({ cls: "easy-quiz-card__node is-left", text: item.text });
+		leftEls.set(item.key, el);
+		el.addEventListener("click", () => {
+			// 已连线的条目：再次点击即断开。
+			if (connections.has(item.key)) {
+				connections.delete(item.key);
+				activeItemKey = null;
+				paint();
+				return;
+			}
+			activeItemKey = activeItemKey === item.key ? null : item.key;
+			paint();
+		});
+	}
+
+	for (const target of targets) {
+		const el = rightCol.createDiv({ cls: "easy-quiz-card__node is-right", text: target });
+		rightEls.set(target, el);
+		el.addEventListener("click", () => {
+			if (activeItemKey === null) {
+				// 未选左侧条目时，点击右侧取消连到该答案的连线。
+				for (const [key, connection] of connections) {
+					if (connection.target === target) connections.delete(key);
+				}
+				paint();
+				return;
+			}
+			// 一个答案只能连一条线：先解除该答案上已有的连线。
+			for (const [key, connection] of connections) {
+				if (connection.target === target) connections.delete(key);
+			}
+			connections.set(activeItemKey, { key: activeItemKey, target });
+			activeItemKey = null;
+			paint();
+		});
+	}
+
+	function paint(): void {
+		// 视图已被移除时不再绘制，避免操作脱离文档的节点。
+		if (!board.isConnected) return;
+		const width = board.clientWidth;
+		const height = board.clientHeight;
+		if (width === 0 || height === 0) return;
+
+		svg.empty();
+		svg.setAttribute("width", `${width}`);
+		svg.setAttribute("height", `${height}`);
+		svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+		for (const el of leftEls.values()) el.removeClass("is-active", "is-linked");
+		for (const el of rightEls.values()) el.removeClass("is-active", "is-linked");
+		if (activeItemKey !== null) leftEls.get(activeItemKey)?.addClass("is-active");
+
+		const boardRect = board.getBoundingClientRect();
+		for (const connection of connections.values()) {
+			const left = leftEls.get(connection.key);
+			const right = rightEls.get(connection.target);
+			if (!left || !right) continue;
+			left.addClass("is-linked");
+			right.addClass("is-linked");
+			const from = left.getBoundingClientRect();
+			const to = right.getBoundingClientRect();
+			const x1 = from.right - boardRect.left;
+			const y1 = from.top + from.height / 2 - boardRect.top;
+			const x2 = to.left - boardRect.left;
+			const y2 = to.top + to.height / 2 - boardRect.top;
+			const path = createSvg("path", { cls: "easy-quiz-card__link" });
+			const mid = (x1 + x2) / 2;
+			path.setAttribute("d", `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`);
+			svg.appendChild(path);
+		}
+	}
+
+	// 尺寸变化后重新画线，避免连线错位。
+	const observer = new ResizeObserver(() => paint());
+	observer.observe(board);
+	window.setTimeout(() => paint(), 0);
+
 	renderSubmit(card, ctx, question, "提交答案", () => {
-		const pairs = [...chosen.entries()].map(([key, select]) => ({ key, target: select.value }));
-		return pairs.every((pair) => pair.target === "") ? null : { kind: "match", pairs };
+		const pairs = [...connections.values()].map((connection) => ({
+			key: connection.key,
+			target: connection.target,
+		}));
+		return pairs.length === 0 ? null : { kind: "match", pairs };
 	});
 }
+
+/** 同一条目可能因一对多而出现多次，按 key 去重。 */
+function dedupeByKey(items: QuizQuestion["matchItems"]): QuizQuestion["matchItems"] {
+	const seen = new Set<string>();
+	const result: QuizQuestion["matchItems"] = [];
+	for (const item of items) {
+		if (seen.has(item.key)) continue;
+		seen.add(item.key);
+		result.push(item);
+	}
+	return result;
+}
+
+// ---------------------------------------------------------------------------
+// 问答题与提交
+// ---------------------------------------------------------------------------
 
 function renderEssay(question: QuizQuestion, card: HTMLElement, ctx: CardContext): void {
 	const area = card.createEl("textarea", { cls: "easy-quiz-card__essay" });

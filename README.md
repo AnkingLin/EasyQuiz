@@ -16,7 +16,7 @@ An Obsidian plugin for Markdown-native quiz practice. Questions are written as *
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (77 cases)
+npm test           # bundle and run the test suite (88 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 ```
@@ -27,15 +27,19 @@ Source layout:
 src/main.ts        plugin entry: code-block processor, command, settings tab
 src/parser.ts      question-bank parser (pure logic, no obsidian import)
 src/types.ts       question model and parse-result types
+src/stem.ts        stem preprocessing: strips what the interactive controls render (pure logic)
 src/grade.ts       grading for the five question types (pure logic)
 src/writeback.ts   record write-back: only stats/history/rev, validated before writing
 src/hash.ts        stem hash (rev change detection)
 src/runtime.ts     Obsidian adapter: file detection, dependency injection, atomic writes
 src/view.ts        practice card rendering
-tests/             parser / grading / write-back tests and a question-bank fixture
+tests/             parser / stem / grading / write-back tests and a question-bank fixture
 ```
 
-`parser` / `grade` / `writeback` / `hash` deliberately do **not** import `obsidian`, so they run under plain Node; every Obsidian API dependency is confined to `runtime.ts` and `view.ts`.
+`parser` / `stem` / `grade` / `writeback` / `hash` deliberately do **not** import `obsidian`, so they run under plain Node; every Obsidian API dependency is confined to `runtime.ts` and `view.ts`.
+
+The stem is rendered **without** the parts that get their own interactive control — the option list,
+the matching table, and the `==answer==` text are stripped so that nothing is displayed twice.
 
 ## Installing into a vault
 
@@ -166,7 +170,10 @@ type: match
 
 - A table is only read as a matching question when `type: match`; tables in other question types are
   ordinary prose and are not graded.
-- Shuffling keeps the **first column in its original order** and shuffles the answer columns.
+- In the UI the two sides are shown as two columns: **click an item, then click its answer**, and a
+  connecting line is drawn between them. Clicking a connected item again removes its line.
+- Each answer accepts a single line; connecting a second item to the same answer moves the line.
+- The table itself is not rendered — the board replaces it, so nothing appears twice.
 - **One-to-many**: separate multiple entries in a cell with ` / `. The first column then yields one
   match item per entry, and all of them accept the same answer:
 
@@ -179,7 +186,6 @@ type: match
 
   This yields two match items, "MySQL" and "PostgreSQL", both accepting "关系型" — so pairing
   "关系型" with either one is correct.
-- Three or more columns: the first column is the reference; every other column is shuffled independently.
 - A table needs at least 2 columns, otherwise the question degrades with a warning.
 
 ### Fill in the blank
@@ -201,6 +207,8 @@ blanks:
 
 - Each `==…== ^bN` is one blank; the number of blanks comes from the question body.
 - Blanks not listed under `blanks` use strict matching (surrounding whitespace is ignored).
+- In the UI the blanks are rendered **inline in the stem** as underlined gaps: click a gap and type.
+  The answer text never appears in the stem before submitting.
 
 ### Short answer
 
@@ -283,12 +291,15 @@ Write-back rules:
 
 ## Status
 
-Implemented and covered by tests: the parser, grading for all five types, record write-back, and the
-practice card UI.
+Implemented and covered by tests: the parser, stem preprocessing, grading for all five types, record
+write-back, and the practice card UI (choice options, click-to-connect matching, inline click-to-type
+blanks, short-answer self-assessment).
 
 Not yet implemented: debounced batching of writes, external-modification detection
-(`vault.on('modify')`), drag-and-drop matching (currently a dropdown per item), alternate renderers
-(review mode / single-question panel), and statistics such as a mistake book.
+(`vault.on('modify')`), alternate renderers (review mode / single-question panel), and statistics such
+as a mistake book.
 
-> The card UI and write-back have **not** yet been verified inside a real Obsidian instance — the
-> logic layer is fully tested, but rendering is not.
+> The card UI and write-back have **not** been verified inside a real Obsidian instance. The logic
+> layer (parsing, stem preprocessing, grading, write-back) is fully tested, but DOM behaviour —
+> line rendering between columns, focus handling on blank inputs — can only be confirmed by hand in
+> Obsidian.
