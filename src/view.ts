@@ -219,13 +219,6 @@ function renderChoice(question: QuizQuestion, card: HTMLElement, ctx: CardContex
 
 	// 复盘态：把正确选项标出来（提交后由 renderSubmit 统一驱动复盘）。
 	const review = ctx.reviewOnly === true;
-	if (review) {
-		const expected = answerAnchors(question);
-		for (const button of buttons) {
-			if (button.anchor === null) continue;
-			button.el.addClass(expected.includes(button.anchor) ? "is-answer" : "is-not-answer");
-		}
-	}
 
 	for (const option of question.options) {
 		// 用普通按钮而不是 <input type="radio">：避免表单控件在阅读视图里的原生行为
@@ -260,6 +253,17 @@ function renderChoice(question: QuizQuestion, card: HTMLElement, ctx: CardContex
 			event.preventDefault();
 			toggle();
 		});
+	}
+
+	// 复盘态：标出正确选项、淡化干扰项。
+	// 必须在选项创建之后再做——这段逻辑原本放在循环之前，`buttons` 还是空的，
+	// 结果复盘时选项完全没有高亮。
+	if (review) {
+		const expected = answerAnchors(question);
+		for (const button of buttons) {
+			if (button.anchor === null) continue;
+			button.el.addClass(expected.includes(button.anchor) ? "is-answer" : "is-not-answer");
+		}
 	}
 
 	renderSubmit(card, ctx, question, t("card.submit"), () =>

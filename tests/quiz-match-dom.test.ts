@@ -16,7 +16,7 @@ import { contentHash } from "../src/hash";
 import { renderMatch, renderQuizCard } from "../src/view";
 import { QuizQuestion } from "../src/types";
 import { MarkdownRenderer, MarkdownRenderChild } from "./obsidian-stub";
-import { assert, assertEqual, test } from "./harness";
+import { assert, assertEqual, must, test } from "./harness";
 
 const options: ParseOptions = { deps: { parseYaml: (s) => yaml.load(s), hash: contentHash } };
 
@@ -524,4 +524,51 @@ test("DOM：中间列条目在右侧也能连多条（共享答案列）", () =>
 		2,
 		`端口 80 应能连到两个层级（实际 ${JSON.stringify(board.lineTargets())}）`
 	);
+});
+// ---------------------------------------------------------------------------
+// 选择题复盘高亮
+// ---------------------------------------------------------------------------
+
+/** 一道三选一的单选题：正确答案是 c。 */
+function parseChoice(): QuizQuestion {
+	const source = [
+		"---",
+		"quiz: true",
+		"---",
+		"",
+		"## 第三次握手的作用",
+		"",
+		"- 确认接收能力 ^a",
+		"- 避免历史重复连接 ^c",
+		"- 协商加密算法 ^d",
+		"",
+		"```quiz",
+		"type: single",
+		"answer: c",
+		"```",
+	].join("\n");
+	return must(parseQuizFile(source, "题库/选择.md", options).questions[0], "未解析出单选题");
+}
+
+test("DOM：复盘态把正确选项标为 is-answer，其它选项淡化", async () => {
+	const card = await renderFullCard(parseChoice(), { reviewOnly: true });
+	const options = [...card.querySelectorAll<HTMLElement>(".easy-quiz-card__option")];
+	assertEqual(options.length, 3, "应渲染三个选项");
+
+	// 高亮必须落在文本为「避免历史重复连接」的那一项上。
+	// 这段逻辑曾经写在选项创建之前：`buttons` 还是空的，复盘时一个高亮都没有。
+	const answered = options.filter((option) => option.classList.contains("is-answer"));
+	assertEqual(answered.length, 1, `应恰好有一个正确选项被标出（实际 ${answered.length} 个）`);
+	assertEqual(answered[0]?.textContent, "避免历史重复连接", "标出的应是正确选项");
+
+	const dimmed = options.filter((option) => option.classList.contains("is-not-answer"));
+	assertEqual(dimmed.length, 2, "其余两个干扰项应被淡化");
+});
+
+test("DOM：作答态不预先标出正确答案", async () => {
+	const card = await renderFullCard(parseChoice());
+	const marked = card.querySelectorAll(
+		".easy-quiz-card__option.is-answer, .easy-quiz-card__option.is-not-answer"
+	);
+	assertEqual(marked.length, 0, "还没提交时不应泄露答案");
 });
