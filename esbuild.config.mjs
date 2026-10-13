@@ -37,7 +37,8 @@ if (mode === 'test') {
 		platform: 'node',
 		format: 'cjs',
 		target: 'node18',
-		loader: { '.md': 'text' },
+		// 样式表也当文本读进来：复盘高亮的可读性只能靠断言声明来守住（见 quiz-styles.test.ts）。
+		loader: { '.md': 'text', '.css': 'text' },
 		plugins: [skillsMarkdown],
 		// jsdom 自带资源文件，必须保持外部依赖；obsidian 只有类型定义，用测试存根替代。
 		external: ['jsdom'],

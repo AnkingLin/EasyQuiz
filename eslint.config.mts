@@ -7,6 +7,7 @@ export default defineConfig(
 		'node_modules',
 		'dist',
 		'.test-build',
+		'.scratch',
 		'esbuild.config.mjs',
 		'version-bump.mjs',
 		'versions.json',

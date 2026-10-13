@@ -18,5 +18,8 @@ main.js
 # 测试打包产物
 .test-build
 
+# 手工排查用的临时脚本与截图
+.scratch
+
 # obsidian
 data.json

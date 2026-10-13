@@ -941,10 +941,17 @@
 	border-color: var(--background-modifier-border-focus, var(--interactive-accent));
 }
 
-/* 复盘时：正确选项描边，干扰项变淡 */
+/*
+ * 复盘时：正确选项淡绿打底 + 描边，干扰项变淡。
+ *
+ * 底色同样不能用实心的 `--background-modifier-success`：默认主题里它就是 `--color-green`，
+ * 在深色主题下铺满整行会把选项文字压得几乎读不出来。淡染既保住绿色语义，也不影响可读性。
+ * 第一行给不支持 `color-mix()` 的旧版本兜底。
+ */
 .easy-quiz-card__option.is-answer {
 	border-color: var(--text-success);
-	background: var(--background-modifier-success, var(--background-modifier-hover));
+	background: var(--background-modifier-hover);
+	background: color-mix(in srgb, var(--text-success) 14%, transparent);
 	box-shadow: inset 0 0 0 1px var(--text-success);
 }
 
@@ -958,12 +965,22 @@
 	opacity: 0.55;
 }
 
+/*
+ * 复盘时空位里写出的答案。
+ *
+ * 底色必须用半透明色，不能直接用 `--background-modifier-success`：在 Obsidian 的默认主题里
+ * 它与 `--text-success` 是同一个颜色（`var(--color-green)`），铺成底色会把答案文字染成同色，
+ * 看起来就是一个空绿块。这里改成绿色淡染 + 绿色文字，绿色语义保留，文字也读得出来。
+ * 第一行是给不支持 `color-mix()` 的旧版本兜底。
+ */
 .easy-quiz-card__blank-answer {
 	display: inline-block;
 	margin: 0 3px;
 	padding: 0 5px;
 	border-radius: var(--eqq-r-sm);
-	background: var(--background-modifier-success, var(--background-modifier-hover));
+	background: var(--background-modifier-hover);
+	background: color-mix(in srgb, var(--text-success) 18%, transparent);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-success) 40%, transparent);
 	color: var(--text-success);
 	font-weight: var(--font-semibold, 600);
 }
