@@ -147,6 +147,8 @@ interface ToggleComponentLike {
 export class Setting {
 	/** 设置行的名称区与控件区（与真实实现同名，视图会把控件挂进 controlEl）。 */
 	settingEl: HTMLElement;
+	/** 名称与说明的包裹层（真实 Obsidian 里叫 setting-item-info）。 */
+	infoEl: HTMLElement;
 	nameEl: HTMLElement;
 	descEl: HTMLElement;
 	controlEl: HTMLElement;
@@ -154,18 +156,23 @@ export class Setting {
 	components: (TextComponentLike | ToggleComponentLike | ButtonComponent)[] = [];
 
 	constructor(public containerEl: HTMLElement) {
-		this.settingEl = containerEl.createDiv();
-		this.nameEl = this.settingEl.createDiv();
-		this.descEl = this.settingEl.createDiv();
-		this.controlEl = this.settingEl.createDiv();
+		// 结构与类名都对齐真实 Obsidian：样式表里针对 .setting-item-* 的规则
+		// （尤其是窄屏下的上下排列）才能在测试与预览里真实生效。
+		this.settingEl = containerEl.createDiv({ cls: "setting-item" });
+		this.infoEl = this.settingEl.createDiv({ cls: "setting-item-info" });
+		this.nameEl = this.infoEl.createDiv({ cls: "setting-item-name" });
+		this.descEl = this.infoEl.createDiv({ cls: "setting-item-description" });
+		this.controlEl = this.settingEl.createDiv({ cls: "setting-item-control" });
 		// 测试要按顺序取回某个 Setting 上的控件；给元素挂一个反向引用最省事。
 		(this.settingEl as unknown as { setting: Setting }).setting = this;
 	}
 
-	setName(_name: string): this {
+	setName(name: string): this {
+		this.nameEl.textContent = name;
 		return this;
 	}
-	setDesc(_desc: string): this {
+	setDesc(desc: string): this {
+		this.descEl.textContent = desc;
 		return this;
 	}
 

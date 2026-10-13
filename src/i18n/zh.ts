@@ -157,6 +157,7 @@ export const zh: MessageTable = {
 	"practice.toolbar.clear": "清空选择",
 	"practice.toolbar.rescan": "重新扫描",
 	"practice.toolbar.startSetup": "开始设置（已选 {count} 份）",
+	"practice.list.goSetup": "去设置这一轮",
 	"practice.empty.none": "没有找到题库文件。",
 	"practice.empty.hintFrontmatter": "在笔记的 frontmatter 里写 quiz: true（推荐）。",
 	"practice.empty.hintTag": "或者给文件加 #quiz 标签。",

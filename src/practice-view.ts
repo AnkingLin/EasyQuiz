@@ -124,6 +124,8 @@ export class PracticeView extends ItemView {
 	private progressEl: HTMLElement | null = null;
 	private countEl: HTMLElement | null = null;
 	private startEl: HTMLButtonElement | null = null;
+	/** 列表页底部操作条上的"已选几份"文案。 */
+	private footerTextEl: HTMLElement | null = null;
 
 	constructor(leaf: WorkspaceLeaf, host: EasyQuizHost, openSettings: () => void) {
 		super(leaf);
@@ -197,6 +199,7 @@ export class PracticeView extends ItemView {
 		this.progressEl = null;
 		this.countEl = null;
 		this.startEl = null;
+		this.footerTextEl = null;
 	}
 
 	/** 宿主声明题库数据可能已变化：下次渲染前重新解析。 */
@@ -230,6 +233,7 @@ export class PracticeView extends ItemView {
 		this.cardHost = null;
 		this.countEl = null;
 		this.startEl = null;
+		this.footerTextEl = null;
 
 		this.renderSteps();
 
@@ -367,6 +371,8 @@ export class PracticeView extends ItemView {
 			}
 			this.renderFileRow(list, entry);
 		}
+
+		this.renderListFooter(body);
 	}
 
 	private totalsText(totals: SummaryTotals): string {
@@ -405,12 +411,26 @@ export class PracticeView extends ItemView {
 			this.stale = true;
 			void this.render();
 		});
+	}
 
-		const start = this.button(toolbar, "to-picker", this.pickerLabel(), true);
+	/**
+	 * 列表页底部的固定操作条：选中状态的说明 + 进入设置。
+	 *
+	 * 单独放在末尾（而不是工具条里）是为了让它在手机上也停在同一条位置：
+	 * 长列表滚动时勾选完就能立刻出发，不必先滚回顶部。
+	 */
+	private renderListFooter(body: HTMLElement): void {
+		const footer = body.createDiv({ cls: "easy-quiz-practice__footer" });
+		this.footerTextEl = footer.createDiv({
+			cls: "easy-quiz-practice__footer-text",
+			text: this.pickerLabel(),
+		});
+
+		const start = this.button(footer, "to-picker", t("practice.list.goSetup"), true);
 		start.disabled = this.picked.length === 0;
 		start.addEventListener("click", () => this.gotoPicker());
 
-		// 行内勾选后只更新这几个按钮的字样与可用状态，避免整页重画导致勾选闪动。
+		// 行内勾选后只更新这条操作条，避免整页重画导致勾选闪动。
 		this.startEl = start;
 		this.countEl = null;
 	}
@@ -514,12 +534,10 @@ export class PracticeView extends ItemView {
 		return el !== null && typeof (el as { disabled?: unknown }).disabled === "boolean";
 	}
 
-	/** 勾选变化后就地更新底部按钮。 */
+	/** 勾选变化后就地更新底部操作条（选中份数 + 按钮可用状态）。 */
 	private syncToolbar(): void {
-		if (this.startEl !== null) {
-			this.startEl.setText(this.pickerLabel());
-			this.startEl.disabled = this.picked.length === 0;
-		}
+		if (this.startEl !== null) this.startEl.disabled = this.picked.length === 0;
+		if (this.footerTextEl !== null) this.footerTextEl.setText(this.pickerLabel());
 		const clear = this.bodyEl?.querySelector("button[data-action='clear-selection']") ?? null;
 		if (this.isButton(clear)) clear.disabled = this.picked.length === 0;
 	}
@@ -638,9 +656,11 @@ export class PracticeView extends ItemView {
 			});
 		}
 
-		this.renderModeSetting(body);
-		this.renderTypeSetting(body);
-		this.renderShuffleSetting(body);
+		// 三个设置行合成一张卡片：视觉上是一组"这一轮怎么抽题"的决定。
+		const panel = body.createDiv({ cls: "easy-quiz-practice__panel" });
+		this.renderModeSetting(panel);
+		this.renderTypeSetting(panel);
+		this.renderShuffleSetting(panel);
 		this.renderStartRow(body);
 		this.refreshCounts();
 	}
@@ -718,10 +738,18 @@ export class PracticeView extends ItemView {
 	}
 
 	private renderStartRow(body: HTMLElement): void {
-		const row = body.createDiv({ cls: "easy-quiz-practice__start" });
+		const row = body.createDiv({ cls: "easy-quiz-practice__footer" });
 		this.countEl = row.createDiv({ cls: "easy-quiz-practice__count" });
 		this.countEl.dataset["action"] = "session-count";
-		this.startEl = this.button(row, "start-session", t("practice.picker.start"), true);
+
+		const actions = row.createDiv({ cls: "easy-quiz-practice__footer-actions" });
+		const back = this.button(actions, "goto-list", t("practice.picker.back"));
+		back.addEventListener("click", () => {
+			this.page = 0;
+			void this.render();
+		});
+
+		this.startEl = this.button(actions, "start-session", t("practice.picker.start"), true);
 		this.startEl.addEventListener("click", () => {
 			void this.startSession();
 		});

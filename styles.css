@@ -1,39 +1,87 @@
-/* EasyQuiz 刷题界面样式 */
+/* EasyQuiz 界面样式
+ *
+ * 组织方式：
+ *   1. 设计变量与题卡（笔记内渲染与刷题窗口共用同一份题卡）
+ *   2. 插入题目对话框
+ *   3. 刷题窗口（题库列表 → 刷题设置 → 刷题）
+ *
+ * 设计原则：
+ *   - 极简：能靠留白分开的就不画分割线，能靠一条描边讲清的就不叠阴影。
+ *   - 间距成体系：窗口内统一走 --eqq-* 这套间距与圆角，避免到处手写零碎数字。
+ *   - 手机优先：窄屏下操作按钮占满整行、点击目标不低于 40px、主要操作停在屏幕底部。
+ */
 
-.easy-quiz-block {
-	margin: 0.5em 0;
+/* ========================================================== 设计变量 */
+
+.easy-quiz-block,
+.easy-quiz-card,
+.easy-quiz-practice {
+	/* 间距：全部是 4 的倍数，节奏稳定 */
+	--eqq-1: 4px;
+	--eqq-2: 8px;
+	--eqq-3: 12px;
+	--eqq-4: 16px;
+	--eqq-5: 24px;
+	--eqq-6: 32px;
+
+	/* 圆角 */
+	--eqq-r-sm: 6px;
+	--eqq-r-md: 10px;
+	--eqq-r-lg: 14px;
+	--eqq-r-pill: 999px;
+
+	/* 面与线 */
+	--eqq-line: var(--background-modifier-border);
+	--eqq-surface: var(--background-primary);
+	--eqq-surface-2: var(--background-secondary);
+
+	/* 单行文字的阅读宽度：题面、解析都在这个宽度内最舒服 */
+	--eqq-measure: 40em;
 }
 
+.easy-quiz-block {
+	margin: var(--eqq-3) 0;
+}
+
+/* ========================================================== 题卡 */
+
 .easy-quiz-card {
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-m, 8px);
-	padding: 12px 14px;
-	background: var(--background-primary-alt, var(--background-primary));
+	border: 1px solid var(--eqq-line);
+	border-radius: var(--eqq-r-md);
+	background: var(--eqq-surface);
+	padding: var(--eqq-4);
+	line-height: var(--line-height-normal);
 }
 
 .easy-quiz-card + .easy-quiz-card {
-	margin-top: 10px;
+	margin-top: var(--eqq-3);
 }
 
 .easy-quiz-card__header {
 	display: flex;
 	align-items: center;
-	gap: 8px;
-	margin-bottom: 8px;
+	flex-wrap: wrap;
+	gap: var(--eqq-2);
+	margin-bottom: var(--eqq-3);
 }
 
 .easy-quiz-card__type {
 	flex: none;
 	font-size: var(--font-ui-smaller);
-	padding: 1px 8px;
-	border-radius: 10px;
+	font-weight: var(--font-medium, 500);
+	letter-spacing: 0.02em;
+	padding: 2px 10px;
+	border-radius: var(--eqq-r-pill);
 	background: var(--interactive-accent);
 	color: var(--text-on-accent);
 }
 
 .easy-quiz-card__title {
 	font-weight: var(--font-semibold, 600);
+	font-size: var(--font-ui-medium);
 	flex: 1 1 auto;
+	min-width: 0;
+	overflow-wrap: anywhere;
 }
 
 .easy-quiz-card__stats,
@@ -41,6 +89,8 @@
 	flex: none;
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
 }
 
 .easy-quiz-card__stats.is-stale {
@@ -50,7 +100,7 @@
 .easy-quiz-card__stale {
 	font-size: var(--font-ui-smaller);
 	color: var(--text-warning);
-	margin-bottom: 6px;
+	margin-bottom: var(--eqq-2);
 }
 
 /* 知识点：题卡头部链接到题目来源的笔记 */
@@ -58,10 +108,11 @@
 .easy-quiz-card__knowledge {
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	flex-wrap: wrap;
+	gap: var(--eqq-1) var(--eqq-2);
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
-	margin-bottom: 6px;
+	margin-bottom: var(--eqq-2);
 }
 
 .easy-quiz-card__knowledge-label {
@@ -71,10 +122,15 @@
 .easy-quiz-card__knowledge-link {
 	text-decoration: none;
 	color: var(--link-color, var(--text-accent));
+	border-bottom: 1px solid transparent;
 }
 
 .easy-quiz-card__knowledge-link:hover {
-	text-decoration: underline;
+	border-bottom-color: currentColor;
+}
+
+.easy-quiz-card__body {
+	max-width: var(--eqq-measure);
 }
 
 .easy-quiz-card__body > :first-child {
@@ -85,24 +141,24 @@
 	margin-bottom: 0;
 }
 
-/* ---------------------------------------------------------------- 选择题 */
+/* ---------------------------------------------------------- 选择题 */
 
 .easy-quiz-card__options {
-	margin-top: 10px;
+	margin-top: var(--eqq-3);
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
+	gap: var(--eqq-2);
 }
 
 /* 选项：普通按钮语义（非表单控件），选中状态由 is-selected 表示 */
 .easy-quiz-card__option {
 	display: flex;
-	align-items: center;
-	gap: 8px;
-	padding: 5px 10px;
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-s, 6px);
-	background: var(--background-primary);
+	align-items: flex-start;
+	gap: var(--eqq-3);
+	padding: 9px var(--eqq-3);
+	border: 1px solid var(--eqq-line);
+	border-radius: var(--eqq-r-sm);
+	background: var(--eqq-surface);
 	cursor: pointer;
 	user-select: none;
 	transition: border-color 0.12s ease, background 0.12s ease;
@@ -111,10 +167,13 @@
 .easy-quiz-card__option::before {
 	content: "";
 	flex: none;
-	width: 14px;
-	height: 14px;
+	/* 与首行文字视觉居中，多行选项也不会让标记掉到中间 */
+	margin-top: 0.28em;
+	width: 15px;
+	height: 15px;
 	border: 1.5px solid var(--text-muted);
 	background: transparent;
+	transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
 }
 
 /* 单选：圆形标记 */
@@ -124,11 +183,16 @@
 
 /* 多选：方形标记 */
 .easy-quiz-card__option[role="checkbox"]::before {
-	border-radius: 3px;
+	border-radius: 4px;
+}
+
+.easy-quiz-card__option-text {
+	min-width: 0;
+	overflow-wrap: anywhere;
 }
 
 .easy-quiz-card__option:hover {
-	border-color: var(--interactive-accent);
+	border-color: var(--background-modifier-border-focus, var(--interactive-accent));
 }
 
 .easy-quiz-card__option.is-selected {
@@ -149,18 +213,18 @@
 
 .easy-quiz-card__option:focus-visible {
 	outline: 2px solid var(--interactive-accent);
-	outline-offset: 1px;
+	outline-offset: 2px;
 }
 
-/* ---------------------------------------------------------------- 填空题 */
+/* ---------------------------------------------------------- 填空题 */
 
 /* 题面里的空位：行内可编辑，宽度由浏览器按实际文字排版决定 */
 .easy-quiz-card__blank-input {
 	display: inline-block;
 	vertical-align: baseline;
 	margin: 0 3px;
-	padding: 0 2px;
-	min-width: 3em;
+	padding: 0 3px;
+	min-width: 3.5em;
 	border: none;
 	border-bottom: 1.5px solid var(--text-muted);
 	border-radius: 0;
@@ -180,33 +244,31 @@
 	color: var(--text-faint);
 }
 
-.easy-quiz-card__blank-input:hover {
-	border-bottom-color: var(--interactive-accent);
-	background: var(--background-modifier-hover);
-}
-
+.easy-quiz-card__blank-input:hover,
 .easy-quiz-card__blank-input:focus {
 	border-bottom-color: var(--interactive-accent);
 	background: var(--background-modifier-hover);
 }
 
 .easy-quiz-card__blanks {
-	margin-top: 10px;
+	margin-top: var(--eqq-3);
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
+	gap: var(--eqq-2);
 }
 
 .easy-quiz-card__blank {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	flex-wrap: wrap;
+	gap: var(--eqq-2);
 }
-/* ---------------------------------------------------------------- 配对题 */
+
+/* ---------------------------------------------------------- 配对题 */
 
 .easy-quiz-card__board {
 	position: relative;
-	margin-top: 10px;
+	margin-top: var(--eqq-3);
 }
 
 /* 首列 + 每个答案列各占一列 */
@@ -214,23 +276,23 @@
 	position: relative;
 	display: grid;
 	grid-template-columns: repeat(var(--easy-quiz-match-cols, 2), minmax(0, 1fr));
-	gap: 16px 40px;
+	gap: var(--eqq-4) var(--eqq-5);
 	z-index: 1;
 }
 
 .easy-quiz-card__board-col {
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
+	gap: var(--eqq-2);
 	min-width: 0;
 }
 
 .easy-quiz-card__board-head {
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
-	padding-bottom: 2px;
-	border-bottom: 1px solid var(--background-modifier-border);
-	margin-bottom: 2px;
+	padding-bottom: var(--eqq-1);
+	border-bottom: 1px solid var(--eqq-line);
+	overflow-wrap: anywhere;
 }
 
 /* 当前正在作答的答案列 */
@@ -254,10 +316,10 @@
 .easy-quiz-card__node {
 	position: relative;
 	max-width: 100%;
-	padding: 6px 12px;
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-s, 6px);
-	background: var(--background-primary);
+	padding: 8px var(--eqq-3);
+	border: 1px solid var(--eqq-line);
+	border-radius: var(--eqq-r-sm);
+	background: var(--eqq-surface);
 	cursor: pointer;
 	user-select: none;
 	overflow-wrap: anywhere;
@@ -265,7 +327,7 @@
 }
 
 .easy-quiz-card__node:hover {
-	border-color: var(--interactive-accent);
+	border-color: var(--background-modifier-border-focus, var(--interactive-accent));
 }
 
 /* 已选中、等待连线的节点 */
@@ -307,17 +369,21 @@
 	opacity: 0.4;
 }
 
-/* ------------------------------------------------------- 提交与结果反馈 */
+/* ---------------------------------------------------- 提交与结果反馈 */
 
 .easy-quiz-card__actions {
 	display: flex;
-	gap: 8px;
-	margin-top: 12px;
+	flex-wrap: wrap;
+	gap: var(--eqq-2);
+	margin-top: var(--eqq-4);
 }
 
 .easy-quiz-card__feedback {
-	margin-top: 8px;
+	margin-top: var(--eqq-2);
 	font-size: var(--font-ui-small);
+	display: flex;
+	flex-direction: column;
+	gap: var(--eqq-1);
 }
 
 .easy-quiz-card__feedback.is-correct {
@@ -340,8 +406,8 @@
 
 .easy-quiz-card__essay {
 	width: 100%;
-	min-height: 4.5em;
-	margin-top: 10px;
+	min-height: 6em;
+	margin-top: var(--eqq-3);
 	resize: vertical;
 }
 
@@ -363,27 +429,27 @@
 }
 
 .easy-quiz-card__warnings {
-	margin: 6px 0 0;
+	margin: var(--eqq-2) 0 0;
 	padding-left: 1.2em;
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
 }
 
-/* ---------------------------------------------------------- 插入题目对话框 */
+/* ============================================== 插入题目对话框 */
 
 .easy-quiz-insert__label {
-	margin-top: 18px;
+	margin-top: var(--eqq-5);
 	font-size: var(--font-ui-small);
 	color: var(--text-muted);
 }
 
 .easy-quiz-insert__preview {
-	margin: 6px 0 0;
-	padding: 10px 12px;
+	margin: var(--eqq-2) 0 0;
+	padding: var(--eqq-3);
 	max-height: 40vh;
 	overflow: auto;
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-s);
+	border: 1px solid var(--eqq-line);
+	border-radius: var(--eqq-r-sm);
 	background: var(--background-secondary);
 	font-family: var(--font-monospace);
 	font-size: var(--font-ui-smaller);
@@ -391,53 +457,74 @@
 	white-space: pre;
 }
 
-/* ================================================================= 刷题窗口 */
+/* ====================================================== 刷题窗口 */
 
 .easy-quiz-practice {
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
+	gap: var(--eqq-3);
 	height: 100%;
-	padding: 4px 2px 12px;
+	/* 宽屏时把内容收在中间，避免一行文字拉得过长 */
+	width: 100%;
+	max-width: 860px;
+	margin-inline: auto;
+	padding: var(--eqq-3) var(--eqq-3) var(--eqq-4);
 	overflow-y: auto;
+	/* 滚动到底时不要让最后一行贴着边缘 */
+	scroll-padding-block-end: var(--eqq-4);
 }
 
-/* ------------------------------------------------------------ 顶部步骤 */
+/* ------------------------------------------------------ 顶部步骤 */
 
+/* 三段式分段控件：比三个独立胶囊更省横向空间，窄屏也能整行放下 */
 .easy-quiz-practice__steps {
 	display: flex;
-	flex-wrap: wrap;
-	gap: 6px;
-	padding-bottom: 8px;
-	border-bottom: 1px solid var(--background-modifier-border);
+	gap: var(--eqq-1);
+	flex: none;
+	padding: var(--eqq-1);
+	border-radius: var(--eqq-r-pill);
+	background: var(--background-secondary);
 }
 
 .easy-quiz-practice__step {
 	display: flex;
 	align-items: center;
-	gap: 6px;
-	padding: 2px 10px;
-	border: 1px solid var(--background-modifier-border);
-	border-radius: 999px;
+	justify-content: center;
+	flex: 1 1 0;
+	min-width: 0;
+	gap: var(--eqq-2);
+	padding: 5px var(--eqq-2);
+	border: 1px solid transparent;
+	border-radius: var(--eqq-r-pill);
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
+	white-space: nowrap;
+	transition: background 0.12s ease, color 0.12s ease;
+}
+
+.easy-quiz-practice__step-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .easy-quiz-practice__step-no {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+	flex: none;
 	width: 18px;
 	height: 18px;
 	border-radius: 50%;
 	background: var(--background-modifier-border);
-	color: var(--text-normal);
+	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
 }
 
 .easy-quiz-practice__step.is-current {
-	border-color: var(--interactive-accent);
+	background: var(--background-primary);
 	color: var(--text-normal);
+	box-shadow: var(--shadow-s, 0 1px 2px rgba(0, 0, 0, 0.08));
 }
 
 .easy-quiz-practice__step.is-current .easy-quiz-practice__step-no {
@@ -455,16 +542,16 @@
 }
 
 .easy-quiz-practice__step.is-link:hover {
-	border-color: var(--interactive-accent);
-	color: var(--text-accent);
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
 }
 
-/* ------------------------------------------------------------ 页头与工具条 */
+/* --------------------------------------------------- 页头与工具条 */
 
 .easy-quiz-practice__body {
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
+	gap: var(--eqq-3);
 	flex: 1 1 auto;
 	min-height: 0;
 }
@@ -472,25 +559,28 @@
 .easy-quiz-practice__head {
 	display: flex;
 	flex-wrap: wrap;
-	align-items: baseline;
-	gap: 8px 12px;
+	align-items: center;
+	gap: var(--eqq-2) var(--eqq-3);
 }
 
 .easy-quiz-practice__title {
 	margin: 0;
-	font-size: var(--font-ui-medium);
+	font-size: var(--font-ui-large, 1.15em);
+	font-weight: var(--font-semibold, 600);
+	line-height: var(--line-height-tight, 1.3);
 }
 
 .easy-quiz-practice__hint {
 	flex: 1 1 100%;
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
+	line-height: var(--line-height-normal);
 }
 
 .easy-quiz-practice__toolbar {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 6px;
+	gap: var(--eqq-2);
 	margin-left: auto;
 }
 
@@ -498,43 +588,50 @@
 .easy-quiz-practice__totals {
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
 }
 
 .easy-quiz-practice__error {
-	padding: 8px 10px;
+	padding: var(--eqq-2) var(--eqq-3);
 	border: 1px solid var(--text-error);
-	border-radius: var(--radius-s);
+	border-radius: var(--eqq-r-sm);
 	color: var(--text-error);
 	font-size: var(--font-ui-small);
 }
 
-/* ------------------------------------------------------------ 题库列表 */
+/* ---------------------------------------------------------- 题库列表 */
 
 .easy-quiz-practice__files {
 	display: flex;
 	flex-direction: column;
-	gap: 4px;
+	gap: var(--eqq-2);
 }
 
+/* 分组标题：靠留白与字重区分层级，不用分割线 */
 .easy-quiz-practice__folder {
-	margin-top: 10px;
+	margin-top: var(--eqq-3);
+	margin-bottom: calc(-1 * var(--eqq-1));
 	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-medium, 500);
+	letter-spacing: 0.02em;
 	color: var(--text-muted);
 	font-family: var(--font-monospace);
+	overflow-wrap: anywhere;
 }
 
 .easy-quiz-practice__file {
 	display: flex;
 	align-items: flex-start;
-	gap: 10px;
-	padding: 8px 10px;
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-s);
-	background: var(--background-primary);
+	gap: var(--eqq-3);
+	padding: var(--eqq-3);
+	border: 1px solid var(--eqq-line);
+	border-radius: var(--eqq-r-md);
+	background: var(--eqq-surface);
+	transition: border-color 0.12s ease, background 0.12s ease;
 }
 
 .easy-quiz-practice__file:hover {
-	border-color: var(--interactive-accent);
+	border-color: var(--background-modifier-border-focus, var(--interactive-accent));
 }
 
 .easy-quiz-practice__file.is-picked {
@@ -548,7 +645,8 @@
 
 .easy-quiz-practice__check {
 	flex: none;
-	margin-top: 3px;
+	/* 与文件名首行对齐 */
+	margin: 2px 0 0;
 }
 
 .easy-quiz-practice__file-main {
@@ -556,14 +654,14 @@
 	min-width: 0;
 	display: flex;
 	flex-direction: column;
-	gap: 3px;
+	gap: var(--eqq-1);
 }
 
 .easy-quiz-practice__file-name {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: baseline;
-	gap: 8px;
+	gap: var(--eqq-1) var(--eqq-2);
 }
 
 .easy-quiz-practice__file-base {
@@ -581,23 +679,27 @@
 .easy-quiz-practice__file-stats {
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
 }
 
 .easy-quiz-practice__type-tags {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 4px;
+	gap: var(--eqq-1);
+	margin-top: var(--eqq-1);
 }
 
 .easy-quiz-practice__type-tag {
-	padding: 0 6px;
-	border-radius: 8px;
+	padding: 1px var(--eqq-2);
+	border-radius: var(--eqq-r-pill);
 	background: var(--background-secondary);
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
+	white-space: nowrap;
 }
 
 .easy-quiz-practice__file-error {
+	margin-top: var(--eqq-1);
 	font-size: var(--font-ui-smaller);
 	color: var(--text-warning);
 }
@@ -606,10 +708,10 @@
 	display: flex;
 	flex-direction: column;
 	align-items: flex-start;
-	gap: 8px;
-	padding: 12px;
-	border: 1px dashed var(--background-modifier-border);
-	border-radius: var(--radius-s);
+	gap: var(--eqq-3);
+	padding: var(--eqq-4);
+	border: 1px dashed var(--eqq-line);
+	border-radius: var(--eqq-r-md);
 	color: var(--text-muted);
 }
 
@@ -617,33 +719,73 @@
 	margin: 0;
 	padding-left: 1.2em;
 	font-size: var(--font-ui-small);
+	display: flex;
+	flex-direction: column;
+	gap: var(--eqq-1);
 }
 
-/* ------------------------------------------------------------ 刷题设置 */
+/* ------------------------------------------- 底部操作条（列表 / 设置） */
+
+/*
+ * 主要操作停在滚动容器底部：长列表滚到底就能直接出发，
+ * 手机上也不必再翻回顶部找按钮。
+ */
+.easy-quiz-practice__footer {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--eqq-2) var(--eqq-3);
+	position: sticky;
+	bottom: 0;
+	z-index: 2;
+	margin-top: auto;
+	padding: var(--eqq-3) 0 0;
+	background: var(--background-primary);
+	border-top: 1px solid var(--eqq-line);
+}
+
+.easy-quiz-practice__footer-text,
+.easy-quiz-practice__count {
+	flex: 1 1 auto;
+	min-width: 0;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.easy-quiz-practice__footer-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--eqq-2);
+	margin-left: auto;
+}
+
+/* ---------------------------------------------------------- 刷题设置 */
 
 .easy-quiz-practice__picked {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 6px;
+	gap: var(--eqq-2);
 }
 
 .easy-quiz-practice__chip {
 	display: flex;
 	align-items: center;
-	gap: 6px;
-	padding: 2px 6px 2px 10px;
-	border: 1px solid var(--background-modifier-border);
-	border-radius: 999px;
-	background: var(--background-secondary);
+	gap: var(--eqq-1);
+	padding: 3px 3px 3px var(--eqq-3);
+	border: 1px solid var(--eqq-line);
+	border-radius: var(--eqq-r-pill);
+	background: var(--eqq-surface-2);
 	font-size: var(--font-ui-smaller);
 	font-family: var(--font-monospace);
 	overflow-wrap: anywhere;
 }
 
 .easy-quiz-practice__chip button {
-	padding: 0 6px;
+	padding: 0 7px;
 	height: auto;
 	line-height: 1.4;
+	border: none;
 	background: transparent;
 	box-shadow: none;
 	color: var(--text-muted);
@@ -654,16 +796,33 @@
 	background: transparent;
 }
 
-/* 设置行沿用 Obsidian 的 Setting 布局，只收紧一点间距 */
+/* 三个设置行合成一张卡片：视觉上属于同一个「这一轮怎么抽题」的决定 */
+.easy-quiz-practice__panel {
+	display: flex;
+	flex-direction: column;
+	border: 1px solid var(--eqq-line);
+	border-radius: var(--eqq-r-md);
+	background: var(--eqq-surface);
+	padding: 0 var(--eqq-4);
+}
+
+/* 设置行沿用 Obsidian 的 Setting 布局，只收紧间距并把相邻行用发丝线分开 */
 .easy-quiz-practice__setting {
-	padding: 6px 0;
+	padding: var(--eqq-3) 0;
+	/* Obsidian 自身给 .setting-item 加了上边框，这里改用下边框，避免出现双线 */
+	border-top: none;
+	border-bottom: 1px solid var(--eqq-line);
+}
+
+.easy-quiz-practice__setting:last-child {
+	border-bottom: none;
 }
 
 .easy-quiz-practice__modes,
 .easy-quiz-practice__types {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 6px;
+	gap: var(--eqq-2);
 	justify-content: flex-end;
 }
 
@@ -676,47 +835,45 @@
 .easy-quiz-practice__type {
 	display: flex;
 	align-items: center;
-	gap: 4px;
+	gap: var(--eqq-1);
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
-}
-
-.easy-quiz-practice__start {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 10px;
-	padding-top: 8px;
-	border-top: 1px solid var(--background-modifier-border);
-}
-
-.easy-quiz-practice__count {
-	font-size: var(--font-ui-smaller);
-	color: var(--text-muted);
+	white-space: nowrap;
 }
 
 /* ------------------------------------------------------------ 刷题页 */
 
+/*
+ * 进度条停在顶部、导航停在底部：题面再长也能随时看到「第几题 / 对错多少」
+ * 并直接翻页，不用来回滚动。
+ */
 .easy-quiz-practice__progress {
 	display: flex;
 	flex-direction: column;
-	gap: 4px;
+	gap: var(--eqq-2);
+	position: sticky;
+	top: 0;
+	z-index: 2;
+	padding: var(--eqq-2) 0 var(--eqq-3);
+	background: var(--background-primary);
 }
 
 .easy-quiz-practice__progress-head {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: baseline;
-	gap: 8px;
+	gap: var(--eqq-1) var(--eqq-2);
 	font-size: var(--font-ui-smaller);
 }
 
 .easy-quiz-practice__progress-index {
+	flex: none;
 	font-weight: var(--font-semibold, 600);
+	font-variant-numeric: tabular-nums;
 }
 
 .easy-quiz-practice__progress-title {
-	flex: 1 1 auto;
+	flex: 1 1 10em;
 	min-width: 0;
 	color: var(--text-muted);
 	overflow-wrap: anywhere;
@@ -725,19 +882,22 @@
 .easy-quiz-practice__progress-count {
 	flex: none;
 	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
 }
 
 .easy-quiz-practice__bar {
-	height: 4px;
-	border-radius: 2px;
+	height: 5px;
+	border-radius: var(--eqq-r-pill);
 	background: var(--background-modifier-border);
 	overflow: hidden;
 }
 
 .easy-quiz-practice__bar-fill {
 	height: 100%;
+	border-radius: inherit;
 	background: var(--interactive-accent);
-	transition: width 0.15s ease;
+	transition: width 0.18s ease;
 }
 
 .easy-quiz-practice__progress-path {
@@ -750,14 +910,19 @@
 .easy-quiz-practice__card {
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
+	gap: var(--eqq-3);
 }
 
 .easy-quiz-practice__nav {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
-	gap: 8px;
+	gap: var(--eqq-2);
+	position: sticky;
+	bottom: 0;
+	z-index: 2;
+	padding: var(--eqq-3) 0 var(--eqq-2);
+	background: var(--background-primary);
 }
 
 .easy-quiz-practice__jump {
@@ -770,15 +935,16 @@
 	visibility: hidden;
 }
 
-/* ------------------------------------------------------------ 复盘与成绩单 */
+/* --------------------------------------------------- 复盘与成绩单 */
 
 .easy-quiz-card.is-reviewed {
-	border-color: var(--interactive-accent);
+	border-color: var(--background-modifier-border-focus, var(--interactive-accent));
 }
 
 /* 复盘时：正确选项描边，干扰项变淡 */
 .easy-quiz-card__option.is-answer {
 	border-color: var(--text-success);
+	background: var(--background-modifier-success, var(--background-modifier-hover));
 	box-shadow: inset 0 0 0 1px var(--text-success);
 }
 
@@ -789,26 +955,29 @@
 }
 
 .easy-quiz-card__option.is-not-answer {
-	opacity: 0.6;
+	opacity: 0.55;
 }
 
 .easy-quiz-card__blank-answer {
 	display: inline-block;
 	margin: 0 3px;
-	padding: 0 4px;
-	border-radius: 3px;
+	padding: 0 5px;
+	border-radius: var(--eqq-r-sm);
 	background: var(--background-modifier-success, var(--background-modifier-hover));
 	color: var(--text-success);
 	font-weight: var(--font-semibold, 600);
 }
 
 .easy-quiz-card__review {
-	margin-top: 12px;
-	padding: 8px 10px;
+	margin-top: var(--eqq-4);
+	padding: var(--eqq-3) var(--eqq-4);
 	border-left: 3px solid var(--interactive-accent);
+	border-radius: 0 var(--eqq-r-sm) var(--eqq-r-sm) 0;
 	background: var(--background-secondary);
-	border-radius: var(--radius-s);
 	font-size: var(--font-ui-small);
+	display: flex;
+	flex-direction: column;
+	gap: var(--eqq-2);
 }
 
 .easy-quiz-card__review-head {
@@ -817,13 +986,18 @@
 }
 
 .easy-quiz-card__review-list {
-	margin: 4px 0 0;
+	margin: 0;
 	padding-left: 1.2em;
+	display: flex;
+	flex-direction: column;
+	gap: var(--eqq-1);
 }
 
 .easy-quiz-card__review-note {
-	margin-top: 8px;
 	color: var(--text-muted);
+	display: flex;
+	flex-direction: column;
+	gap: var(--eqq-1);
 }
 
 .easy-quiz-card__review-empty {
@@ -833,26 +1007,27 @@
 .easy-quiz-practice__summary {
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
-	padding: 14px;
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-m, 8px);
+	gap: var(--eqq-3);
+	padding: var(--eqq-4);
+	border: 1px solid var(--eqq-line);
+	border-radius: var(--eqq-r-md);
 	background: var(--background-secondary);
 }
 
 .easy-quiz-practice__summary-title {
-	font-size: var(--font-ui-medium);
+	font-size: var(--font-ui-large, 1.15em);
 	font-weight: var(--font-semibold, 600);
 }
 
 .easy-quiz-practice__summary-line {
 	font-size: var(--font-ui-small);
+	font-variant-numeric: tabular-nums;
 }
 
 .easy-quiz-practice__summary-sub {
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
-	margin-bottom: 4px;
+	margin-bottom: var(--eqq-1);
 }
 
 .easy-quiz-practice__wrong {
@@ -862,9 +1037,198 @@
 }
 
 .easy-quiz-practice__wrong-item {
+	padding: var(--eqq-1) 0;
 	overflow-wrap: anywhere;
 }
 
 .easy-quiz-practice__summary .easy-quiz-practice__toolbar {
 	margin-left: 0;
+}
+
+/* ==================================================== 窄屏 / 手机 */
+
+/*
+ * 断点取 640px：Obsidian 手机端竖屏宽度基本都在这以下，
+ * 桌面端把窗口拖窄时也会落到同一套布局。
+ * 原则是「按钮占满整行、点击目标更大、一切可以换行」。
+ */
+@media (max-width: 640px) {
+	.easy-quiz-practice {
+		gap: var(--eqq-2);
+		padding: var(--eqq-2) var(--eqq-2) var(--eqq-3);
+	}
+
+	.easy-quiz-card {
+		padding: var(--eqq-3);
+	}
+
+	/* 页面标题与「结束本轮」分两行，标题不再被按钮挤窄 */
+	.easy-quiz-practice__head {
+		align-items: flex-start;
+	}
+
+	/*
+	 * 工具条独占一行。注意这里是列方向的 flex 容器：flex-basis 指的是高度，
+	 * 因此用 width 铺满、flex 不伸缩，否则工具条会撑到整列那么高。
+	 */
+	.easy-quiz-practice__toolbar {
+		flex: 0 0 auto;
+		width: 100%;
+		align-items: center;
+		margin-left: 0;
+	}
+
+	/* 工具条里的按钮横向铺开，点起来更像一排标签而不是小按钮 */
+	.easy-quiz-practice__toolbar button {
+		flex: 1 1 auto;
+		min-height: 40px;
+	}
+
+	/* 文件行：勾选框 + 文字一行，「设置刷题」按钮独占下一行 */
+	.easy-quiz-practice__file {
+		flex-wrap: wrap;
+		padding: var(--eqq-3);
+	}
+
+	.easy-quiz-practice__file > button {
+		flex: 1 1 100%;
+		min-height: 40px;
+	}
+
+	.easy-quiz-practice__check {
+		width: 20px;
+		height: 20px;
+		margin-top: 1px;
+	}
+
+	/* 底部操作条：说明一行，按钮一行 */
+	.easy-quiz-practice__footer {
+		flex-direction: column;
+		align-items: stretch;
+		gap: var(--eqq-2);
+	}
+
+	.easy-quiz-practice__footer-actions {
+		margin-left: 0;
+	}
+
+	.easy-quiz-practice__footer-actions button,
+	.easy-quiz-practice__footer > button {
+		flex: 1 1 auto;
+		min-height: 44px;
+	}
+
+	/* 设置行改成上下排列，控件占满整行，不再和说明文字抢宽度 */
+	.easy-quiz-practice__panel {
+		padding: 0 var(--eqq-3);
+	}
+
+	.easy-quiz-practice__setting {
+		flex-direction: column;
+		align-items: stretch;
+		gap: var(--eqq-2);
+	}
+
+	.easy-quiz-practice__setting .setting-item-info {
+		margin-right: 0;
+	}
+
+	.easy-quiz-practice__setting .setting-item-control {
+		justify-content: flex-start;
+		width: 100%;
+	}
+
+	.easy-quiz-practice__modes,
+	.easy-quiz-practice__types {
+		justify-content: flex-start;
+		width: 100%;
+	}
+
+	.easy-quiz-practice__modes button {
+		flex: 1 1 auto;
+		min-height: 40px;
+	}
+
+	/* 题型勾选框本身太小，借 label 撑出可点区域 */
+	.easy-quiz-practice__type {
+		padding: var(--eqq-1) var(--eqq-2);
+		border: 1px solid var(--eqq-line);
+		border-radius: var(--eqq-r-pill);
+		background: var(--eqq-surface-2);
+		min-height: 34px;
+	}
+
+	/* 题面与解析在窄屏上占满宽度 */
+	.easy-quiz-card__body {
+		max-width: none;
+	}
+
+	/* 选择题选项是主要交互，撑到 44px 以上才好点 */
+	.easy-quiz-card__option {
+		padding: var(--eqq-3);
+		min-height: 44px;
+	}
+
+	.easy-quiz-card__actions button {
+		flex: 1 1 auto;
+		min-height: 44px;
+	}
+
+	/* 配对题：列间距收紧，窄屏才放得下三列以上 */
+	.easy-quiz-card__board-columns {
+		gap: var(--eqq-3) var(--eqq-2);
+	}
+
+	.easy-quiz-card__node {
+		padding: var(--eqq-2);
+		font-size: var(--font-ui-smaller);
+	}
+
+	.easy-quiz-card__board-head {
+		font-size: var(--font-ui-smaller);
+	}
+
+	/* 导航：三个按钮各占一行的一半以上，「下一题」始终醒目 */
+	.easy-quiz-practice__nav {
+		flex-wrap: wrap;
+		gap: var(--eqq-2);
+	}
+
+	.easy-quiz-practice__nav button {
+		flex: 1 1 auto;
+		min-height: 44px;
+	}
+
+	/* 跳题输入框挪到第二行并靠右，避免把按钮挤成一条 */
+	.easy-quiz-practice__jump {
+		flex: 0 0 auto;
+		margin-left: auto;
+		min-height: 40px;
+	}
+}
+
+/* 更窄的屏幕（小屏手机竖屏）：步骤只留当前一步的文字，省下横向空间 */
+@media (max-width: 420px) {
+	.easy-quiz-practice__step:not(.is-current) .easy-quiz-practice__step-label {
+		display: none;
+	}
+
+	.easy-quiz-practice__step {
+		padding: 5px var(--eqq-1);
+	}
+}
+
+/* 触屏设备：统一放宽点击目标，悬停态没有意义就收敛掉 */
+@media (hover: none) {
+	.easy-quiz-practice__file:hover {
+		border-color: var(--eqq-line);
+	}
+
+	.easy-quiz-card__option:hover {
+		border-color: var(--eqq-line);
+	}
+
+	.easy-quiz-card__node:hover {
+		border-color: var(--eqq-line);
+	}
 }

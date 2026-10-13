@@ -169,6 +169,7 @@ export const en = {
 	"practice.toolbar.clear": "Clear selection",
 	"practice.toolbar.rescan": "Rescan",
 	"practice.toolbar.startSetup": "Set up practice ({count} selected)",
+	"practice.list.goSetup": "Set up this round",
 	"practice.empty.none": "No question-bank files found.",
 	"practice.empty.hintFrontmatter": "Add quiz: true to the note's frontmatter (recommended).",
 	"practice.empty.hintTag": "Or give the file a #quiz tag.",
