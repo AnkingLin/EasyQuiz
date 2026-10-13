@@ -7,6 +7,7 @@
  *   - 由调用方用 Vault.process 做原子读改写。
  */
 
+import { t } from "./i18n";
 import { analyzeFences, ParseDependencies, ParseOptions } from "./parser";
 import { HistoryEntry, QuizStats } from "./types";
 
@@ -148,7 +149,7 @@ export function planWriteBack(
 
 	// 校验：补丁结果必须仍是合法 YAML 映射，否则放弃写入以保护笔记。
 	if (!isMapping(content, deps)) {
-		return { content: blockSource, applied: false, reason: "补丁后的数据块不是合法的 YAML 映射，已放弃写入以保护笔记。" };
+		return { content: blockSource, applied: false, reason: t("writeback.invalidYaml") };
 	}
 
 	return { content, applied: true };

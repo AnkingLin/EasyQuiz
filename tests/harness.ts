@@ -5,6 +5,17 @@
  * 也能保证执行顺序稳定（DOM 测试依赖这一点）。
  */
 
+import { setLanguage } from "../src/i18n";
+
+/**
+ * 测试统一用中文跑。
+ *
+ * 原因有两个：题库 fixture 与断言文案本来就是中文（界面文案与题面内容用的是同一套
+ * 语言），以及中文是插件原有行为，这样每条断言仍在验证真实用得到的那份文案。
+ * 英文由 `quiz-i18n.test.ts` 单独覆盖，它会在用例里显式切到 `en`。
+ */
+setLanguage("zh");
+
 let passed = 0;
 const failures: string[] = [];
 const cases: { name: string; fn: () => void | Promise<void> }[] = [];

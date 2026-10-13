@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 刷题界面渲染：把一道题渲染成可交互的题卡。
  *
  * 设计约束（README §1.3）：实时预览下光标进入会把渲染结果还原为源码，
@@ -10,10 +10,12 @@
 
 import { App, Component, MarkdownRenderer, MarkdownRenderChild, setIcon, TFile } from "obsidian";
 import { GradeResult, UserAnswer } from "./grade";
+import { t } from "./i18n";
+import { typeLabel } from "./labels";
 import { createBoardState, splitConnection } from "./match-board";
 import { formatStats, QuizService, staleNote } from "./runtime";
 import { BLANK_MARKER_PREFIX, formatStem } from "./stem";
-import { BlankMarkerMode, QuizQuestion, QuizType } from "./types";
+import { BlankMarkerMode, QuizQuestion } from "./types";
 
 export interface CardContext {
 	app: App;
@@ -43,20 +45,6 @@ export interface CardContext {
 	onReview?: (result: GradeResult | null) => void;
 	/** 题卡渲染结束（含题板布局完成）后回调，用于解除观察者等自身资源。 */
 	onCleanup?: (cleanup: () => void) => void;
-}
-
-export const TYPE_LABEL: Record<QuizType, string> = {
-	single: "单选",
-	multi: "多选",
-	match: "配对",
-	blank: "填空",
-	essay: "问答",
-};
-
-/** 题型显示名的兜底：题型缺失或未知时用原始值。 */
-export function typeLabel(type: QuizType | null): string {
-	if (type === null) return "未知";
-	return TYPE_LABEL[type] ?? type;
 }
 
 /** 选择题的正确答案锚点列表（单选也会被收成数组）。 */
@@ -125,7 +113,7 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 // ---------------------------------------------------------------------------
 
 /**
- * 渲染题面标题末尾 `^[[知识点]]` 对应的链接。
+ * 渲染题面标题末尾 `^[[[知识点]]]` 对应的链接。
  *
  * 放在题卡头部而不是题面里：题面只回答"题目在问什么"，溯源信息属于卡片的元信息。
  * 点击走 Obsidian 自己的链接处理（`openLinkText`），因此 `#标题`、`|别名` 都按原样生效。
@@ -137,7 +125,7 @@ function renderKnowledgeLink(question: QuizQuestion, card: HTMLElement, ctx: Car
 	const { target, label, subpath } = splitWikiTarget(raw);
 	if (label === "") return;
 	const row = card.createDiv({ cls: "easy-quiz-card__knowledge" });
-	row.createSpan({ cls: "easy-quiz-card__knowledge-label", text: "知识点" });
+	row.createSpan({ cls: "easy-quiz-card__knowledge-label", text: t("card.knowledgePoint") });
 	const link = row.createEl("a", {
 		cls: "easy-quiz-card__knowledge-link",
 		text: label,
@@ -199,14 +187,14 @@ function renderDiagnostics(question: QuizQuestion, card: HTMLElement): void {
 	const icon = header.createSpan({ cls: "easy-quiz-card__icon" });
 	setIcon(icon, "alert-triangle");
 	header.createSpan({ cls: "easy-quiz-card__title", text: question.title });
-	card.createDiv({ cls: "easy-quiz-card__hint", text: "这道题暂时不能作答，请修正数据块后重试：" });
+	card.createDiv({ cls: "easy-quiz-card__hint", text: t("card.diagnostic.hint") });
 	const list = card.createEl("ul", { cls: "easy-quiz-card__warnings" });
 	if (question.warnings.length === 0) {
-		list.createEl("li", { text: "题目数据不完整。" });
+		list.createEl("li", { text: t("card.diagnostic.incomplete") });
 		return;
 	}
 	for (const warning of question.warnings) {
-		const line = warning.line === null ? "" : `（第 ${warning.line + 1} 行）`;
+		const line = warning.line === null ? "" : t("card.diagnostic.line", { line: warning.line + 1 });
 		list.createEl("li", { text: `${warning.message}${line}` });
 	}
 }
@@ -274,7 +262,7 @@ function renderChoice(question: QuizQuestion, card: HTMLElement, ctx: CardContex
 		});
 	}
 
-	renderSubmit(card, ctx, question, "提交答案", () =>
+	renderSubmit(card, ctx, question, t("card.submit"), () =>
 		selected.size === 0 ? null : { kind: "choice", anchors: [...selected] }
 	);
 }
@@ -311,11 +299,11 @@ function renderBlanks(question: QuizQuestion, bodyEl: HTMLElement, card: HTMLEle
 			for (const [index, blank] of question.blanks.entries()) {
 				if (revealed.has(blank.anchor)) continue;
 				const row = list.createDiv({ cls: "easy-quiz-card__blank" });
-				row.createSpan({ text: `第 ${index + 1} 空` });
+				row.createSpan({ text: t("card.blank.label", { index: index + 1 }) });
 				row.createSpan({ cls: "easy-quiz-card__blank-answer", text: blank.expected });
 			}
 		}
-		renderSubmit(card, ctx, question, "提交答案", () => null);
+		renderSubmit(card, ctx, question, t("card.submit"), () => null);
 		return;
 	}
 
@@ -325,12 +313,12 @@ function renderBlanks(question: QuizQuestion, bodyEl: HTMLElement, card: HTMLEle
 		const list = card.createDiv({ cls: "easy-quiz-card__blanks" });
 		for (const blank of missing) {
 			const row = list.createDiv({ cls: "easy-quiz-card__blank" });
-			row.createSpan({ text: `第 ${question.blanks.indexOf(blank) + 1} 空` });
+			row.createSpan({ text: t("card.blank.label", { index: question.blanks.indexOf(blank) + 1 }) });
 			row.appendChild(createBlankField(blank.anchor, fields));
 		}
 	}
 
-	renderSubmit(card, ctx, question, "提交答案", () => {
+	renderSubmit(card, ctx, question, t("card.submit"), () => {
 		const values = question.blanks.map((blank) => (fields.get(blank.anchor)?.textContent ?? "").trim());
 		return values.every((value) => value === "") ? null : { kind: "blank", values };
 	});
@@ -346,7 +334,7 @@ function createBlankField(anchor: string, fields: Map<string, HTMLElement>): HTM
 	const field = createSpan({ cls: "easy-quiz-card__blank-input" });
 	field.contentEditable = "true";
 	field.setAttribute("role", "textbox");
-	field.setAttribute("aria-label", `填空 ${anchor}`);
+	field.setAttribute("aria-label", t("card.blank.aria", { anchor }));
 	field.dataset["anchor"] = anchor;
 	// 空位时也能看出来这里可以填。
 	field.dataset["empty"] = "true";
@@ -403,7 +391,7 @@ function findTextElement(root: HTMLElement, label: string): HTMLElement | null {
 export function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: CardContext): void {
 	const columns = question.board;
 	if (columns.length < 2) {
-		card.createDiv({ cls: "easy-quiz-card__hint", text: "配对表格至少需要两列才能连线。" });
+		card.createDiv({ cls: "easy-quiz-card__hint", text: t("card.match.tooFewColumns") });
 		return;
 	}
 
@@ -516,7 +504,7 @@ export function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: Card
 	ctx.onCleanup?.(() => observer.disconnect());
 	window.setTimeout(() => paint(), 0);
 
-	renderSubmit(card, ctx, question, "提交答案", () => {
+	renderSubmit(card, ctx, question, t("card.submit"), () => {
 		const pairs = state.pairs();
 		return pairs.length === 0 ? null : { kind: "match", pairs };
 	});
@@ -550,15 +538,15 @@ function shuffle<T>(items: readonly T[]): T[] {
 function renderEssay(question: QuizQuestion, card: HTMLElement, ctx: CardContext): void {
 	// 复盘态：不再要一次自评，只把"参考答案见题面折叠块"的提示摊开。
 	if (ctx.reviewOnly === true) {
-		renderSubmit(card, ctx, question, "已掌握", () => null);
+		renderSubmit(card, ctx, question, t("card.essay.mastered"), () => null);
 		return;
 	}
 
 	const area = card.createEl("textarea", { cls: "easy-quiz-card__essay" });
-	area.placeholder = "写下你的答案，再自评是否掌握。";
+	area.placeholder = t("card.essay.placeholder");
 	const row = card.createDiv({ cls: "easy-quiz-card__actions" });
-	const passed = row.createEl("button", { text: "已掌握", cls: "mod-cta" });
-	const failed = row.createEl("button", { text: "未掌握" });
+	const passed = row.createEl("button", { text: t("card.essay.mastered"), cls: "mod-cta" });
+	const failed = row.createEl("button", { text: t("card.essay.notMastered") });
 	const feedback = card.createDiv({ cls: "easy-quiz-card__feedback" });
 
 	const submitEssay = async (result: "correct" | "wrong") => {
@@ -567,13 +555,13 @@ function renderEssay(question: QuizQuestion, card: HTMLElement, ctx: CardContext
 		const outcome = await ctx.service.submit(ctx.file, question.id, { kind: "essay", result });
 		if (outcome === null) {
 			feedback.addClass("is-warning");
-			feedback.setText("提交失败：题目可能已被修改或数据块无法写入。");
+			feedback.setText(t("card.feedback.submitFailed"));
 			passed.disabled = false;
 			failed.disabled = false;
 			return;
 		}
 		feedback.addClass(outcome.correct ? "is-correct" : "is-wrong");
-		feedback.setText(outcome.correct ? "已记录：掌握" : "已记录：未掌握");
+		feedback.setText(outcome.correct ? t("card.feedback.recordedMastered") : t("card.feedback.recordedNotMastered"));
 		ctx.onSubmitted?.(outcome);
 		renderReview(card, question);
 		ctx.onReview?.(outcome);
@@ -608,14 +596,14 @@ function renderSubmit(
 	async function handleSubmit(): Promise<void> {
 		const answer = collect();
 		if (answer === null) {
-			feedback.setText("请先作答。");
+			feedback.setText(t("card.feedback.answerFirst"));
 			feedback.addClass("is-warning");
 			return;
 		}
 		button.disabled = true;
 		const result = await ctx.service.submit(ctx.file, question.id, answer, Date.now() - startedAt);
 		if (result === null) {
-			feedback.setText("提交失败：题目可能已被修改或数据块无法写入。");
+			feedback.setText(t("card.feedback.submitFailed"));
 			feedback.addClass("is-warning");
 			button.disabled = false;
 			return;
@@ -623,7 +611,7 @@ function renderSubmit(
 		feedback.empty();
 		feedback.removeClass("is-warning");
 		feedback.addClass(result.correct ? "is-correct" : "is-wrong");
-		feedback.createDiv({ text: result.correct ? "回答正确" : "回答错误" });
+		feedback.createDiv({ text: result.correct ? t("card.feedback.correct") : t("card.feedback.wrong") });
 		for (const detail of result.details) {
 			if (detail.note) feedback.createDiv({ cls: "easy-quiz-card__note", text: detail.note });
 		}
@@ -643,11 +631,11 @@ function renderSubmit(
 function renderReview(card: HTMLElement, question: QuizQuestion): void {
 	card.addClass("is-reviewed");
 	const box = card.createDiv({ cls: "easy-quiz-card__review" });
-	box.createDiv({ cls: "easy-quiz-card__review-head", text: "正确答案" });
+	box.createDiv({ cls: "easy-quiz-card__review-head", text: t("card.review.head") });
 
 	const answers = reviewAnswers(question);
 	if (answers.length === 0) {
-		box.createDiv({ cls: "easy-quiz-card__review-empty", text: "这道题没有可对照的答案。" });
+		box.createDiv({ cls: "easy-quiz-card__review-empty", text: t("card.review.empty") });
 	} else {
 		const list = box.createEl("ul", { cls: "easy-quiz-card__review-list" });
 		for (const answer of answers) list.createEl("li", { text: answer });
@@ -655,7 +643,7 @@ function renderReview(card: HTMLElement, question: QuizQuestion): void {
 
 	if (question.explanation !== null && question.explanation.trim() !== "") {
 		const note = box.createDiv({ cls: "easy-quiz-card__review-note" });
-		note.createDiv({ cls: "easy-quiz-card__review-head", text: "解析" });
+		note.createDiv({ cls: "easy-quiz-card__review-head", text: t("card.review.explanation") });
 		// 解析是 Markdown，但复盘区只承载短文本；按纯文本渲染，避免再引入一次异步渲染。
 		note.createDiv({ text: question.explanation.trim() });
 	}
@@ -673,11 +661,13 @@ function reviewAnswers(question: QuizQuestion): string[] {
 					: [question.answer];
 			return anchors.map((anchor) => {
 				const option = question.options.find((item) => item.anchor === anchor);
-				return option ? `${anchor}（${option.text}）` : anchor;
+				return option ? t("grade.anchorLabel", { anchor, text: option.text }) : anchor;
 			});
 		}
 		case "blank":
-			return question.blanks.map((blank, index) => `第 ${index + 1} 空：${blank.expected}`);
+			return question.blanks.map((blank, index) =>
+				t("card.review.blank", { index: index + 1, expected: blank.expected })
+			);
 		case "match": {
 			const text = new Map<string, string>();
 			for (const column of question.board) {
@@ -688,7 +678,7 @@ function reviewAnswers(question: QuizQuestion): string[] {
 			);
 		}
 		case "essay":
-			return ["问答题按自评记录，参考答案见题面中的折叠标注。"];
+			return [t("card.review.essay")];
 		default:
 			return [];
 	}

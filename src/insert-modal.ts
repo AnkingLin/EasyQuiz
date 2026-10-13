@@ -7,7 +7,9 @@
  */
 
 import { App, Editor, Modal, Setting, TextComponent } from "obsidian";
-import { buildQuestionTemplate, DEFAULT_TITLES, planInsertion, TYPE_LABELS, TemplateOptions } from "./insert";
+import { t } from "./i18n";
+import { buildQuestionTemplate, planInsertion, TemplateOptions } from "./insert";
+import { defaultTitles, typeLabels } from "./labels";
 import { BlankMarkerMode, QUIZ_TYPES, QuizType } from "./types";
 
 export interface InsertQuestionModalOptions {
@@ -23,7 +25,7 @@ export interface InsertQuestionModalOptions {
 
 export class InsertQuestionModal extends Modal {
 	private type: QuizType = "single";
-	private title = DEFAULT_TITLES.single;
+	private title = defaultTitles().single;
 	/** 用户是否改过标题：改过之后切换题型不再覆盖，避免把输入冲掉。 */
 	private titleEdited = false;
 	private titleInput: TextComponent | null = null;
@@ -34,18 +36,19 @@ export class InsertQuestionModal extends Modal {
 	}
 
 	onOpen(): void {
-		this.titleEl.setText("插入题目");
+		this.titleEl.setText(t("insertModal.title"));
 		const { contentEl } = this;
 
 		new Setting(contentEl)
-			.setName("题型")
-			.setDesc("决定插入哪种题目的骨架。字段与语法由模板给出，插入后再填内容。")
+			.setName(t("insertModal.type.name"))
+			.setDesc(t("insertModal.type.desc"))
 			.addDropdown((dropdown) => {
-				for (const type of QUIZ_TYPES) dropdown.addOption(type, TYPE_LABELS[type]);
+				const labels = typeLabels();
+				for (const type of QUIZ_TYPES) dropdown.addOption(type, labels[type]);
 				dropdown.setValue(this.type).onChange((value) => {
 					this.type = value as QuizType;
 					if (!this.titleEdited) {
-						this.title = DEFAULT_TITLES[this.type];
+						this.title = defaultTitles()[this.type];
 						this.titleInput?.setValue(this.title);
 					}
 					this.refresh();
@@ -53,8 +56,8 @@ export class InsertQuestionModal extends Modal {
 			});
 
 		new Setting(contentEl)
-			.setName("题干标题")
-			.setDesc("会自动加上设置里的标题层级（默认二级）。")
+			.setName(t("insertModal.stem.name"))
+			.setDesc(t("insertModal.stem.desc"))
 			.addText((text) => {
 				this.titleInput = text;
 				text.setValue(this.title).onChange((value) => {
@@ -64,14 +67,14 @@ export class InsertQuestionModal extends Modal {
 				});
 			});
 
-		contentEl.createDiv({ cls: "easy-quiz-insert__label", text: "预览" });
+		contentEl.createDiv({ cls: "easy-quiz-insert__label", text: t("insertModal.preview") });
 		this.previewEl = contentEl.createEl("pre", { cls: "easy-quiz-insert__preview" });
 
 		this.refresh();
 
 		new Setting(contentEl).addButton((button) =>
 			button
-				.setButtonText("插入")
+				.setButtonText(t("insertModal.submit"))
 				.setCta()
 				.onClick(() => {
 					this.options.onSubmit(this.template(), this.type);

@@ -4,6 +4,7 @@
  * 判分依据是稳定锚点而不是选项位置，因此插入、删除、重排选项都不会让结果错位。
  */
 
+import { clauseSeparator, listSeparator, t } from "./i18n";
 import { BlankRule, QuizQuestion } from "./types";
 
 export type UserAnswer =
@@ -35,7 +36,12 @@ export interface GradeResult {
  */
 export function gradeAnswer(question: QuizQuestion, answer: UserAnswer): GradeResult {
 	if (!question.ok) {
-		throw new Error(`题目「${question.title}」当前不可作答：${question.warnings.map((w) => w.message).join("；")}`);
+		throw new Error(
+			t("grade.notAnswerable", {
+				title: question.title,
+				reasons: question.warnings.map((warning) => warning.message).join(clauseSeparator()),
+			})
+		);
 	}
 
 	switch (question.type) {
@@ -49,7 +55,7 @@ export function gradeAnswer(question: QuizQuestion, answer: UserAnswer): GradeRe
 		case "essay":
 			return gradeEssay(answer as { kind: "essay"; result: "correct" | "wrong" });
 		default:
-			throw new Error("未知题型，无法判分。");
+			throw new Error(t("grade.unknownType"));
 	}
 }
 
@@ -71,21 +77,28 @@ function gradeChoice(question: QuizQuestion, answer: { kind: "choice"; anchors: 
 				note: correct
 					? undefined
 					: [
-							missing.length > 0 ? `漏选：${missing.map(labelOf(question, "缺少")).join("、")}` : "",
-							extra.length > 0 ? `多选：${extra.join("、")}` : "",
+							missing.length > 0
+								? t("grade.choice.missing", {
+										anchors: missing.map(labelOf(question)).join(listSeparator()),
+									})
+								: "",
+							extra.length > 0
+								? t("grade.choice.extra", { anchors: extra.join(listSeparator()) })
+								: "",
 						]
 							.filter(Boolean)
-							.join("；"),
+							.join(clauseSeparator()),
 			},
 		],
 		recorded: actual,
 	};
 }
 
-function labelOf(question: QuizQuestion, _kind: string) {
+/** 把锚点写成「锚点（选项文字）」，便于复盘时对照选项内容。 */
+function labelOf(question: QuizQuestion) {
 	return (anchor: string): string => {
 		const option = question.options.find((item) => item.anchor === anchor);
-		return option ? `${anchor}（${option.text}）` : anchor;
+		return option ? t("grade.anchorLabel", { anchor, text: option.text }) : anchor;
 	};
 }
 
@@ -106,7 +119,7 @@ function gradeBlank(question: QuizQuestion, answer: { kind: "blank"; values: str
 		const matched = matchBlank(value, blank.expected, rule);
 		details.push({
 			correct: matched,
-			note: matched ? undefined : `第 ${index + 1} 空应为「${blank.expected}」`,
+			note: matched ? undefined : t("grade.blank.expected", { index: index + 1, expected: blank.expected }),
 		});
 	}
 
@@ -180,7 +193,7 @@ function gradeMatch(
 		if (chosen.has(key)) continue;
 		details.push({
 			correct: false,
-			note: `缺少连线：「${label(pair.left)}」—「${label(pair.right)}」`,
+			note: t("grade.match.missing", { left: label(pair.left), right: label(pair.right) }),
 		});
 	}
 
@@ -190,7 +203,7 @@ function gradeMatch(
 		if (expected.has(key)) continue;
 		details.push({
 			correct: false,
-			note: `多余的连线：「${label(pair.left)}」—「${label(pair.right)}」`,
+			note: t("grade.match.extra", { left: label(pair.left), right: label(pair.right) }),
 		});
 	}
 
@@ -209,7 +222,7 @@ function gradeEssay(answer: { kind: "essay"; result: "correct" | "wrong" }): Gra
 	const correct = answer.result === "correct";
 	return {
 		correct,
-		details: [{ correct, note: correct ? undefined : "已标记为未掌握" }],
+		details: [{ correct, note: correct ? undefined : t("grade.essay.wrong") }],
 		recorded: answer.result,
 	};
 }

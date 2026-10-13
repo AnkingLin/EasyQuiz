@@ -2,14 +2,17 @@
 
 [![Node.js build](https://github.com/AnkingLin/EasyQuiz/actions/workflows/lint.yml/badge.svg)](https://github.com/AnkingLin/EasyQuiz/actions/workflows/lint.yml)
 
+**English** · [中文](README.zh-CN.md)
+
 An Obsidian plugin for Markdown-native quiz practice. Questions are written as **plain Markdown**, rendered as an interactive card UI, and attempt records are written back **into the note**.
 
 - Question bank: any Markdown file marked with `quiz: true` (or a `#quiz` tag).
 - Question stem: a heading.
 - Options / pairs / blanks: native lists, tables, and `==highlights==`.
-- Knowledge point: a `^[[link]]` at the end of the stem heading, tying the question back to the note it came from.
+- Knowledge point: a `^[[[]]]` at the end of the stem heading — `^[`, an Obsidian wikilink, `]`, with `[]` marking the target slot — tying the question back to the note it came from.
 - Machine data: a small `quiz` block under each question.
 - Records: `stats` (summary) and a capped `history`, stored in the note itself.
+- Interface: English and Chinese, following Obsidian's language (see [Interface language](#interface-language)).
 
 ## Quick start
 
@@ -21,7 +24,7 @@ An Obsidian plugin for Markdown-native quiz practice. Questions are written as *
    quiz: true
    ---
 
-   ## TCP 建立连接需要几次握手？ ^[[计算机网络/传输层#TCP 三次握手]]
+   ## TCP 建立连接需要几次握手？ ^[[[计算机网络/传输层#TCP 三次握手]]]
 
    - 一次 ^a
    - 两次 ^b
@@ -44,23 +47,25 @@ The rest of this document is the reference for the format.
 
 ## Linking questions to their knowledge points
 
-Every stem heading should end with `^[[知识点]]` — the link that ties the question back to the note it was
-derived from:
+Every stem heading should end with `^[[[]]]` — `^[`, then an Obsidian wikilink, then `]`: the link that
+ties the question back to the note it was derived from. The `[[]]` in the middle is the wikilink and `[]` is
+where the target goes, so a finished heading looks like this:
 
 ```markdown
-## TCP 建立连接需要几次握手？ ^[[计算机网络/传输层#TCP 三次握手]]
+## TCP 建立连接需要几次握手？ ^[[[计算机网络/传输层#TCP 三次握手]]]
 ```
 
-- The `^` prefix marks it as an annotation of the stem rather than ordinary question text. It is still a
-  real Obsidian wikilink: it renders as a link, and the question-bank note appears in the target's
-  backlinks panel.
+- The `^[ … ]` wrapper marks the link as an annotation of the stem rather than ordinary question text. The
+  `[[…]]` inside it is a real Obsidian wikilink: it renders as a link, and the question-bank note appears in
+  the target's backlinks panel.
 - The parser **strips it from the displayed title and from the derived id**, so retargeting a link never
   disconnects accumulated `stats` / `history`. The link target is available as
-  `QuizQuestion.knowledgeLink`, and the card shows it as a **clickable 知识点 row** under the header.
+  `QuizQuestion.knowledgeLink`, and the card shows it as a **clickable Knowledge point row** under the header.
 - `rev` (the stem hash) is computed from the stem body, not the heading, so **relinking a question does
   not mark its records as "stem changed"**.
-- Only a trailing `^[[…]]` counts. Write plain `[[知识点]]` inside the stem body when you want an inline
-  link in the question text; only the heading link is stripped.
+- Only a trailing `^[[[]]]` counts. The older two-bracket form `^[[…]]` is still recognised, so notes
+  written before this convention keep working. Write a plain `[[]]` inside the stem body when you want an
+  inline link in the question text; only the heading link is stripped.
 - Links are optional as far as the parser is concerned — a question without one simply has
   `knowledgeLink: null`.
 
@@ -75,7 +80,7 @@ skeletons are guaranteed to parse.
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (277 cases)
+npm test           # bundle and run the test suite (304 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 ```
@@ -84,7 +89,7 @@ The suite has two layers:
 
 - **Pure logic** (`parser`, `stem`, `grade`, `writeback`, `match-board`, `insert`, `session`): plain node, no DOM.
 - **DOM** (`tests/quiz-match-dom.test.ts`, `tests/quiz-insert-modal.test.ts`, `tests/quiz-practice-view.test.ts`,
-  `tests/quiz-knowledge-link.test.ts`):
+  `tests/quiz-knowledge-link.test.ts`, `tests/quiz-i18n.test.ts`):
   renders the real card and board through `renderQuizCard` under jsdom and clicks its nodes, so click handling,
   line targets, per-column isolation, the `MarkdownRenderer` contract and the knowledge-point link are checked
   rather than assumed; the insert
@@ -95,6 +100,11 @@ The suite has two layers:
 `tests/quiz-skill-doc.test.ts` closes the loop between documentation and code: it reads
 `skills/easyquiz-authoring/SKILL.md`, extracts every marked example, and feeds it to the real parser and
 grader. A documented skeleton that cannot be answered fails the suite.
+
+`tests/quiz-i18n.test.ts` covers the other direction: the two message tables must expose the same keys and
+the same `{placeholders}`, and the English interface is rendered for real (card, parser warning, practice
+window) rather than only looked up. The rest of the suite runs with the Chinese table, which is the
+plugin's original interface and the language of its fixtures.
 
 Source layout:
 
@@ -113,13 +123,16 @@ src/view.ts          practice card rendering (including the header's knowledge-p
 src/practice-view.ts practice window: question-bank list / practice settings / practice
 src/insert.ts        question templates and insertion positioning (pure logic)
 src/insert-modal.ts  insert-question dialog and the editor write
+src/labels.ts        question-type labels and default stem titles, shared by card/dialog/window (pure logic)
+src/i18n/            English/Chinese message tables and the language state (pure logic)
 skills/              agent-facing authoring spec (SKILL.md), examples verified by the test suite
 tests/               parser / stem / grading / write-back / insert / session tests, the window tests, a fixture
 ```
 
-`parser` / `stem` / `grade` / `writeback` / `hash` / `insert` / `session` deliberately do **not** import `obsidian`,
-so they run under plain Node; every Obsidian API dependency is confined to `runtime.ts`, `view.ts`,
-`practice-view.ts`, and `insert-modal.ts`.
+`parser` / `stem` / `grade` / `writeback` / `hash` / `insert` / `session` / `labels` / `i18n` deliberately
+do **not** import `obsidian`, so they run under plain Node; every Obsidian API dependency is confined to
+`runtime.ts`, `view.ts`, `practice-view.ts`, and `insert-modal.ts`. That includes the message tables: they
+are plain objects, so the parser can produce a localized warning without touching the Obsidian API.
 
 The stem is rendered **without** the parts that get their own interactive control — the option list,
 the matching table, and the `==answer==` text are stripped so that nothing is displayed twice.
@@ -155,7 +168,7 @@ A file is treated as a question bank when any of these hold:
 ### Anatomy of a question
 
 - A question spans from its stem heading to the **next heading of the same or higher level**.
-- The heading text is the question title; end it with `^[[知识点]]` to record the source knowledge point
+- The heading text is the question title; end it with `^[[[]]]` to record the source knowledge point
   (see [Linking questions to their knowledge points](#linking-questions-to-their-knowledge-points)).
 - The `quiz` block is **required**: the question type comes from its `type` field.
 - If the block is missing, `type` is missing or invalid, or the YAML fails to parse, that one question
@@ -172,7 +185,7 @@ stem that is followed by another H2, the H3 is correctly absorbed into that ques
 | Field | Required | Notes |
 |---|---|---|
 | `type` | **yes** | `single` / `multi` / `match` / `blank` / `essay`. The *only* thing that decides the type. |
-| `id` | no | Stable identifier; derived from the heading text (with the `^[[…]]` knowledge link excluded) when omitted. |
+| `id` | no | Stable identifier; derived from the heading text (with the `^[[[]]]` knowledge link excluded) when omitted. |
 | `answer` | type-dependent | `single`: `c`; `multi`: `[a, b]`; `blank` and `match` and `essay`: not used. |
 | `blanks` | no | Per-blank matching rules: `strict` / `ignoreCase` / `regex` / `accept`. Keys are blank anchors. |
 | `shuffle` | no | Shuffle order. Default `false`; `match` is always shuffled. |
@@ -202,7 +215,7 @@ editing a table marks the affected records as "stem changed" rather than silentl
 ### Single choice
 
 ````markdown
-## TCP 建立连接需要几次握手？ ^[[计算机网络/传输层#TCP 三次握手]]
+## TCP 建立连接需要几次握手？ ^[[[计算机网络/传输层#TCP 三次握手]]]
 
 - 一次 ^a
 - 两次 ^b
@@ -220,7 +233,7 @@ explanation: 三次握手用于同步双方的初始序列号。
 ### Multiple choice
 
 ````markdown
-## 下列哪些属于传输层协议？ ^[[计算机网络/传输层#传输层协议]]
+## 下列哪些属于传输层协议？ ^[[[计算机网络/传输层#传输层协议]]]
 
 - TCP ^a
 - UDP ^b
@@ -240,7 +253,7 @@ Written as a **multi-column table**. The table's original row order *is* the cor
 order is shuffled during practice.
 
 ````markdown
-## 将协议与其默认端口配对 ^[[计算机网络/应用层#常见默认端口]]
+## 将协议与其默认端口配对 ^[[[计算机网络/应用层#常见默认端口]]]
 
 | 协议 | 端口 |
 | --- | --- |
@@ -304,7 +317,7 @@ The marker is configurable (see **Blank marker** under Settings): `==answer==` (
 automatically in order of appearance.
 
 ````markdown
-## 补全 TCP 首部字段 ^[[计算机网络/传输层#TCP 首部]]
+## 补全 TCP 首部字段 ^[[[计算机网络/传输层#TCP 首部]]]
 
 TCP 首部的最小长度是 ==20== 字节，其中 ==序号== 字段用于标识本报文段的数据的第一个字节。
 
@@ -337,7 +350,7 @@ No fixed answer. The body is free-form, and a reference answer uses a **collapse
 does not spoil the question.
 
 ````markdown
-## 简述 TCP 与 UDP 的主要区别。 ^[[计算机网络/传输层#TCP 与 UDP 对比]]
+## 简述 TCP 与 UDP 的主要区别。 ^[[[计算机网络/传输层#TCP 与 UDP 对比]]]
 
 从连接、可靠性、传输方式与适用场景四个方面作答。
 
@@ -392,12 +405,12 @@ answer: a
 ```
 ````
 
-The placeholder text is Chinese because the shipped templates are; the structure is what matters.
-The skeleton is an answerable question from the start — replace the placeholder text and submit it in
-reading view. The heading level, the block language, and the blank marker all follow the settings
-below, and the insertion point is normalised so that the question always ends up separated from its
-neighbours by exactly one blank line (no matter where the cursor is, how many blank lines were there,
-or how many times you insert).
+The placeholder text follows the **interface language**, so an English UI inserts English skeletons and a
+Chinese UI inserts Chinese ones; the structure is what matters. The skeleton is an answerable question
+from the start — replace the placeholder text and submit it in reading view. The heading level, the block
+language, and the blank marker follow the settings below, and the insertion point is normalised so that the
+question always ends up separated from its neighbours by exactly one blank line (no matter where the cursor
+is, how many blank lines were there, or how many times you insert).
 
 ## The practice window
 
@@ -432,12 +445,31 @@ bank when it changes and again after each write-back.
 
 | Setting | Default | Notes |
 |---|---|---|
+| Interface language | Follow Obsidian | `Follow Obsidian`, `English`, or `中文` — see [Interface language](#interface-language) |
 | Block language | `quiz` | Change if it clashes; reload Obsidian afterwards |
 | Blank marker | `==` | Which Markdown marker defines a blank: `==answer==`, `**answer**`, or both |
 | Stem heading level | H2 | Decides which headings are questions |
 | Question-bank path globs | empty | One per line, e.g. `题库/**` |
 | Write records back | on | Turn off to grade in the UI only, leaving notes untouched |
 | Per-question history cap | 10 | Records live in the note, so the detail list must be capped; `0` keeps only the summary |
+
+## Interface language
+
+The interface ships in **English and Chinese**. There is no separate translation file to install: both
+message tables are bundled, and the plugin picks one when it loads — and again the moment you change the
+setting.
+
+- **Follow Obsidian** (the default) reads Obsidian's own language and uses Chinese when it is a Chinese
+  variant (`zh`, `zh-CN`, `zh-TW`, …), English for everything else.
+- The **Interface language** setting overrides that choice.
+- Switching language re-renders the practice window, the settings tab, and the quiz cards already open in
+  reading view immediately, and the templates inserted from then on use the new language. Command names in
+  the command palette and the ribbon tooltip are registered when the plugin loads, so they change after a
+  **reload**.
+- Quiz **content** is never translated: a question written in Chinese stays Chinese, and the same goes for
+  `explanation`, option text, and everything else inside the note. Only interface text — buttons, notices,
+  parser warnings, grading notes, and the placeholder text of freshly inserted skeletons — follows the
+  language setting.
 
 ## How records are stored
 
@@ -478,9 +510,10 @@ Implemented and covered by tests: the parser, stem preprocessing, grading for al
 write-back, matching-board logic, question templates with their insertion positioning, the practice
 card UI (choice options, click-to-connect multi-column matching with shuffling, inline click-to-type
 blanks that grow with their content, short-answer self-assessment, and the clickable knowledge-point
-link), and the practice window
+link), the practice window
 (question-bank list with per-file data, practice settings with type/sampling filters, and the
-one-question-at-a-time round with in-place answer reveal and a final report). Question-bank edits
+one-question-at-a-time round with in-place answer reveal and a final report), and the English/Chinese
+interface with its language setting. Question-bank edits
 trigger a debounced reading-view refresh and invalidate the window's cached parsing.
 
 Not yet implemented: batching of multiple write-backs into one file write, and statistics that span
@@ -505,14 +538,18 @@ rounds (a mistake book, charts) beyond what the window computes for a single rou
 | The data block language was changed | The processor is registered at load time | Reload Obsidian |
 | Another plugin's `quiz` snippet stopped rendering | This plugin claimed the `quiz` block language | Change **Block language** in settings, then reload |
 
+Supported languages: **English** (this file) and [**中文**](README.zh-CN.md).
+
 ## Contributing
 
 - Keep `main.ts` to plugin lifecycle only; feature logic belongs in its own module under `src/`.
 - `parser` / `stem` / `grade` / `writeback` / `hash` / `insert` / `session` must not import `obsidian`, so
   they stay testable under plain Node.
-- Run `npm run build`, `npm test`, and `npm run lint` before opening a pull request; CI runs all three.
-- When you change the on-disk format or an authoring rule, update `README.md` **and**
+- Never hard-code interface text: add a key to `src/i18n/en.ts`, fill it in `src/i18n/zh.ts` (both tables
+  are type-checked against each other), and read it through `t()`. Keep the same `{placeholders}` in both.
+- When you change user-visible behaviour, update `README.md`, `README.zh-CN.md`, **and**
   `skills/easyquiz-authoring/SKILL.md` — the latter's examples are executed by `npm test`.
+- Run `npm run build`, `npm test`, and `npm run lint` before opening a pull request; CI runs all three.
 
 ## License
 

@@ -144,6 +144,7 @@ function buildHarness(files: { file: FakeFile; source: string }[], realCard = fa
 	};
 	const host: EasyQuizHost = {
 		settings: {
+			language: "auto",
 			blockLanguage: "quiz",
 			headingLevels: [2, 2],
 			blankMarker: "highlight",

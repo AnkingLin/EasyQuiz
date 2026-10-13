@@ -6,32 +6,15 @@
  *
  * 模板刻意保留占位文字（`选项内容 ^a`、`==答案==`）：插入后题目本身就能被识别，
  * 作者只需把占位文字替换成真实内容，不必再回忆字段和语法。
+ *
+ * 这些占位文字会写进用户的笔记，所以它们跟随界面语言（`src/i18n`）：中文环境插入
+ * 中文骨架，英文环境插入英文骨架。语法标记（`==`、`^a`、`> [!question]`）不翻译。
  */
 
+import { t } from "./i18n";
+import { defaultTitles } from "./labels";
+import { KNOWLEDGE_LINK_AT_END } from "./parser";
 import { BlankMarkerMode, QuizType } from "./types";
-
-/** 填空题模板里使用的高亮标记。 */
-const HIGHLIGHT_BLANK = "==答案==";
-/** 填空题模板里使用的加粗标记。 */
-const BOLD_BLANK = "**答案**";
-
-/** 各题型的默认题干标题，作为输入框的初始值。 */
-export const DEFAULT_TITLES: Record<QuizType, string> = {
-	single: "单选题干",
-	multi: "多选题干",
-	match: "配对题干",
-	blank: "填空题干",
-	essay: "问答题干",
-};
-
-/** 题型在对话框里的显示名。 */
-export const TYPE_LABELS: Record<QuizType, string> = {
-	single: "单选",
-	multi: "多选",
-	match: "配对",
-	blank: "填空",
-	essay: "问答",
-};
 
 export interface TemplateOptions {
 	type: QuizType;
@@ -57,26 +40,26 @@ function normalizeTitle(title: string): string {
 }
 
 /**
- * 题面标题末尾的知识点链接：`^[[知识点]]`。
- * 插入模板原样保留它，否则从对话框插入的题目会丢掉溯源信息。
+ * 拆出标题正文与末尾的知识点链接。
+ *
+ * 链接的匹配与写法由解析器统一给出（`^[[[知识点]]]`，旧写法 `^[[知识点]]` 也认），
+ * 这里只负责把作者写的那份链接**原样**带回模板——否则从对话框插入的题目会丢掉
+ * 溯源信息，或者被改写成另一种写法。
  */
-const TRAILING_KNOWLEDGE_LINK = /\s*\^\[\[([^\]\n]*)\]\]\s*$/;
-
-/** 拆出标题正文与末尾的知识点链接；只写链接时正文为空串，链接保留原文。 */
 function splitTrailingKnowledgeLink(title: string): { text: string; suffix: string } {
-	const match = TRAILING_KNOWLEDGE_LINK.exec(title);
+	const match = KNOWLEDGE_LINK_AT_END.exec(title);
 	if (!match) return { text: title, suffix: "" };
 	const text = title.slice(0, match.index).trimEnd();
-	// 正文为空时不补前导空格，避免标题行出现 `##  ^[[…]]` 这样的双空格。
-	return { text, suffix: `${text === "" ? "" : " "}^[[${match[1] ?? ""}]]` };
+	// 正文为空时不补前导空格，避免标题行出现 `##  ^[[[…]]]` 这样的双空格。
+	return { text, suffix: `${text === "" ? "" : " "}${match[0].trim()}` };
 }
 
 function heading(options: TemplateOptions): string {
 	const level = normalizeLevel(options.headingLevel);
 	const { text, suffix } = splitTrailingKnowledgeLink(normalizeTitle(options.title));
 	// 只有「标题正文 + 知识点链接都没有」时才回退到默认标题：
-	// 只写了 `^[[知识点]]` 的标题仍是一道有溯源的题，不该被默认标题顶掉。
-	const body = text === "" && suffix === "" ? DEFAULT_TITLES[options.type] : text;
+	// 只写了 `^[[[知识点]]]` 的标题仍是一道有溯源的题，不该被默认标题顶掉。
+	const body = text === "" && suffix === "" ? defaultTitles()[options.type] : text;
 	return `${"#".repeat(level)} ${body}${suffix}`;
 }
 
@@ -87,8 +70,8 @@ function heading(options: TemplateOptions): string {
  * 而高亮是默认标记，改回默认设置后这份模板仍然有效。
  */
 function blankMarkerText(mode: BlankMarkerMode): string {
-	if (mode === "bold") return `${BOLD_BLANK} ^b1`;
-	return `${HIGHLIGHT_BLANK} ^b1`;
+	const marker = mode === "bold" ? t("insert.blank.bold") : t("insert.blank.highlight");
+	return `${marker} ^b1`;
 }
 
 /** 数据块：空行之后的围栏代码块。 */
@@ -103,13 +86,15 @@ function dataBlock(options: TemplateOptions, lines: string[]): string {
  */
 export function buildQuestionTemplate(options: TemplateOptions): string {
 	const head = heading(options);
+	const optionA = t("insert.option.placeholderA");
+	const optionB = t("insert.option.placeholderB");
 	switch (options.type) {
 		case "single":
 			return [
 				head,
 				"",
-				"- 选项内容 ^a",
-				"- 选项内容 ^b",
+				`- ${optionA}`,
+				`- ${optionB}`,
 				"",
 				dataBlock(options, ["type: single", "answer: a"]),
 			].join("\n");
@@ -117,8 +102,8 @@ export function buildQuestionTemplate(options: TemplateOptions): string {
 			return [
 				head,
 				"",
-				"- 选项内容 ^a",
-				"- 选项内容 ^b",
+				`- ${optionA}`,
+				`- ${optionB}`,
 				"",
 				dataBlock(options, ["type: multi", "answer: [a, b]"]),
 			].join("\n");
@@ -126,9 +111,9 @@ export function buildQuestionTemplate(options: TemplateOptions): string {
 			return [
 				head,
 				"",
-				"| 左列 | 右列 |",
+				`| ${t("insert.table.headerLeft")} | ${t("insert.table.headerRight")} |`,
 				"| --- | --- |",
-				"| 左侧内容 | 右侧内容 |",
+				`| ${t("insert.table.cellLeft")} | ${t("insert.table.cellRight")} |`,
 				"",
 				dataBlock(options, ["type: match"]),
 			].join("\n");
@@ -136,7 +121,7 @@ export function buildQuestionTemplate(options: TemplateOptions): string {
 			return [
 				head,
 				"",
-				`这里是题干，例如：TCP 首部的最小长度是 ${blankMarkerText(options.blankMarker)} 字节。`,
+				t("insert.blank.stem", { marker: blankMarkerText(options.blankMarker) }),
 				"",
 				dataBlock(options, ["type: blank"]),
 			].join("\n");
@@ -145,10 +130,10 @@ export function buildQuestionTemplate(options: TemplateOptions): string {
 			return [
 				head,
 				"",
-				"在这里写出题干。",
+				t("insert.essay.stem"),
 				"",
-				"> [!question]- 参考答案",
-				"> 在这里写出参考答案。",
+				`> [!question]- ${t("insert.essay.callout")}`,
+				`> ${t("insert.essay.answer")}`,
 				"",
 				dataBlock(options, ["type: essay"]),
 			].join("\n");

@@ -4,7 +4,7 @@ Agent-facing instructions for working in this repository.
 
 | Skill | Use it when |
 |---|---|
-| [`easyquiz-authoring/SKILL.md`](easyquiz-authoring/SKILL.md) | Writing, editing, or reviewing an EasyQuiz question bank: the five question types, anchors, blank markers, the plugin-managed `stats` / `history` / `rev` fields, the degrade rules, and the `^[[知识点]]` knowledge-point link convention. |
+| [`easyquiz-authoring/SKILL.md`](easyquiz-authoring/SKILL.md) | Writing, editing, or reviewing an EasyQuiz question bank: the five question types, anchors, blank markers, the plugin-managed `stats` / `history` / `rev` fields, the degrade rules, and the `^[[[]]]` knowledge-point link convention. |
 
 The examples in `easyquiz-authoring/SKILL.md` are executed by `npm test`
 (`tests/quiz-skill-doc.test.ts`): every example marked with `<!-- example:start -->` / `<!-- example:end -->`

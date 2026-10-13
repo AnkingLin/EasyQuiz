@@ -17,6 +17,7 @@ import "./quiz-knowledge-link.test";
 import "./quiz-session.test";
 import "./quiz-practice-view.test";
 import "./quiz-skill-doc.test";
+import "./quiz-i18n.test";
 
 async function main(): Promise<void> {
 	const summary = await runTests();

@@ -149,7 +149,7 @@ test("未写 rev 的题目不算 stale", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 知识点链接：题面标题末尾的 `^[[知识点]]`
+// 知识点链接：题面标题末尾的 `^[[[知识点]]]`（旧写法 `^[[知识点]]` 也认）
 // ---------------------------------------------------------------------------
 
 /** 带知识点链接的单选题源码。 */
@@ -171,18 +171,44 @@ function knowledgeSource(headingText: string): string {
 	].join("\n");
 }
 
-test("知识点链接：标题里的 ^[[知识点]] 被摘出，不进题面标题", () => {
-	const question = first(knowledgeSource("## 三次握手 ^[[TCP 握手过程]]"));
+test("知识点链接：标题里的 ^[[[知识点]]] 被摘出，不进题面标题", () => {
+	const question = first(knowledgeSource("## 三次握手 ^[[[TCP 握手过程]]]"));
 	assertEqual(question.title, "三次握手", "题面标题不应带上知识点链接");
 	assertEqual(question.knowledgeLink, "TCP 握手过程", "应记录知识点链接目标");
 	assertEqual(question.ok, true, `应解析成功（warnings=${warnCodes(question)}）`);
 });
 
+test("知识点链接：带路径与小标题的目标原样记录", () => {
+	const question = first(knowledgeSource("## 三次握手 ^[[[计算机网络/传输层#TCP 三次握手]]]"));
+	assertEqual(question.title, "三次握手", "题面标题");
+	assertEqual(question.knowledgeLink, "计算机网络/传输层#TCP 三次握手", "目标应含路径与小标题");
+});
+
+test("知识点链接：旧写法 ^[[知识点]] 仍被接受", () => {
+	const question = first(knowledgeSource("## 三次握手 ^[[TCP 握手过程]]"));
+	assertEqual(question.title, "三次握手", "题面标题不应带上知识点链接");
+	assertEqual(question.knowledgeLink, "TCP 握手过程", "旧写法的目标也应记录");
+	assertEqual(question.ok, true, "旧写法不应导致降级");
+});
+
+test("知识点链接：空目标（文档占位符 ^[[[]]]）被摘掉且不报错", () => {
+	const question = first(knowledgeSource("## 三次握手 ^[[[]]]"));
+	assertEqual(question.title, "三次握手", "占位符不应留在标题里");
+	assertEqual(question.knowledgeLink, "", "空目标记录为空串");
+	assertEqual(question.ok, true, "占位符不应导致降级");
+});
+
 test("知识点链接：不参与派生 id，因此改链接不会让记录失联", () => {
-	const before = first(knowledgeSource("## 三次握手 ^[[TCP 握手过程]]"));
-	const after = first(knowledgeSource("## 三次握手 ^[[计算机网络/传输层]]"));
+	const before = first(knowledgeSource("## 三次握手 ^[[[TCP 握手过程]]]"));
+	const after = first(knowledgeSource("## 三次握手 ^[[[计算机网络/传输层]]]"));
 	assertEqual(before.id, "三次握手", "派生 id 应只来自标题正文");
 	assertEqual(after.id, before.id, "只改知识点链接不应改变 id");
+});
+
+test("知识点链接：新旧写法互相切换也不改变派生 id", () => {
+	const current = first(knowledgeSource("## 三次握手 ^[[[TCP 握手过程]]]"));
+	const legacy = first(knowledgeSource("## 三次握手 ^[[TCP 握手过程]]"));
+	assertEqual(legacy.id, current.id, "两种写法应派生出同一个 id");
 });
 
 test("知识点链接：没有链接时 knowledgeLink 为 null", () => {
@@ -197,6 +223,12 @@ test("知识点链接：只认标题末尾的链接，正文中间的链接不�
 	assertEqual(question.title, "三次握手 [[别的链接]] 之后", "标题应原样保留");
 });
 
+test("知识点链接：链接后面还有正文时不算知识点链接", () => {
+	const question = first(knowledgeSource("## 三次握手 ^[[[TCP 握手过程]]] 尾巴"));
+	assertEqual(question.knowledgeLink, null, "链接不在标题末尾时不识别");
+	assertEqual(question.title, "三次握手 ^[[[TCP 握手过程]]] 尾巴", "标题应原样保留");
+});
+
 test("知识点链接：显式 id 优先级高于标题正文", () => {
 	const question = first(
 		[
@@ -204,7 +236,7 @@ test("知识点链接：显式 id 优先级高于标题正文", () => {
 			"quiz: true",
 			"---",
 			"",
-			"## 三次握手 ^[[TCP 握手过程]]",
+			"## 三次握手 ^[[[TCP 握手过程]]]",
 			"",
 			"- 一次 ^a",
 			"- 三次 ^c",

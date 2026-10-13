@@ -15,6 +15,7 @@ import {
 } from "./parser";
 import { GradeResult, gradeAnswer, UserAnswer } from "./grade";
 import { contentHash } from "./hash";
+import { LanguagePreference, t } from "./i18n";
 import { DEFAULT_HISTORY_LIMIT, planWriteBack, replaceBlockInFile } from "./writeback";
 import { BlankMarkerMode, HistoryEntry, ParsedQuizFile, QuizQuestion, QuizStats } from "./types";
 
@@ -26,6 +27,8 @@ export const parserDeps: ParseDependencies = {
 };
 
 export interface RuntimeSettings {
+	/** 界面语言：`auto` 跟随 Obsidian，其余为强制指定。 */
+	language: LanguagePreference;
 	blockLanguage: string;
 	headingLevels: [number, number];
 	/** 空位标记样式：`==高亮==` / `**加粗**` / 两者都识别。 */
@@ -36,6 +39,7 @@ export interface RuntimeSettings {
 }
 
 export const DEFAULT_SETTINGS: RuntimeSettings = {
+	language: "auto",
 	blockLanguage: DEFAULT_BLOCK_LANGUAGE,
 	headingLevels: DEFAULT_HEADING_LEVELS,
 	blankMarker: DEFAULT_BLANK_MARKER,
@@ -212,12 +216,12 @@ export class QuizService {
 /** 统计信息的人类可读摘要，用于题卡角标。 */
 export function formatStats(question: QuizQuestion): string {
 	const { attempts, correct } = question.stats;
-	if (attempts === 0) return "未作答";
+	if (attempts === 0) return t("stats.untried");
 	const rate = Math.round((correct / attempts) * 100);
 	return `${correct}/${attempts} · ${rate}%`;
 }
 
 /** 数据块中是否记录了与当前题面不一致的 rev。 */
 export function staleNote(question: QuizQuestion): string | null {
-	return question.stale ? "题面已变更，历史记录可能与当前题目不完全对应" : null;
+	return question.stale ? t("stats.stale") : null;
 }

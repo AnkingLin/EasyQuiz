@@ -99,7 +99,7 @@ test("splitWikiTarget：`[[#标题]]` 是本文件内的标题，没有目标文
 // ---------------------------------------------------------------------------
 
 test("题卡头部渲染知识点链接，题面标题不带链接", async () => {
-	const question = parseWithLink("## 三次握手 ^[[计算机网络/传输层#TCP 三次握手]]");
+	const question = parseWithLink("## 三次握手 ^[[[计算机网络/传输层#TCP 三次握手]]]");
 	const { app } = fakeApp();
 	const card = await render(question, app);
 
@@ -109,6 +109,19 @@ test("题卡头部渲染知识点链接，题面标题不带链接", async () =>
 	const link = must(
 		card.querySelector<HTMLAnchorElement>(".easy-quiz-card__knowledge-link") ?? undefined,
 		"应渲染知识点链接"
+	);
+	assertEqual(link.textContent, "计算机网络/传输层#TCP 三次握手", "链接文字");
+});
+
+test("题卡头部也认旧写法 ^[[知识点]] 的链接", async () => {
+	const question = parseWithLink("## 三次握手 ^[[计算机网络/传输层#TCP 三次握手]]");
+	const { app } = fakeApp();
+	const card = await render(question, app);
+
+	assertEqual(card.querySelector(".easy-quiz-card__title")?.textContent, "三次握手", "题面标题");
+	const link = must(
+		card.querySelector<HTMLAnchorElement>(".easy-quiz-card__knowledge-link") ?? undefined,
+		"旧写法也应渲染知识点链接"
 	);
 	assertEqual(link.textContent, "计算机网络/传输层#TCP 三次握手", "链接文字");
 });

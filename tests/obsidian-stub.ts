@@ -9,6 +9,14 @@ export function parseYaml(source: string): unknown {
 	throw new Error("测试中请显式注入 parseYaml");
 }
 
+/**
+ * 语言探测的替身：插件用 `moment.locale()` 判断用户语言（1.4 起可用），
+ * 测试的断言文案是中文，因此这里报中文。
+ */
+export const moment = {
+	locale: (): string => "zh",
+};
+
 export function setIcon(): void {
 	// 图标在测试中不需要真实渲染。
 }

@@ -13,6 +13,8 @@
  */
 
 import { ItemView, Notice, Setting, TFile, WorkspaceLeaf } from "obsidian";
+import { MessageKey, t } from "./i18n";
+import { typeLabel } from "./labels";
 import { QuizService, RuntimeSettings } from "./runtime";
 import {
 	buildSession,
@@ -30,24 +32,28 @@ import {
 	TYPE_ORDER,
 } from "./session";
 import { ParsedQuizFile, QuizQuestion, QuizType } from "./types";
-import { CardContext, renderQuizCard, typeLabel } from "./view";
+import { CardContext, renderQuizCard } from "./view";
 
 export const PRACTICE_VIEW_TYPE = "easy-quiz-practice";
 
-/** 顶部三步指示里的步骤名。 */
-const STEPS = ["题库列表", "刷题设置", "刷题"] as const;
+/** 顶部三步指示里的步骤名对应的消息键。 */
+const STEP_KEYS: readonly MessageKey[] = [
+	"practice.step.list",
+	"practice.step.settings",
+	"practice.step.practice",
+];
 
-/** 模式按钮文案。 */
-const MODE_LABELS: Record<PracticeMode, string> = {
-	order: "顺序刷题",
-	random: "定量随机抽题",
-	wrong: "只刷错题",
+/** 模式按钮文案对应的消息键。 */
+const MODE_LABEL_KEYS: Record<PracticeMode, MessageKey> = {
+	order: "practice.mode.order",
+	random: "practice.mode.random",
+	wrong: "practice.mode.wrong",
 };
 
-const MODE_HINTS: Record<PracticeMode, string> = {
-	order: "按文件里的题目顺序逐题过一遍，适合系统复习。",
-	random: "从候选题里随机抽出指定数量，留空或填 0 表示全部。",
-	wrong: "只抽上一次作答错误的题。没有记录时这一轮会是空的。",
+const MODE_HINT_KEYS: Record<PracticeMode, MessageKey> = {
+	order: "practice.mode.orderHint",
+	random: "practice.mode.randomHint",
+	wrong: "practice.mode.wrongHint",
 };
 
 /** 三个模式按这个顺序出现在按钮组里。 */
@@ -130,7 +136,7 @@ export class PracticeView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return "刷题";
+		return t("practice.title");
 	}
 
 	getIcon(): string {
@@ -236,7 +242,9 @@ export class PracticeView extends ItemView {
 			const target = this.bodyEl ?? this.rootEl;
 			target?.createDiv({
 				cls: "easy-quiz-practice__error",
-				text: `刷题窗口渲染失败：${error instanceof Error ? error.message : String(error)}`,
+				text: t("practice.renderFailed", {
+					error: error instanceof Error ? error.message : String(error),
+				}),
 			});
 		}
 	}
@@ -247,13 +255,13 @@ export class PracticeView extends ItemView {
 		if (nav === null) return;
 		nav.empty();
 
-		for (const [index, label] of STEPS.entries()) {
+		for (const [index, labelKey] of STEP_KEYS.entries()) {
 			const current = index === this.page;
 			const step = nav.createDiv({
 				cls: `easy-quiz-practice__step${current ? " is-current" : ""}${index < this.page ? " is-done" : ""}`,
 			});
 			step.createSpan({ cls: "easy-quiz-practice__step-no", text: String(index + 1) });
-			step.createSpan({ cls: "easy-quiz-practice__step-label", text: label });
+			step.createSpan({ cls: "easy-quiz-practice__step-label", text: t(labelKey) });
 
 			// 只允许往回走：往前跳会跳过必填的选择。
 			if (index < this.page) {
@@ -324,11 +332,8 @@ export class PracticeView extends ItemView {
 		const body = this.bodyEl;
 		if (body === null) return;
 
-		this.heading(
-			"题库文件",
-			"按文件路径列出 vault 里的题库文件及其数据。勾选多份可以合并成一轮练习。"
-		);
-		const loading = body.createDiv({ cls: "easy-quiz-practice__loading", text: "正在扫描题库…" });
+		this.heading(t("practice.list.heading"), t("practice.list.hint"));
+		const loading = body.createDiv({ cls: "easy-quiz-practice__loading", text: t("practice.list.scanning") });
 
 		const entries = await this.scan();
 		loading.detach();
@@ -357,7 +362,7 @@ export class PracticeView extends ItemView {
 				folder = entry.summary.folder;
 				list.createDiv({
 					cls: "easy-quiz-practice__folder",
-					text: folder === "" ? "/（vault 根目录）" : `/${folder}`,
+					text: folder === "" ? t("practice.list.rootFolder") : `/${folder}`,
 				});
 			}
 			this.renderFileRow(list, entry);
@@ -367,12 +372,12 @@ export class PracticeView extends ItemView {
 	private totalsText(totals: SummaryTotals): string {
 		const rate = totals.attempts === 0 ? "—" : `${Math.round((totals.correct / totals.attempts) * 100)}%`;
 		return [
-			`${totals.files} 个题库文件`,
-			`${totals.questions} 道题`,
-			`可作答 ${totals.answerable}`,
-			`需修正 ${totals.broken}`,
-			`已作答 ${totals.attempts} 次`,
-			`正确率 ${rate}`,
+			t("practice.totals.files", { count: totals.files }),
+			t("practice.totals.questions", { count: totals.questions }),
+			t("practice.totals.answerable", { count: totals.answerable }),
+			t("practice.totals.broken", { count: totals.broken }),
+			t("practice.totals.attempts", { count: totals.attempts }),
+			t("practice.totals.accuracy", { rate }),
 		].join(" · ");
 	}
 
@@ -380,21 +385,21 @@ export class PracticeView extends ItemView {
 		const toolbar = body.createDiv({ cls: "easy-quiz-practice__toolbar" });
 		const usable = entries.filter((entry) => entry.summary.answerable > 0);
 
-		const all = this.button(toolbar, "select-all", "全选可作答");
+		const all = this.button(toolbar, "select-all", t("practice.toolbar.selectAll"));
 		all.disabled = usable.length === 0;
 		all.addEventListener("click", () => {
 			this.picked = usable.map((entry) => entry.file.path);
 			void this.render();
 		});
 
-		const clear = this.button(toolbar, "clear-selection", "清空选择");
+		const clear = this.button(toolbar, "clear-selection", t("practice.toolbar.clear"));
 		clear.disabled = this.picked.length === 0;
 		clear.addEventListener("click", () => {
 			this.picked = [];
 			void this.render();
 		});
 
-		const rescan = this.button(toolbar, "rescan", "重新扫描");
+		const rescan = this.button(toolbar, "rescan", t("practice.toolbar.rescan"));
 		rescan.addEventListener("click", () => {
 			this.entries = null;
 			this.stale = true;
@@ -411,20 +416,20 @@ export class PracticeView extends ItemView {
 	}
 
 	private pickerLabel(): string {
-		return `开始设置（已选 ${this.picked.length} 份）`;
+		return t("practice.toolbar.startSetup", { count: this.picked.length });
 	}
 
 	private renderEmpty(body: HTMLElement): void {
 		const empty = body.createDiv({ cls: "easy-quiz-practice__empty" });
-		empty.createDiv({ text: "没有找到题库文件。" });
+		empty.createDiv({ text: t("practice.empty.none") });
 		const hints = empty.createEl("ul", { cls: "easy-quiz-practice__empty-hints" });
-		hints.createEl("li", { text: "在笔记的 frontmatter 里写 quiz: true（推荐）。" });
-		hints.createEl("li", { text: "或者给文件加 #quiz 标签。" });
-		hints.createEl("li", { text: "或者在设置里的「题库路径通配符」中加上路径，例如 题库/**。" });
+		hints.createEl("li", { text: t("practice.empty.hintFrontmatter") });
+		hints.createEl("li", { text: t("practice.empty.hintTag") });
+		hints.createEl("li", { text: t("practice.empty.hintGlob") });
 
-		const open = this.button(empty, "open-settings", "打开设置");
+		const open = this.button(empty, "open-settings", t("practice.openSettings"));
 		open.addEventListener("click", () => this.openSettings());
-		const rescan = this.button(empty, "rescan", "重新扫描");
+		const rescan = this.button(empty, "rescan", t("practice.toolbar.rescan"));
 		rescan.addEventListener("click", () => {
 			this.entries = null;
 			this.stale = true;
@@ -468,15 +473,15 @@ export class PracticeView extends ItemView {
 		}
 
 		if (entry.error !== null) {
-			main.createDiv({ cls: "easy-quiz-practice__file-error", text: `解析失败：${entry.error}` });
+			main.createDiv({ cls: "easy-quiz-practice__file-error", text: t("practice.file.parseFailed", { error: entry.error }) });
 		} else if (summary.issues > 0) {
 			main.createDiv({
 				cls: "easy-quiz-practice__file-error",
-				text: `有 ${summary.issues} 处需要修正，这些题不会进入练习。`,
+				text: t("practice.file.issues", { count: summary.issues }),
 			});
 		}
 
-		const pick = this.button(row, "pick-file-only", "设置刷题");
+		const pick = this.button(row, "pick-file-only", t("practice.file.pick"));
 		pick.dataset["path"] = summary.path;
 		pick.disabled = summary.answerable === 0;
 		pick.addEventListener("click", () => {
@@ -487,14 +492,20 @@ export class PracticeView extends ItemView {
 
 	private fileStatsText(entry: FileEntry): string {
 		const summary = entry.summary;
-		const parts = [`共 ${summary.total} 题`, `可作答 ${summary.answerable}`];
-		if (summary.broken > 0) parts.push(`需修正 ${summary.broken}`);
+		const parts = [
+			t("practice.file.stats.total", { count: summary.total }),
+			t("practice.file.stats.answerable", { count: summary.answerable }),
+		];
+		if (summary.broken > 0) parts.push(t("practice.file.stats.broken", { count: summary.broken }));
 		if (summary.attempts > 0) {
-			parts.push(`已作答 ${summary.attempts} 次`, `正确率 ${Math.round((summary.correct / summary.attempts) * 100)}%`);
+			parts.push(
+				t("practice.totals.attempts", { count: summary.attempts }),
+				t("practice.totals.accuracy", { rate: `${Math.round((summary.correct / summary.attempts) * 100)}%` })
+			);
 		} else {
-			parts.push("无记录");
+			parts.push(t("practice.file.stats.noRecords"));
 		}
-		if (summary.lastAt !== null) parts.push(`最近 ${summary.lastAt.slice(0, 10)}`);
+		if (summary.lastAt !== null) parts.push(t("practice.file.stats.lastAt", { date: summary.lastAt.slice(0, 10) }));
 		return parts.join(" · ");
 	}
 
@@ -596,8 +607,8 @@ export class PracticeView extends ItemView {
 		if (body === null) return;
 
 		if (this.picked.length === 0) {
-			this.heading("刷题设置", "还没有选择题库文件。");
-			const back = this.button(body, "goto-list", "返回题库列表", true);
+			this.heading(t("practice.picker.heading"), t("practice.picker.noFiles"));
+			const back = this.button(body, "goto-list", t("practice.picker.back"), true);
 			back.addEventListener("click", () => {
 				this.page = 0;
 				void this.render();
@@ -608,16 +619,16 @@ export class PracticeView extends ItemView {
 		await this.loadParsed();
 		if (this.page !== 1 || this.bodyEl !== body) return;
 
-		this.heading("刷题设置", "选择练什么、怎么抽题。开始前会先告诉你这一轮有多少道题。");
+		this.heading(t("practice.picker.heading"), t("practice.picker.hint"));
 
 		const files = body.createDiv({ cls: "easy-quiz-practice__picked" });
 		for (const path of this.picked) {
 			const chip = files.createDiv({ cls: "easy-quiz-practice__chip" });
 			const parsed = this.parsedByPath.get(path);
 			const count = parsed === undefined ? 0 : parsed.questions.filter((question) => question.ok).length;
-			chip.createSpan({ text: `${path}（可作答 ${count}）` });
+			chip.createSpan({ text: t("practice.picker.chip", { path, count }) });
 			const remove = chip.createEl("button", { text: "✕" });
-			remove.setAttribute("aria-label", `移除 ${path}`);
+			remove.setAttribute("aria-label", t("practice.picker.remove", { path }));
 			remove.dataset["action"] = "unpick-file";
 			remove.dataset["path"] = path;
 			remove.addEventListener("click", () => {
@@ -636,12 +647,12 @@ export class PracticeView extends ItemView {
 
 	/** 抽题方式：三个互斥按钮 + 随机模式的数量输入。 */
 	private renderModeSetting(body: HTMLElement): void {
-		const setting = new Setting(body).setName("抽题方式").setDesc(MODE_HINTS[this.config.mode]);
+		const setting = new Setting(body).setName(t("practice.picker.modeName")).setDesc(t(MODE_HINT_KEYS[this.config.mode]));
 		setting.settingEl.addClass("easy-quiz-practice__setting");
 
 		const group = setting.controlEl.createDiv({ cls: "easy-quiz-practice__modes" });
 		for (const mode of MODES) {
-			const button = group.createEl("button", { text: MODE_LABELS[mode] });
+			const button = group.createEl("button", { text: t(MODE_LABEL_KEYS[mode]) });
 			button.dataset["action"] = "set-mode";
 			button.dataset["mode"] = mode;
 			button.toggleClass("is-active", this.config.mode === mode);
@@ -671,8 +682,8 @@ export class PracticeView extends ItemView {
 	private renderTypeSetting(body: HTMLElement): void {
 		const counts = this.typeCounts();
 		const setting = new Setting(body)
-			.setName("题型")
-			.setDesc("不勾选任何题型表示不限题型；括号里是当前文件里的可作答题数。");
+			.setName(t("practice.picker.typeName"))
+			.setDesc(t("practice.picker.typeDesc"));
 		setting.settingEl.addClass("easy-quiz-practice__setting");
 
 		const group = setting.controlEl.createDiv({ cls: "easy-quiz-practice__types" });
@@ -690,14 +701,14 @@ export class PracticeView extends ItemView {
 					: this.config.types.filter((item) => item !== type);
 				this.refreshCounts();
 			});
-			label.createSpan({ text: `${typeLabel(type)}（${counts[type]}）` });
+			label.createSpan({ text: t("practice.picker.typeLabel", { label: typeLabel(type), count: counts[type] }) });
 		}
 	}
 
 	private renderShuffleSetting(body: HTMLElement): void {
 		const setting = new Setting(body)
-			.setName("打乱顺序")
-			.setDesc("打乱出题顺序与选择题的选项顺序；配对题的每一列始终会打乱。");
+			.setName(t("practice.picker.shuffleName"))
+			.setDesc(t("practice.picker.shuffleDesc"));
 		setting.settingEl.addClass("easy-quiz-practice__setting");
 		setting.addToggle((toggle) =>
 			toggle.setValue(this.config.shuffleOptions).onChange((value) => {
@@ -710,7 +721,7 @@ export class PracticeView extends ItemView {
 		const row = body.createDiv({ cls: "easy-quiz-practice__start" });
 		this.countEl = row.createDiv({ cls: "easy-quiz-practice__count" });
 		this.countEl.dataset["action"] = "session-count";
-		this.startEl = this.button(row, "start-session", "开始刷题", true);
+		this.startEl = this.button(row, "start-session", t("practice.picker.start"), true);
 		this.startEl.addEventListener("click", () => {
 			void this.startSession();
 		});
@@ -726,9 +737,9 @@ export class PracticeView extends ItemView {
 		const planned = this.plannedCount(candidates);
 		count.setText(
 			[
-				`选中文件可作答 ${this.availableCount()} 题`,
-				`符合当前条件 ${candidates} 题`,
-				`这一轮将刷 ${planned} 题`,
+				t("practice.count.available", { count: this.availableCount() }),
+				t("practice.count.matching", { count: candidates }),
+				t("practice.count.planned", { count: planned }),
 			].join(" · ")
 		);
 		if (start !== null) start.disabled = candidates === 0;
@@ -744,7 +755,7 @@ export class PracticeView extends ItemView {
 		const config: SessionConfig = { ...this.config, shuffle: this.config.shuffleOptions };
 		const queue = buildSession(config, this.parsedByPath);
 		if (queue.length === 0) {
-			new Notice("当前条件下没有可刷的题：换一种题型或抽题方式试试。");
+			new Notice(t("practice.notice.empty"));
 			return;
 		}
 
@@ -763,8 +774,8 @@ export class PracticeView extends ItemView {
 		if (body === null) return;
 
 		if (this.queue.length === 0) {
-			this.heading("刷题", "这一轮已经结束。");
-			const back = this.button(body, "goto-list", "回到题库列表", true);
+			this.heading(t("practice.title"), t("practice.session.finished"));
+			const back = this.button(body, "goto-list", t("practice.session.backToList"), true);
 			back.addEventListener("click", () => {
 				this.page = 0;
 				void this.render();
@@ -777,9 +788,9 @@ export class PracticeView extends ItemView {
 		if (this.page !== 2 || this.bodyEl !== body) return;
 
 		const head = body.createDiv({ cls: "easy-quiz-practice__head" });
-		head.createEl("h3", { cls: "easy-quiz-practice__title", text: "刷题" });
+		head.createEl("h3", { cls: "easy-quiz-practice__title", text: t("practice.title") });
 		const toolbar = head.createDiv({ cls: "easy-quiz-practice__toolbar" });
-		const end = this.button(toolbar, "end-session", "结束本轮");
+		const end = this.button(toolbar, "end-session", t("practice.session.end"));
 		end.addEventListener("click", () => {
 			this.finish();
 			void this.render();
@@ -803,12 +814,19 @@ export class PracticeView extends ItemView {
 		const head = host.createDiv({ cls: "easy-quiz-practice__progress-head" });
 		head.createSpan({
 			cls: "easy-quiz-practice__progress-index",
-			text: `第 ${Math.min(this.cursor + 1, this.queue.length)} / ${this.queue.length} 题`,
+			text: t("practice.session.index", {
+				index: Math.min(this.cursor + 1, this.queue.length),
+				total: this.queue.length,
+			}),
 		});
 		head.createSpan({ cls: "easy-quiz-practice__progress-title", text: entry?.title ?? "" });
 		head.createSpan({
 			cls: "easy-quiz-practice__progress-count",
-			text: `对 ${progress.correct} · 错 ${progress.wrong} · 已答 ${progress.answered}`,
+			text: t("practice.session.progress", {
+				correct: progress.correct,
+				wrong: progress.wrong,
+				answered: progress.answered,
+			}),
 		});
 
 		const bar = host.createDiv({ cls: "easy-quiz-practice__bar" });
@@ -837,7 +855,7 @@ export class PracticeView extends ItemView {
 		if (file === undefined || question === undefined) {
 			host.createDiv({
 				cls: "easy-quiz-card is-diagnostic",
-				text: "这道题已不存在（文件或题面被改动过）。跳过它，或重新开始一轮。",
+				text: t("practice.session.missing"),
 			});
 			this.renderNav(host);
 			return;
@@ -868,7 +886,9 @@ export class PracticeView extends ItemView {
 		} catch (error) {
 			host.createDiv({
 				cls: "easy-quiz-card is-diagnostic",
-				text: `题卡渲染失败：${error instanceof Error ? error.message : String(error)}`,
+				text: t("practice.session.cardFailed", {
+					error: error instanceof Error ? error.message : String(error),
+				}),
 			});
 			this.renderNav(host);
 			return;
@@ -896,14 +916,19 @@ export class PracticeView extends ItemView {
 		for (const existing of Array.from(host.querySelectorAll(".easy-quiz-practice__nav"))) existing.detach();
 		const nav = host.createDiv({ cls: "easy-quiz-practice__nav" });
 
-		const prev = this.button(nav, "prev-question", "上一题");
+		const prev = this.button(nav, "prev-question", t("practice.session.prev"));
 		prev.disabled = this.cursor === 0;
 		prev.addEventListener("click", () => {
 			void this.goTo(this.cursor - 1);
 		});
 
 		const last = this.cursor >= this.queue.length - 1;
-		const next = this.button(nav, "next-question", last ? "查看本轮结果" : "下一题", true);
+		const next = this.button(
+			nav,
+			"next-question",
+			last ? t("practice.session.results") : t("practice.session.next"),
+			true
+		);
 		next.addEventListener("click", () => {
 			if (last) {
 				this.finish();
@@ -915,7 +940,7 @@ export class PracticeView extends ItemView {
 
 		// 作答前也能直接看答案：看过的题按"未作答"处理，不计入正确率。
 		if (!this.reviewing) {
-			const peek = this.button(nav, "peek", "查看解析");
+			const peek = this.button(nav, "peek", t("practice.session.peek"));
 			peek.addEventListener("click", () => {
 				this.reviewing = true;
 				void this.renderCard();
@@ -929,7 +954,7 @@ export class PracticeView extends ItemView {
 			jump.max = String(this.queue.length);
 			jump.value = String(this.cursor + 1);
 			jump.dataset["action"] = "jump";
-			jump.setAttribute("aria-label", "跳到第几题");
+			jump.setAttribute("aria-label", t("practice.session.jump"));
 			jump.addEventListener("change", () => {
 				const target = Number.parseInt(jump.value, 10);
 				if (Number.isNaN(target)) return;
@@ -960,34 +985,43 @@ export class PracticeView extends ItemView {
 		const rate = answered === 0 ? 0 : Math.round((progress.correct / answered) * 100);
 
 		const panel = host.createDiv({ cls: "easy-quiz-practice__summary" });
-		panel.createDiv({ cls: "easy-quiz-practice__summary-title", text: "本轮结果" });
+		panel.createDiv({ cls: "easy-quiz-practice__summary-title", text: t("practice.summary.title") });
 		panel.createDiv({
 			cls: "easy-quiz-practice__summary-line",
-			text: `共 ${this.queue.length} 题 · 已作答 ${answered} · 正确 ${progress.correct} · 错误 ${progress.wrong} · 正确率 ${rate}%`,
+			text: t("practice.summary.line", {
+				total: this.queue.length,
+				answered,
+				correct: progress.correct,
+				wrong: progress.wrong,
+				rate,
+			}),
 		});
 		if (this.dirty && !this.host.settings.writeBackEnabled) {
 			panel.createDiv({
 				cls: "easy-quiz-practice__hint",
-				text: "当前设置关闭了记录写回，本轮成绩没有写入笔记。",
+				text: t("practice.summary.writeBackOff"),
 			});
 		}
 
 		const wrongEntries = this.queue.filter((_, index) => this.results[index] === false);
 		if (wrongEntries.length > 0) {
 			const list = panel.createDiv({ cls: "easy-quiz-practice__wrong" });
-			list.createDiv({ cls: "easy-quiz-practice__summary-sub", text: "本轮答错的题" });
+			list.createDiv({ cls: "easy-quiz-practice__summary-sub", text: t("practice.summary.wrongTitle") });
 			for (const entry of wrongEntries) {
-				list.createDiv({ cls: "easy-quiz-practice__wrong-item", text: `${entry.title}（/${entry.path}）` });
+				list.createDiv({
+					cls: "easy-quiz-practice__wrong-item",
+					text: t("practice.summary.wrongItem", { title: entry.title, path: entry.path }),
+				});
 			}
 		}
 
 		const actions = panel.createDiv({ cls: "easy-quiz-practice__toolbar" });
-		const again = this.button(actions, "restart-session", "再刷一轮", true);
+		const again = this.button(actions, "restart-session", t("practice.summary.again"), true);
 		again.addEventListener("click", () => {
 			void this.restart();
 		});
 
-		const retryWrong = this.button(actions, "retry-wrong", "只重做错题");
+		const retryWrong = this.button(actions, "retry-wrong", t("practice.summary.retryWrong"));
 		retryWrong.disabled = wrongEntries.length === 0;
 		retryWrong.addEventListener("click", () => {
 			this.queue = wrongEntries;
@@ -998,7 +1032,7 @@ export class PracticeView extends ItemView {
 			void this.render();
 		});
 
-		const back = this.button(actions, "goto-list", "回到题库列表");
+		const back = this.button(actions, "goto-list", t("practice.session.backToList"));
 		back.addEventListener("click", () => {
 			this.page = 0;
 			void this.render();

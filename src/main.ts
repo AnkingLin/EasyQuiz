@@ -6,6 +6,7 @@ import {
 	MarkdownPostProcessorContext,
 	MarkdownView,
 	Menu,
+	moment,
 	Notice,
 	Plugin,
 	PluginSettingTab,
@@ -14,9 +15,26 @@ import {
 } from "obsidian";
 import { BlankMarkerMode, ParsedQuizFile, QuizQuestion } from "./types";
 import { DEFAULT_SETTINGS, QuizService, RuntimeSettings } from "./runtime";
+import { LanguagePreference, LANGUAGE_PREFERENCES, setLanguage, resolveLanguage, t } from "./i18n";
 import { renderQuizCard } from "./view";
 import { insertQuestionAtCursor, InsertQuestionOptions } from "./insert-modal";
 import { PRACTICE_VIEW_TYPE, PracticeView } from "./practice-view";
+
+/**
+ * 界面语言的候选来源，按可信度排序。
+ *
+ * 首选 `moment.locale()`：Obsidian 会按「设置 → 关于 → 语言」设置它，因此它就是
+ * 用户选的语言，而且 1.4 起就有。没有用它旁边的 `getLanguage()`，是因为那个 API
+ * 要 1.8.7 才提供，而本插件声明的 minAppVersion 是 1.4.0——为了一个语言探测把
+ * 最低版本抬高三年的跨度不值得。文档语言与浏览器语言只在拿不到 moment 时兜底。
+ */
+function languageSources(): (string | null)[] {
+	const sources: (string | null)[] = [];
+	if (typeof moment?.locale === "function") sources.push(moment.locale());
+	if (typeof document !== "undefined") sources.push(document.documentElement.lang);
+	if (typeof navigator !== "undefined") sources.push(navigator.language);
+	return sources;
+}
 
 export default class EasyQuizPlugin extends Plugin {
 	// 两者都在 onload 中先于任何注册动作完成初始化。
@@ -25,6 +43,8 @@ export default class EasyQuizPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
+		// 语言要先定下来：下面的命令名、丝带提示、设置页文案都要用当前语言。
+		this.applyLanguage();
 		this.service = new QuizService(this.app, this.settings);
 
 		// 刷题窗口：题库列表 / 刷题设置 / 刷题三个页面都在这个自定义视图里。
@@ -57,7 +77,7 @@ export default class EasyQuizPlugin extends Plugin {
 
 		this.addCommand({
 			id: "refresh-quiz-view",
-			name: "刷新题库视图",
+			name: t("command.refresh"),
 			checkCallback: (checking) => {
 				const file = this.app.workspace.getActiveFile();
 				if (!file || file.extension !== "md") return false;
@@ -68,7 +88,7 @@ export default class EasyQuizPlugin extends Plugin {
 
 		this.addCommand({
 			id: "validate-quiz-file",
-			name: "校验当前题库文件",
+			name: t("command.validate"),
 			checkCallback: (checking) => {
 				const file = this.app.workspace.getActiveFile();
 				if (!file || file.extension !== "md") return false;
@@ -79,19 +99,19 @@ export default class EasyQuizPlugin extends Plugin {
 
 		this.addCommand({
 			id: "open-practice-window",
-			name: "打开刷题窗口",
+			name: t("command.openPractice"),
 			callback: () => {
 				void this.openPracticeView();
 			},
 		});
 
-		this.addRibbonIcon("graduation-cap", "打开刷题窗口", () => {
+		this.addRibbonIcon("graduation-cap", t("command.openPractice"), () => {
 			void this.openPracticeView();
 		});
 
 		this.addCommand({
 			id: "insert-question",
-			name: "插入题目",
+			name: t("command.insert"),
 			editorCheckCallback: (checking, editor) => {
 				if (!checking) this.insertQuestion(editor);
 				return true;
@@ -127,7 +147,7 @@ export default class EasyQuizPlugin extends Plugin {
 		if (!(info.file instanceof TFile) || info.file.extension !== "md") return;
 		menu.addItem((item) =>
 			item
-				.setTitle("插入题目")
+				.setTitle(t("menu.insert"))
 				.setIcon("circle-plus")
 				.onClick(() => this.insertQuestion(editor))
 		);
@@ -204,7 +224,7 @@ export default class EasyQuizPlugin extends Plugin {
 
 		const file = this.app.vault.getAbstractFileByPath(sourcePath);
 		if (!(file instanceof TFile)) {
-			el.createDiv({ cls: "easy-quiz-card is-diagnostic", text: "找不到文件，无法渲染题目。" });
+			el.createDiv({ cls: "easy-quiz-card is-diagnostic", text: t("diagnostic.fileNotFound") });
 			return;
 		}
 		if (!this.service.isQuizFile(file)) {
@@ -219,7 +239,9 @@ export default class EasyQuizPlugin extends Plugin {
 		} catch (error) {
 			el.createDiv({
 				cls: "easy-quiz-card is-diagnostic",
-				text: `解析失败：${error instanceof Error ? error.message : String(error)}`,
+				text: t("diagnostic.parseFailed", {
+					error: error instanceof Error ? error.message : String(error),
+				}),
 			});
 			return;
 		}
@@ -228,7 +250,7 @@ export default class EasyQuizPlugin extends Plugin {
 		if (!question) {
 			el.createDiv({
 				cls: "easy-quiz-card is-diagnostic",
-				text: "这个数据块不属于任何题面标题，无法渲染为题目。请把它放到某个标题之下。",
+				text: t("diagnostic.blockOutsideStem"),
 			});
 			return;
 		}
@@ -247,27 +269,64 @@ export default class EasyQuizPlugin extends Plugin {
 	}
 
 	private refreshNotice(): void {
-		new Notice("已记录本次作答。");
+		new Notice(t("notice.recorded"));
+	}
+
+	/**
+	 * 按设置与 Obsidian 的语言确定界面语言。
+	 *
+	 * 文案是渲染时取的，因此语言一变就地重画刷题窗口就够了；阅读视图里的题卡是
+	 * Obsidian 渲染的，需要显式重画，由 `refreshNotes` 控制。命令名与丝带提示要
+	 * 重新加载插件才会更新——Obsidian 没有提供改名命令的 API。
+	 *
+	 * @param refreshNotes 是否连笔记里已经渲染出来的题卡一起重画。插件加载时不需要
+	 *   （那时数据块处理器还没注册，没有题卡可重画），用户改设置时需要。
+	 */
+	applyLanguage(refreshNotes = false): void {
+		if (!setLanguage(resolveLanguage(this.settings.language, languageSources()))) return;
+		const views = this.practiceViews();
+		for (const view of views) {
+			view.markStale();
+			void view.render();
+		}
+		// 侧边栏标签页的标题由 Obsidian 缓存，`getDisplayText()` 换了语言它不会自己重画；
+		// 触发一次布局变更请它刷新标题（只是重画标签头，不会重建视图，进行中的一轮不会丢）。
+		if (views.length > 0) this.app.workspace.trigger("layout-change");
+		if (!refreshNotes) return;
+		for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+			if (leaf.view instanceof MarkdownView) leaf.view.previewMode.rerender(true);
+		}
 	}
 
 	private async validateFile(file: TFile): Promise<void> {
 		const parsed = await this.service.parseFile(file);
 		if (!parsed.fileIsQuiz) {
-			new Notice(`「${file.basename}」不是题库文件（缺少 quiz: true 或 #quiz）。`);
+			new Notice(t("notice.notQuizFile", { name: file.basename }));
 			return;
 		}
 		const ok = parsed.questions.filter((question) => question.ok).length;
 		const bad = parsed.questions.length - ok;
 		const fileWarnings = parsed.warnings.filter((warning) => warning.questionIndex === null).length;
-		new Notice(
-			`共 ${parsed.questions.length} 道题：可作答 ${ok}，需修正 ${bad}${fileWarnings > 0 ? `，文件级提示 ${fileWarnings} 条` : ""}。`,
-			6000
-		);
+		const message =
+			fileWarnings > 0
+				? t("notice.validationFileWarnings", {
+						total: parsed.questions.length,
+						ok,
+						bad,
+						count: fileWarnings,
+					})
+				: t("notice.validation", { total: parsed.questions.length, ok, bad });
+		new Notice(message, 6000);
 	}
 
 	async loadSettings() {
 		const stored = (await this.loadData()) as Partial<RuntimeSettings> | null;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, stored ?? {});
+		// data.json 可能被手工改坏：语言只认这三种取值，其余一律回到「跟随 Obsidian」，
+		// 否则设置页的下拉框会显示成空值。
+		if (!LANGUAGE_PREFERENCES.includes(this.settings.language)) {
+			this.settings.language = DEFAULT_SETTINGS.language;
+		}
 	}
 
 	async saveSettings() {
@@ -314,12 +373,46 @@ class EasyQuizSettingTab extends PluginSettingTab {
 	}
 
 	display(): void {
+		this.renderSettings();
+	}
+
+	/**
+	 * 画出全部设置项。
+	 *
+	 * 单独抽出来是因为语言切换后要就地重画这一页，而 `display` 在 Obsidian 1.13+
+	 * 已被标记为 deprecated（新 API 是声明式的 `getSettingDefinitions`），
+	 * 插件要兼容 1.4，因此只重画自己这一层、不去第二次调用它。
+	 */
+	private renderSettings(): void {
 		const { containerEl } = this;
 		containerEl.empty();
 
+		// 语言放在最前面：这一页其余文案就是按它渲染的。
 		new Setting(containerEl)
-			.setName("数据块语言")
-			.setDesc("题目数据块使用的围栏语言。改动后需要重新加载 Obsidian。")
+			.setName(t("setting.language.name"))
+			.setDesc(t("setting.language.desc"))
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOptions({
+						auto: t("setting.language.auto"),
+						// 语言名用各自的母语写法，方便对照识别。
+						en: "English",
+						zh: "中文",
+					})
+					.setValue(this.plugin.settings.language)
+					.onChange(async (value) => {
+						this.plugin.settings.language = value as LanguagePreference;
+						await this.plugin.saveSettings();
+						// 用户在改设置：笔记里已经渲染的题卡也要跟着换语言。
+						this.plugin.applyLanguage(true);
+						// 当前语言变了：设置页自己也要按新语言重画。
+						this.renderSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName(t("setting.blockLanguage.name"))
+			.setDesc(t("setting.blockLanguage.desc"))
 			.addText((text) =>
 				text.setValue(this.plugin.settings.blockLanguage).onChange(async (value) => {
 					this.plugin.settings.blockLanguage = value.trim() || DEFAULT_SETTINGS.blockLanguage;
@@ -328,12 +421,12 @@ class EasyQuizSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("题面标题层级")
-			.setDesc("决定哪些标题被当作一道题。默认只认二级标题。")
+			.setName(t("setting.headingLevel.name"))
+			.setDesc(t("setting.headingLevel.desc"))
 			.addDropdown((dropdown) =>
 				dropdown
 					.addOptions({
-						"2": "H2（默认）",
+						"2": t("setting.headingLevel.h2"),
 						"3": "H3",
 						"4": "H4",
 					})
@@ -346,8 +439,8 @@ class EasyQuizSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("题库路径通配符")
-			.setDesc("每行一条，例如 题库/**。命中的文件也会被当作题库。")
+			.setName(t("setting.pathGlobs.name"))
+			.setDesc(t("setting.pathGlobs.desc"))
 			.addTextArea((area) =>
 				area
 					.setValue(this.plugin.settings.pathGlobs.join("\n"))
@@ -361,8 +454,8 @@ class EasyQuizSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("记录写回")
-			.setDesc("关闭后只在界面上判分，不会修改笔记文件。")
+			.setName(t("setting.writeBack.name"))
+			.setDesc(t("setting.writeBack.desc"))
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.settings.writeBackEnabled).onChange(async (value) => {
 					this.plugin.settings.writeBackEnabled = value;
@@ -371,14 +464,14 @@ class EasyQuizSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("填空标记")
-			.setDesc("填空题用哪种 Markdown 标记挖空。空位锚点 ^b1 可以省略，省略时按出现顺序自动编号。")
+			.setName(t("setting.blankMarker.name"))
+			.setDesc(t("setting.blankMarker.desc"))
 			.addDropdown((dropdown) =>
 				dropdown
 					.addOptions({
-						highlight: "== 高亮 ==",
-						bold: "** 加粗 **",
-						both: "两者都识别",
+						highlight: t("setting.blankMarker.highlight"),
+						bold: t("setting.blankMarker.bold"),
+						both: t("setting.blankMarker.both"),
 					})
 					.setValue(this.plugin.settings.blankMarker)
 					.onChange(async (value) => {
@@ -388,8 +481,8 @@ class EasyQuizSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("单题历史条数上限")
-			.setDesc("记录写在笔记内，必须有上限；0 表示只保留汇总。")
+			.setName(t("setting.historyLimit.name"))
+			.setDesc(t("setting.historyLimit.desc"))
 			.addText((text) =>
 				text.setValue(String(this.plugin.settings.historyLimit)).onChange(async (value) => {
 					const limit = Number.parseInt(value, 10);

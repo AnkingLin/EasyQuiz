@@ -1,6 +1,6 @@
 ---
 name: easyquiz-authoring
-description: Write, edit, and review EasyQuiz question banks (Obsidian plugin, Markdown-native quizzes). Covers how a bank file is detected, the five question types, anchors, blank markers, the git-managed stats/history/rev fields, degrade rules, and the knowledge-point link convention `^[[知识点]]` at the end of every stem heading. Use when creating or fixing a quiz bank, adding questions, or explaining the format.
+description: Write, edit, and review EasyQuiz question banks (Obsidian plugin, Markdown-native quizzes). Covers how a bank file is detected, the five question types, anchors, blank markers, the git-managed stats/history/rev fields, degrade rules, and the knowledge-point link convention `^[[[]]]` at the end of every stem heading. Use when creating or fixing a quiz bank, adding questions, or explaining the format.
 ---
 
 # Authoring EasyQuiz question banks
@@ -11,21 +11,23 @@ its record must keep pointing at the right question after you edit the file.
 
 ## The one hard rule: link the source knowledge point
 
-**End every stem heading with `^[[知识点]]`** — the `^` prefix plus an Obsidian wikilink to the note (or
-heading) that the question was derived from:
+**End every stem heading with `^[[[]]]`** — `^[`, an Obsidian wikilink to the note (or heading) that the
+question was derived from, then `]`. The `[[]]` in the middle is the wikilink and `[]` is where the target
+goes; fill it in, as in the example below.
 
 ```markdown
-## TCP 建立连接需要几次握手？ ^[[计算机网络/传输层#TCP 三次握手]]
+## TCP 建立连接需要几次握手？ ^[[[计算机网络/传输层#TCP 三次握手]]]
 ```
 
-Why the `^` prefix: it marks the link as an annotation attached to the stem rather than part of the
-question sentence, and it keeps the link visible to Obsidian (backlinks, graph, rename updates) while the
-plugin keeps it out of the question text.
+Why the `^[ … ]` wrapper: it marks the link as an annotation attached to the stem rather than part of the
+question sentence, and the wikilink inside it stays visible to Obsidian (backlinks, graph, rename updates)
+while the plugin keeps the whole thing out of the question text.
 
 Rules that come with it:
 
 - **The link goes at the very end of the heading line**, after the question text. Only a trailing
-  `^[[…]]` is treated as the knowledge link; anything else stays part of the stem.
+  `^[[[]]]` is treated as the knowledge link; anything else stays part of the stem. The older two-bracket
+  form `^[[…]]` is still recognised, so banks written before this convention keep working.
 - **The link is bookkeeping, not question text.** The parser strips it from the displayed title and from
   the derived `id`, and records it separately (`QuizQuestion.knowledgeLink`), so rewording or retargeting
   a link never orphans existing `stats` / `history`. Do not repeat it in the body.
@@ -33,9 +35,9 @@ Rules that come with it:
   not from the heading, so retargeting the knowledge link does not mark records stale.
 - **One link per question, no exceptions.** If a question spans two knowledge points, write the more
   specific one in the heading and mention the other in `explanation` as a normal `[[link]]`.
-- **Link to something that exists.** An unresolved `^[[不存在的笔记]]` costs nothing at parse time but
+- **Link to something that exists.** An unresolved `^[[[不存在的笔记]]]` costs nothing at parse time but
   produces a dead end in the backlinks panel. Create or check the target note first.
-- **Only the heading carries the `^` link.** Inside the stem body write plain `[[知识点]]`; that renders as
+- **Only the heading carries the `^` link.** Inside the stem body write plain `[[]]`; that renders as
   an inline link in the stem and is never stripped.
 
 If a bank has no knowledge notes yet, still write the link — the knowledge note is the unit that makes the
@@ -82,7 +84,7 @@ records — but a missing or duplicated anchor makes the question unanswerable.
 
 <!-- example:start -->
 ````markdown
-## TCP 建立连接需要几次握手？ ^[[计算机网络/传输层#TCP 三次握手]]
+## TCP 建立连接需要几次握手？ ^[[[计算机网络/传输层#TCP 三次握手]]]
 
 - 一次 ^a
 - 两次 ^b
@@ -104,7 +106,7 @@ Written as a table whose row order *is* the answer; the board is what gets rende
 
 <!-- example:start -->
 ````markdown
-## 将协议与其默认端口配对 ^[[计算机网络/应用层#常见默认端口]]
+## 将协议与其默认端口配对 ^[[[计算机网络/应用层#常见默认端口]]]
 
 | 协议 | 端口 |
 | --- | --- |
@@ -137,7 +139,7 @@ type: match
 
 <!-- example:start -->
 ````markdown
-## 补全 TCP 首部字段 ^[[计算机网络/传输层#TCP 首部]]
+## 补全 TCP 首部字段 ^[[[计算机网络/传输层#TCP 首部]]]
 
 TCP 首部的最小长度是 ==20== 字节，其中 ==序号== 字段用于标识本报文段的数据的第一个字节。
 
@@ -154,7 +156,7 @@ blanks:
 
 <!-- example:start -->
 ````markdown
-## 下列哪些属于传输层协议？ ^[[计算机网络/传输层#传输层协议]]
+## 下列哪些属于传输层协议？ ^[[[计算机网络/传输层#传输层协议]]]
 
 - TCP ^a
 - UDP ^b
@@ -174,7 +176,7 @@ not spoil the question, and grade it by self-assessment:
 
 <!-- example:start -->
 ````markdown
-## 简述 TCP 与 UDP 的主要区别 ^[[计算机网络/传输层#TCP 与 UDP 对比]]
+## 简述 TCP 与 UDP 的主要区别 ^[[[计算机网络/传输层#TCP 与 UDP 对比]]]
 
 从连接、可靠性、传输方式与适用场景四个方面作答。
 
@@ -224,7 +226,7 @@ A degraded question never exposes a guessed answer.
 
 ## Checklist before you hand a bank over
 
-1. Every stem heading ends with `^[[知识点]]`, and the target note exists.
+1. Every stem heading ends with `^[[[]]]`, and the target note exists.
 2. Every choice option has a unique `^anchor`; `answer` names existing anchors.
 3. Stable questions have an explicit `id`; no `stats` / `rev` / `history` written by hand.
 4. One heading level per file, matching the configured stem heading level.

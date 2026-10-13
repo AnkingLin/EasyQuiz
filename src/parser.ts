@@ -26,6 +26,7 @@ import {
 	QuizType,
 } from "./types";
 import { QUIZ_TYPES } from "./types";
+import { listSeparator, t } from "./i18n";
 
 export interface ParseDependencies {
 	/** YAML 解析。插件中注入 obsidian 的 parseYaml，测试中注入 js-yaml。 */
@@ -89,19 +90,22 @@ function splitLines(text: string): string[] {
 const HEADING_RE = /^(#{1,6})\s+(.*?)\s*$/;
 
 /**
- * 题面标题末尾的知识点链接：`^[[知识点]]`。
+ * 题面标题末尾的知识点链接：`^[[[知识点]]]`，也就是 `^[` 加一个 Obsidian 双链再加 `]`。
  *
- * 用 `^` 前缀是为了在阅读视图里不被当成普通正文链接，同时保持 Obsidian 原生的
- * 双链语法（点击可跳转、反链面板能找到这道题）。链接必须写在标题**末尾**：
- * 解析器把它当作固定后缀摘掉，不让它进入题面显示与派生 id。
+ * `^[ … ]` 这层包装把双链标成题干的注记，而不是普通正文链接；里面的双链原样保留，
+ * 因此它在 Obsidian 里仍然是真正的链接（点击可跳转、反链面板能找到这道题）。
+ * 链接必须写在标题**末尾**：解析器把它当作固定后缀摘掉，不让它进入题面显示与派生 id。
+ *
+ * 旧写法 `^[[知识点]]` 仍然接受——插件 1.0 起的笔记不会因为升级而丢链接。
+ * 捕获组 1 是新写法的目标，组 2 是旧写法的目标。
  */
-const KNOWLEDGE_LINK_AT_END = /\s*\^\[\[([^\]\n]*)\]\]\s*$/;
+export const KNOWLEDGE_LINK_AT_END = /\s*\^(?:\[\[\[([^\]\n]*)\]\]\]|\[\[([^\]\n]*)\]\])\s*$/;
 
 /** 摘掉标题末尾的知识点链接，返回剩余标题与链接目标（没有链接时为 null）。 */
 export function splitKnowledgeLink(title: string): { title: string; knowledgeLink: string | null } {
 	const match = KNOWLEDGE_LINK_AT_END.exec(title);
 	if (!match) return { title, knowledgeLink: null };
-	return { title: title.slice(0, match.index).trimEnd(), knowledgeLink: match[1] ?? null };
+	return { title: title.slice(0, match.index).trimEnd(), knowledgeLink: match[1] ?? match[2] ?? null };
 }
 
 /** 只取标题文本（去掉末尾的知识点链接），用于显示与派生 id。 */
@@ -215,7 +219,7 @@ export function parseQuizFile(content: string, path: string, options: ParseOptio
 		if (!covered) {
 			warnings.push({
 				code: "file",
-				message: `第 ${i + 1} 行的 \`${blockLanguage}\` 数据块不属于任何题面标题，不会被识别。`,
+				message: t("parser.blockOutsideStem", { line: i + 1, language: blockLanguage }),
 				questionIndex: null,
 				line: i,
 			});
@@ -254,7 +258,7 @@ function parseFrontmatter(
 	if (close < 0) {
 		warnings.push({
 			code: "file",
-			message: "frontmatter 未闭合（缺少结束的 ---），已忽略。",
+			message: t("parser.frontmatterUnclosed"),
 			questionIndex: null,
 			line: 0,
 		});
@@ -270,7 +274,7 @@ function parseFrontmatter(
 	} catch (error) {
 		warnings.push({
 			code: "yaml-error",
-			message: `frontmatter YAML 解析失败：${errorMessage(error)}`,
+			message: t("parser.frontmatterYamlError", { error: errorMessage(error) }),
 			questionIndex: null,
 			line: 0,
 		});
@@ -452,7 +456,7 @@ function parseQuestion(ctx: QuestionContext): QuizQuestion {
 			blockEnd = endLine;
 			localCtx.warnings.push({
 				code: "missing-block",
-				message: "数据块未闭合（缺少结束的 ```），已按到本题末尾处理。",
+				message: t("parser.blockUnclosed"),
 				questionIndex,
 				line: blockStart,
 			});
@@ -485,7 +489,7 @@ function parseQuestion(ctx: QuestionContext): QuizQuestion {
 	const resolvedAnswer = resolveAnswer(meta.rawAnswer, type, structure.options, localCtx);
 	validateStructure(type, structure, resolvedAnswer, blockStart, localCtx);
 
-	// 标题末尾的 `^[[知识点]]` 是溯源信息，不算题面文本：既不显示，也不参与派生 id。
+	// 标题末尾的 `^[[[知识点]]]` 是溯源信息，不算题面文本：既不显示，也不参与派生 id。
 	const headingTitle = splitKnowledgeLink(heading.title);
 	const derived = deriveId(headingTitle.title);
 	const id = meta.id ?? derived;
@@ -603,7 +607,7 @@ function parseMetaBlock(source: string, blockLine: number, ctx: QuestionContext)
 	if (blockLine < 0) {
 		ctx.warnings.push({
 			code: "missing-block",
-			message: `缺少 \`${ctx.blockLanguage}\` 数据块，无法确定题型（type 字段为必填）。`,
+			message: t("parser.blockMissing", { language: ctx.blockLanguage }),
 			questionIndex: null,
 			line: ctx.heading.line,
 		});
@@ -616,7 +620,7 @@ function parseMetaBlock(source: string, blockLine: number, ctx: QuestionContext)
 	} catch (error) {
 		ctx.warnings.push({
 			code: "yaml-error",
-			message: `数据块 YAML 解析失败：${errorMessage(error)}`,
+			message: t("parser.blockYamlError", { error: errorMessage(error) }),
 			questionIndex: null,
 			line: blockLine,
 		});
@@ -626,7 +630,7 @@ function parseMetaBlock(source: string, blockLine: number, ctx: QuestionContext)
 	if (parsed === null || parsed === undefined) {
 		ctx.warnings.push({
 			code: "block-not-mapping",
-			message: "数据块为空，至少需要 `type` 字段。",
+			message: t("parser.blockEmpty"),
 			questionIndex: null,
 			line: blockLine,
 		});
@@ -635,7 +639,7 @@ function parseMetaBlock(source: string, blockLine: number, ctx: QuestionContext)
 	if (typeof parsed !== "object" || Array.isArray(parsed)) {
 		ctx.warnings.push({
 			code: "block-not-mapping",
-			message: "数据块必须是键值映射（key: value）。",
+			message: t("parser.blockNotMapping"),
 			questionIndex: null,
 			line: blockLine,
 		});
@@ -649,7 +653,7 @@ function parseMetaBlock(source: string, blockLine: number, ctx: QuestionContext)
 		if (!KNOWN_META_KEYS.has(key)) {
 			ctx.warnings.push({
 				code: "unknown-field",
-				message: `未知字段 \`${key}\` 已忽略。`,
+				message: t("parser.unknownField", { key }),
 				questionIndex: null,
 				line: blockLine,
 			});
@@ -676,7 +680,7 @@ function parseMetaBlock(source: string, blockLine: number, ctx: QuestionContext)
 	if (record["shuffle"] !== undefined && typeof record["shuffle"] !== "boolean") {
 		ctx.warnings.push({
 			code: "field-invalid",
-			message: "`shuffle` 必须为 true / false，已按 false 处理。",
+			message: t("parser.shuffleInvalid"),
 			questionIndex: null,
 			line: blockLine,
 		});
@@ -690,7 +694,7 @@ function readScore(value: unknown, blockLine: number, ctx: QuestionContext): num
 	if (typeof value === "number" && Number.isFinite(value) && value >= 0) return value;
 	ctx.warnings.push({
 		code: "field-invalid",
-		message: "`score` 必须为非负数字，已按 1 处理。",
+		message: t("parser.scoreInvalid"),
 		questionIndex: null,
 		line: blockLine,
 	});
@@ -703,7 +707,7 @@ function readBlankRules(value: unknown, blockLine: number, ctx: QuestionContext)
 	if (typeof value !== "object" || Array.isArray(value)) {
 		ctx.warnings.push({
 			code: "field-invalid",
-			message: "`blanks` 必须是「锚点: 规则」的映射，已忽略。",
+			message: t("parser.blanksInvalid"),
 			questionIndex: null,
 			line: blockLine,
 		});
@@ -717,7 +721,7 @@ function readBlankRules(value: unknown, blockLine: number, ctx: QuestionContext)
 		if (typeof raw !== "object" || Array.isArray(raw)) {
 			ctx.warnings.push({
 				code: "field-invalid",
-				message: `\`blanks.${anchor}\` 必须是规则对象，已忽略该空位的规则。`,
+				message: t("parser.blankRuleInvalid", { anchor }),
 				questionIndex: null,
 				line: blockLine,
 			});
@@ -776,7 +780,7 @@ function resolveType(rawType: unknown, blockLine: number, ctx: QuestionContext):
 	if (rawType === undefined || rawType === null) {
 		ctx.warnings.push({
 			code: "type-missing",
-			message: `缺少 \`type\` 字段，无法确定题型。合法取值：${QUIZ_TYPES.join(" / ")}。`,
+			message: t("parser.typeMissing", { types: QUIZ_TYPES.join(" / ") }),
 			questionIndex: null,
 			line: blockLine,
 		});
@@ -785,7 +789,10 @@ function resolveType(rawType: unknown, blockLine: number, ctx: QuestionContext):
 	if (typeof rawType !== "string" || !(QUIZ_TYPES as readonly string[]).includes(rawType)) {
 		ctx.warnings.push({
 			code: "type-invalid",
-			message: `\`type: ${describeValue(rawType)}\` 非法。合法取值：${QUIZ_TYPES.join(" / ")}。`,
+			message: t("parser.typeInvalid", {
+				value: describeValue(rawType),
+				types: QUIZ_TYPES.join(" / "),
+			}),
 			questionIndex: null,
 			line: blockLine,
 		});
@@ -958,10 +965,10 @@ function buildBoardColumns(header: string[], table: string[][]): BoardColumn[] {
 	// 表头重名（或为空）时给出可区分的名字，否则题板上会出现两个同名列。
 	const seen = new Map<string, number>();
 	for (const column of columns) {
-		const base = column.name.trim() === "" ? `第 ${column.index + 2} 列` : column.name;
+		const base = column.name.trim() === "" ? t("parser.columnUnnamed", { index: column.index + 2 }) : column.name;
 		const count = (seen.get(base) ?? 0) + 1;
 		seen.set(base, count);
-		column.name = count === 1 ? base : `${base}（第 ${count} 组）`;
+		column.name = count === 1 ? base : t("parser.columnGrouped", { base, count });
 	}
 
 	return columns;
@@ -1095,7 +1102,7 @@ function checkAnchors(options: QuizOption[], ctx: QuestionContext): string[] {
 		if (option.anchor === null) {
 			ctx.warnings.push({
 				code: "option-unanchored",
-				message: `选项「${option.text}」缺少锚点（\`^id\`），无法用于记录答案。`,
+				message: t("parser.optionUnanchored", { text: option.text }),
 				questionIndex: null,
 				line: null,
 			});
@@ -1104,7 +1111,7 @@ function checkAnchors(options: QuizOption[], ctx: QuestionContext): string[] {
 		if (seen.has(option.anchor)) {
 			ctx.warnings.push({
 				code: "anchor-duplicate",
-				message: `锚点 \`^${option.anchor}\` 重复，判分会不稳定。`,
+				message: t("parser.anchorDuplicate", { anchor: option.anchor }),
 				questionIndex: null,
 				line: null,
 			});
@@ -1128,8 +1135,8 @@ function resolveAnswer(
 				code: "field-invalid",
 				message:
 					type === "match"
-						? "配对题的答案由表格行顺序决定，`answer` 字段已忽略。"
-						: "问答题没有固定答案，`answer` 字段已忽略。",
+						? t("parser.answerIgnoredMatch")
+						: t("parser.answerIgnoredEssay"),
 				questionIndex: null,
 				line: null,
 			});
@@ -1141,7 +1148,7 @@ function resolveAnswer(
 		if (rawAnswer === undefined) return null;
 		ctx.warnings.push({
 			code: "field-invalid",
-			message: "填空题的答案取自题面 `==…==`，`answer` 字段已忽略。",
+			message: t("parser.answerIgnoredBlank"),
 			questionIndex: null,
 			line: null,
 		});
@@ -1152,7 +1159,7 @@ function resolveAnswer(
 		if (type === "single" || type === "multi") {
 			ctx.warnings.push({
 				code: "field-invalid",
-				message: "缺少 `answer` 字段，该题无法判分。",
+				message: t("parser.answerMissing"),
 				questionIndex: null,
 				line: null,
 			});
@@ -1164,7 +1171,7 @@ function resolveAnswer(
 		if (typeof rawAnswer !== "string") {
 			ctx.warnings.push({
 				code: "field-invalid",
-				message: "单选题的 `answer` 必须是单个锚点字符串（如 `c`）。",
+				message: t("parser.answerSingleInvalid"),
 				questionIndex: null,
 				line: null,
 			});
@@ -1177,7 +1184,7 @@ function resolveAnswer(
 		if (!Array.isArray(rawAnswer) || rawAnswer.some((item) => typeof item !== "string")) {
 			ctx.warnings.push({
 				code: "field-invalid",
-				message: "多选题的 `answer` 必须是锚点数组（如 `[a, b]`）。",
+				message: t("parser.answerMultiInvalid"),
 				questionIndex: null,
 				line: null,
 			});
@@ -1210,7 +1217,7 @@ function validateStructure(
 		if (structure.options.length < 2) {
 			ctx.warnings.push({
 				code: "structure-mismatch",
-				message: `\`type: ${type}\` 要求题面至少包含 2 个无序列表选项，当前识别到 ${structure.options.length} 个。`,
+				message: t("parser.listTooFew", { type, count: structure.options.length }),
 				questionIndex: null,
 				line,
 			});
@@ -1219,7 +1226,7 @@ function validateStructure(
 		if (type === "single" && typeof answer === "string" && !optionAnchors.has(answer)) {
 			ctx.warnings.push({
 				code: "field-invalid",
-				message: `\`answer: ${answer}\` 没有对应的选项锚点。`,
+				message: t("parser.answerNoOption", { answer }),
 				questionIndex: null,
 				line,
 			});
@@ -1229,7 +1236,9 @@ function validateStructure(
 			if (missing.length > 0) {
 				ctx.warnings.push({
 					code: "field-invalid",
-					message: `\`answer\` 中的锚点 ${missing.map((m) => `^${m}`).join("、")} 没有对应选项。`,
+					message: t("parser.answerAnchorsMissing", {
+						anchors: missing.map((item) => `^${item}`).join(listSeparator()),
+					}),
 					questionIndex: null,
 					line,
 				});
@@ -1242,7 +1251,7 @@ function validateStructure(
 		if (!structure.table) {
 			ctx.warnings.push({
 				code: "structure-mismatch",
-				message: "`type: match` 要求题面包含表格（表头 + 至少 1 行数据）。",
+				message: t("parser.matchNoTable"),
 				questionIndex: null,
 				line,
 			});
@@ -1252,7 +1261,7 @@ function validateStructure(
 		if (columns < 2) {
 			ctx.warnings.push({
 				code: "structure-mismatch",
-				message: `配对表格至少需要 2 列，当前为 ${columns} 列。`,
+				message: t("parser.matchTooFewColumns", { count: columns }),
 				questionIndex: null,
 				line,
 			});
@@ -1261,7 +1270,7 @@ function validateStructure(
 		if (structure.boardPairs.length === 0) {
 			ctx.warnings.push({
 				code: "structure-mismatch",
-				message: "配对表格里没有可连线的相邻列条目。",
+				message: t("parser.matchNoPairs"),
 				questionIndex: null,
 				line,
 			});
@@ -1273,7 +1282,7 @@ function validateStructure(
 		if (structure.blanks.length === 0) {
 			ctx.warnings.push({
 				code: "structure-mismatch",
-				message: "`type: blank` 要求题面包含 `==答案== ^锚点` 形式的空位。",
+				message: t("parser.blankNoMarker"),
 				questionIndex: null,
 				line,
 			});
@@ -1284,7 +1293,9 @@ function validateStructure(
 		if (duplicated.length > 0) {
 			ctx.warnings.push({
 				code: "anchor-duplicate",
-				message: `空位锚点 ${duplicated.map((a) => `^${a}`).join("、")} 重复。`,
+				message: t("parser.blankAnchorsDuplicate", {
+					anchors: duplicated.map((item) => `^${item}`).join(listSeparator()),
+				}),
 				questionIndex: null,
 				line,
 			});

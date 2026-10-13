@@ -1,4 +1,4 @@
-/**
+﻿/**
  * EasyQuiz 题目模型与解析结果类型。
  *
  * 设计原则（见 README §2）：
@@ -146,7 +146,7 @@ export interface QuizQuestion {
 	idDerived: boolean;
 	/** 题面标题文本（不含末尾的知识点链接）。 */
 	title: string;
-	/** 题面标题末尾 `^[[知识点]]` 里的链接目标；没写时为 null。 */
+	/** 题面标题末尾 `^[[[知识点]]]` 里的链接目标；没写时为 null。 */
 	knowledgeLink: string | null;
 	/** 题面标题层级（1–6）。 */
 	level: number;
