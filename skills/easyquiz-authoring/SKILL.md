@@ -1,6 +1,6 @@
 ---
 name: easyquiz-authoring
-description: Write, edit, and review EasyQuiz question banks (Obsidian plugin, Markdown-native quizzes). Covers how a bank file is detected, the five question types, anchors, blank markers, the git-managed stats/history/rev fields, degrade rules, and the knowledge-point link convention `^[[[]]]` at the end of every stem heading. Use when creating or fixing a quiz bank, adding questions, or explaining the format.
+description: Write, edit, and review EasyQuiz question banks (Obsidian plugin, Markdown-native quizzes). Covers how a bank file is detected, the five question types, anchors, blank markers (always in the body, never on the heading line), the git-managed stats/history/rev fields, degrade rules, and the knowledge-point link convention `^[[[]]]` at the end of every stem heading. Use when creating or fixing a quiz bank, adding questions, or explaining the format.
 ---
 
 # Authoring EasyQuiz question banks
@@ -70,12 +70,17 @@ A deeper heading is absorbed as a sub-heading **only if** a shallower heading ap
 The `type` field is the **only** thing that decides the type — never infer it from the shape of the text.
 Put the `quiz` data block at the end of the question (right after the heading is equivalent).
 
+The stem heading is the question's **name**, not its text. Everything shown to the answerer — the option
+list, the matching table, the blank prose, the reference callout — goes on the lines **below** the
+heading. Only the heading line is skipped when the body is read, so anything left on it is invisible to
+the parser.
+
 | `type` | Stem supplies | Metadata |
 |---|---|---|
 | `single` | A bullet list, one `^anchor` per option | `answer: c` (single anchor) |
 | `multi` | A bullet list, one `^anchor` per option | `answer: [a, b]` |
 | `match` | A table, 2+ columns; row order *is* the answer | nothing (no `answer`) |
-| `blank` | Prose with `==answer==` markers | optional `blanks:` rules |
+| `blank` | Body prose (below the heading) with `==answer==` markers | optional `blanks:` rules |
 | `essay` | Free prose plus a collapsed `> [!question]- 参考答案` callout | nothing |
 
 Anchors use Obsidian's native block-ID syntax `^id` and are **required** on every choice option. Anchors
@@ -130,6 +135,35 @@ type: match
   by column index plus row text, so adding or reordering rows keeps records valid.
 
 ### Fill in the blank
+
+**Put the blank prose in the body, on the lines below the heading — never in the heading itself.**
+The heading is only the question's name: it carries the short title and the trailing knowledge link, and
+nothing else. Only the body is scanned for `==answer==` markers, so a heading-as-stem produces zero blanks
+and the question degrades with "`type: blank` needs a blank such as `==answer== ^anchor`" even though the
+markers are plainly visible in the file. The same rule applies to every type: choice options are body list
+items, a matching table is a body table, and blank prose is a body paragraph.
+
+<!-- example:start -->
+````markdown
+## 慢性肝淤血 ^[[[病理学/局部血液循环障碍#右心衰致肝淤血]]]
+
+慢性肝淤血时肝切面呈红黄相间的"槟榔肝"，暗红色部分对应小叶中央静脉及肝窦的 ==淤血扩张==，
+黄色部分对应小叶周边肝细胞的 ==脂肪变性==；长期不愈者可发展为 ==淤血性肝硬化==。
+
+```quiz
+id: liver-congestion
+type: blank
+blanks:
+  b1: { accept: ["淤血扩张", "扩张淤血"] }
+  b2: { accept: ["脂肪变性", "脂肪变"] }
+  b3: { accept: ["淤血性肝硬化"] }
+```
+````
+<!-- example:end -->
+
+The heading above is the short name `慢性肝淤血`; the paragraph below it holds the three blanks. Written
+the other way round — the whole sentence with its `==…==` markers on the `##` line — the question cannot
+be answered, because there is no body to scan.
 
 - The marker follows the **Blank marker** setting: `==answer==` (default), `**answer**`, or both.
 - The blank anchor `^b1` is **optional**; unwritten anchors are numbered `b1`, `b2`, … by position, and
@@ -216,7 +250,7 @@ The type is never inferred. A question degrades to a plain code block with a hig
 | `type` invalid | Degrade; lists the five valid values |
 | `single` / `multi` with no list | Structure mismatch |
 | `match` with no table or fewer than 2 columns | Structure mismatch |
-| `blank` with no marker | Structure mismatch |
+| `blank` with no marker | Structure mismatch — most often because the marked prose sits on the heading line instead of the body |
 | Option missing an anchor, or duplicate anchors | Not answerable |
 | `answer` pointing at a nonexistent anchor | Not answerable |
 | YAML parse error | Degrade; shows the raw error |
@@ -227,8 +261,10 @@ A degraded question never exposes a guessed answer.
 ## Checklist before you hand a bank over
 
 1. Every stem heading ends with `^[[[]]]`, and the target note exists.
-2. Every choice option has a unique `^anchor`; `answer` names existing anchors.
-3. Stable questions have an explicit `id`; no `stats` / `rev` / `history` written by hand.
-4. One heading level per file, matching the configured stem heading level.
-5. Run **校验当前题库文件** in Obsidian — it reports `共 N 道题：可作答 X，需修正 Y`.
-6. Reading view renders each card and submits once, to confirm the block is inside a stem heading.
+2. Every stem heading is a short **name**; the option list, matching table, blank prose, and reference
+   callout all live on the lines below it. No `==answer==` marker is left on a heading line.
+3. Every choice option has a unique `^anchor`; `answer` names existing anchors.
+4. Stable questions have an explicit `id`; no `stats` / `rev` / `history` written by hand.
+5. One heading level per file, matching the configured stem heading level.
+6. Run **校验当前题库文件** in Obsidian — it reports `共 N 道题：可作答 X，需修正 Y`.
+7. Reading view renders each card and submits once, to confirm the block is inside a stem heading.

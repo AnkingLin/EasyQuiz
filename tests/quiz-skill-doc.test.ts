@@ -113,10 +113,46 @@ test("规范里的单选题示例答案能判对", () => {
 
 test("规范里的填空题示例能用 accept 规则判对", () => {
 	const blank = must(
-		examples.find((markdown) => markdown.includes("type: blank")),
-		"规范里应有填空题示例"
+		examples.find((markdown) => markdown.includes("type: blank") && markdown.includes("==20==")),
+		"规范里应有 TCP 首部填空题示例"
 	);
 	const { question } = parseExample(blank);
 	const result = gradeAnswer(question, { kind: "blank", values: ["20", "序号"] });
 	assertEqual(result.correct, true, `示例填空题的 20 / 序号 应判对：\n${blank}`);
+});
+
+/**
+ * 「空位必须写在题面标题下面」是规范里最容易写错的一条，这里把它钉住：
+ * 规范必须明确写出这条要求，而且标记留在标题行上确实解析不出空位。
+ */
+test("规范要求填空内容写在标题下方，并说明留在标题行会降级", () => {
+	assert(
+		skill.includes("never in the heading itself"),
+		"规范应明确写出「空位不能写在标题行上」"
+	);
+	assert(
+		skill.includes("type: blank` needs a blank"),
+		"规范应说明标记留在标题行会得到 blankNoMarker 降级提示"
+	);
+
+	const headingAsStem = [
+		"---",
+		"quiz: true",
+		"---",
+		"",
+		"## 慢性肝淤血时肝窦的 ==淤血扩张== ^[[[病理学/局部血液循环障碍#右心衰致肝淤血]]]",
+		"",
+		"```quiz",
+		"type: blank",
+		"```",
+	].join("\n");
+	const parsed = parseQuizFile(headingAsStem, "题库/测试.md", options);
+	const question = must(parsed.questions[0], "应解析出题目");
+
+	assertEqual(question.blanks.length, 0, "标题行上的标记不应算作空位");
+	assertEqual(question.ok, false, "没有空位时应降级");
+	assert(
+		question.warnings.some((warning) => warning.message.includes("==答案== ^锚点")),
+		`降级提示应说明需要 ==答案== ^锚点（实际：${warnCodes(question)}）`
+	);
 });
