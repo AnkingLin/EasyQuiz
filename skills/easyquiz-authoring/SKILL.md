@@ -128,8 +128,30 @@ type: match
 
 - Only **adjacent columns** connect: `A | B | C` yields `A–B` and `B–C`, never `A–C`.
 - Direction does not matter (left-then-right scores the same as right-then-left).
-- One item links at most once per neighbouring column pair; reconnecting replaces the old line.
-- Duplicate cell text within a column is merged; separate multiple entries in one cell with ` / `.
+- One item can carry several lines in the same neighbouring column pair. Clicking an already-connected
+  pair removes that line, so reconnect by removing the old line first.
+- **Duplicate cell text within a column is merged**, and one cell is one entry: the text is kept as
+  written, so `MySQL / PostgreSQL` is a single item by that name, not two. To make one item answer for
+  several, repeat the row — the shared text merges into one node that keeps every line it needs:
+
+  <!-- example:start -->
+  ````markdown
+  ## 将数据库与其类型配对 ^[[[数据库/关系型数据库#常见数据库分类]]]
+
+  | 数据库 | 类型 |
+  | --- | --- |
+  | MySQL | 关系型 |
+  | PostgreSQL | 关系型 |
+  | Redis | 键值型 |
+
+  ```quiz
+  type: match
+  ```
+  ````
+  <!-- example:end -->
+
+  `关系型` appears once and carries a line to each of `MySQL` and `PostgreSQL`. Every line must be
+  drawn for the question to score, so this is how one-to-many matching is written.
 - Every column is shuffled independently, so row order never gives the answer away.
 - A `^id` inside a table cell is literal text — matching questions do not use anchors. Records are keyed
   by column index plus row text, so adding or reordering rows keeps records valid.

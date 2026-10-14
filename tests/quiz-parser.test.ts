@@ -327,6 +327,33 @@ test("配对题：三列表格会给出 A-B 与 B-C 两组连线", () => {
 	);
 });
 
+test("配对题：同一行的相邻单元格相连，条目文本原样保留", () => {
+	const question = questionOf(
+		[
+			"---",
+			"quiz: true",
+			"---",
+			"",
+			"## 配对",
+			"",
+			"| 数据库 | 类型 |",
+			"| --- | --- |",
+			"| MySQL / PostgreSQL | 关系型 |",
+			"| Redis | 键值型 |",
+			"",
+			"```quiz",
+			"type: match",
+			"```",
+		].join("\n")
+	);
+	assertEqual(
+		at(question.board, 0).items.map((item) => item.text).join(","),
+		"MySQL / PostgreSQL,Redis",
+		"斜杠是文字，不是分隔符"
+	);
+	assertEqual(question.boardPairs.length, 2, "两行两条连线");
+});
+
 test("配对题：打乱表格行顺序不会改变条目 key 与连线", () => {
 	const build = (rows: string[]) =>
 		questionOf(
@@ -371,19 +398,17 @@ test("配对题：同一列内文本相同的条目被合并", () => {
 	assertEqual(question.boardPairs.length, 2, "合并后仍只有两条正确连线");
 });
 
-test("配对题一对多：斜杠拆成多个条目，各自与同一答案相连", () => {
-	const question = byTitle(file, "将数据库与其类型配对（一对多）");
+test("配对题：单元格里的斜杠是普通文字，不再拆成多个条目", () => {
+	const question = byTitle(file, "将数据库与其类型配对");
 	assertEqual(question.type, "match", "题型");
 	const left = at(question.board, 0).items.map((item) => item.text);
-	assertEqual(left.join(","), "MySQL,PostgreSQL,Redis,Memcached", "斜杠应拆成四个条目");
+	assertEqual(left.join(","), "MySQL / PostgreSQL,Redis / Memcached", "一格就是一个条目，斜杠原样保留");
 	const relation = at(question.board, 1).items.map((item) => item.text);
-	assertEqual(relation.join(","), "关系型,键值型", "答案列应去重");
+	assertEqual(relation.join(","), "关系型,键值型", "答案列");
 
 	const paired = question.boardPairs.map((pair) => `${itemText(question, pair.left)}-${itemText(question, pair.right)}`);
-	assert(paired.includes("MySQL-关系型"), "MySQL 应连到关系型");
-	assert(paired.includes("PostgreSQL-关系型"), "PostgreSQL 也应连到关系型");
-	assert(paired.includes("Redis-键值型"), "Redis 应连到键值型");
-	assertEqual(question.boardPairs.length, 4, "四个条目四条连线");
+	assertEqual(paired.join(","), "MySQL / PostgreSQL-关系型,Redis / Memcached-键值型", "每行一条连线");
+	assertEqual(question.boardPairs.length, 2, "两行两条连线");
 });
 
 test("配对题：题板条目带有列号，便于判断相邻列", () => {

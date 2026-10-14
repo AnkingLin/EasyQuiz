@@ -376,11 +376,9 @@ affected records as "stem changed" rather than silently discarding them.
 
 - A table is only read as a matching question when `type: match`; tables in other question types are
   ordinary prose and are not graded.
-- **Each item links at most once per neighbouring column pair.** Connecting it again to another item in
-  that same pair replaces the old line.
+- **An item can carry more than one line per neighbouring column pair.** Clicking a pair that is already
+  connected removes that line, so reconnecting means removing the old line first.
 - Clicking a connected item only selects it; it does not silently drop its line.
-- **Replacing keeps the line until the new one exists**, so the board never passes through a state where
-  nothing is connected.
 - **Duplicate entries are merged**: within one column, items with the same text appear once.
 - Columns whose headers are duplicated or empty get distinguishable names (e.g. `层级（第 2 组）`).
 - **Multiple columns** chain through the table, and all adjacent pairs must be matched:
@@ -392,18 +390,20 @@ affected records as "stem changed" rather than silently discarding them.
   | IP | 0 | 网络层 |
   ````
 
-- **One-to-many**: separate multiple entries in a cell with ` / `. Both sides split, and the entries stay
-  grouped by the row they came from:
+- **One cell is one entry.** A cell's text is kept as written, so `MySQL / PostgreSQL` is a single item
+  named `MySQL / PostgreSQL`, not two. To make one item answer for several, repeat the row — the shared
+  text is merged into one node, and that node keeps every line it needs:
 
   ````markdown
   | 数据库 | 类型 |
   | --- | --- |
-  | MySQL / PostgreSQL | 关系型 |
-  | Redis / Memcached | 键值型 |
+  | MySQL | 关系型 |
+  | PostgreSQL | 关系型 |
+  | Redis | 键值型 |
   ````
 
-  This yields `MySQL`, `PostgreSQL`, `Redis`, `Memcached` in the first column — each links to the type on
-  its own row, so `MySQL` and `PostgreSQL` both link to `关系型`.
+  This yields `MySQL`, `PostgreSQL`, `Redis` in the first column and `关系型`, `键值型` in the second.
+  `关系型` appears once but carries two lines, one to `MySQL` and one to `PostgreSQL`.
 - A table needs at least 2 columns, otherwise the question degrades with a warning.
 
 ### Blank matching rules

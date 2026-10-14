@@ -282,7 +282,7 @@ test("配对：跨列连线（A-C）算多余，判错", () => {
 	);
 });
 
-test("配对：一对多的两条连线都要连上", () => {
+test("配对：一格就是一个条目，两行的连线都要连上", () => {
 	const question = questionOf(
 		[
 			"---",
@@ -294,14 +294,19 @@ test("配对：一对多的两条连线都要连上", () => {
 			"| 数据库 | 类型 |",
 			"| --- | --- |",
 			"| MySQL / PostgreSQL | 关系型 |",
+			"| Redis | 键值型 |",
 			"",
 			"```quiz",
 			"type: match",
 			"```",
 		].join("\n")
 	);
-	assertEqual(at(question.board, 0).items.map((item) => item.text).join(","), "MySQL,PostgreSQL", "斜杠应拆成两个条目");
-	assertEqual(question.boardPairs.length, 2, "两个条目各一条连线");
+	assertEqual(
+		at(question.board, 0).items.map((item) => item.text).join(","),
+		"MySQL / PostgreSQL,Redis",
+		"单元格内容不拆分"
+	);
+	assertEqual(question.boardPairs.length, 2, "两行两条连线");
 	const all = question.boardPairs.map((pair) => ({ left: pair.left, right: pair.right }));
 	assertEqual(gradeAnswer(question, { kind: "match", pairs: all }).correct, true, "两条都连上应判对");
 	assertEqual(gradeAnswer(question, { kind: "match", pairs: all.slice(0, 1) }).correct, false, "只连一条应判错");

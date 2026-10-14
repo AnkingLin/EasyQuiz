@@ -297,7 +297,7 @@ test("DOM：点击已画出的连线可以删掉那一条", () => {
 	assertEqual(board.linkedTexts().join(","), "HTTP,0", "另一端应保留 is-linked");
 });
 
-test("DOM：合并后的首列条目能连出全部正确答案（一对多可作答）", () => {
+test("DOM：合并后的首列条目能连出全部正确答案（重复行合并）", () => {
 	// 两个行首条文本相同 → 合并成一个节点，但它要对两个答案各连一条。
 	const board = renderBoard(parseTable(["数据库", "类型"], ["关系型 | MySQL", "关系型 | PostgreSQL"]));
 	assertEqual(board.columns[0]?.querySelectorAll(".easy-quiz-card__node").length, 1, "首列应合并成一个条目");
@@ -308,13 +308,16 @@ test("DOM：合并后的首列条目能连出全部正确答案（一对多可�
 	assertEqual(board.lineTargets().length, 2, "合并项应能连出两条线");
 });
 
-test("DOM：右格斜杠一对多能连出全部正确答案", () => {
-	const board = renderBoard(parseTable(["数据库", "类型"], ["关系型 | MySQL / PostgreSQL"]));
-	board.click("关系型", 0);
-	board.click("MySQL", 1);
-	board.click("关系型", 0);
-	board.click("PostgreSQL", 1);
-	assertEqual(board.lineTargets().length, 2, "两条线都应连上");
+test("DOM：单元格里的斜杠是普通文字，只产生一个节点", () => {
+	const board = renderBoard(parseTable(["数据库", "类型"], ["MySQL / PostgreSQL | 关系型"]));
+	const nodes = [...(board.columns[0]?.querySelectorAll(".easy-quiz-card__node") ?? [])].map(
+		(node) => node.textContent ?? ""
+	);
+	assertEqual(nodes.join(","), "MySQL / PostgreSQL", "斜杠不再拆分单元格");
+	assertEqual(board.columns[1]?.querySelectorAll(".easy-quiz-card__node").length, 1, "答案列一个条目");
+	board.click("MySQL / PostgreSQL", 0);
+	board.click("关系型", 1);
+	assertEqual(board.lineTargets().length, 1, "整格作为一个条目连线");
 });
 
 // ---------------------------------------------------------------------------
@@ -369,12 +372,12 @@ test("DOM：全部连满时四条连线（三组相邻列 × 两行）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 一对多与重复表头
+// 重复表头与合并条目
 // ---------------------------------------------------------------------------
 
-test("DOM：一对多（斜杠）时拆出的条目都能连到同一答案", async () => {
+test("DOM：多个条目可以连到同一答案（答案列合并）", async () => {
 	const board = renderBoard(
-		parseTable(["数据库", "类型"], ["MySQL / PostgreSQL | 关系型", "Redis | 键值型"])
+		parseTable(["数据库", "类型"], ["MySQL | 关系型", "PostgreSQL | 关系型", "Redis | 键值型"])
 	);
 	assertEqual(board.columns[0]?.querySelectorAll(".easy-quiz-card__node").length, 3, "首列应有三个条目");
 	board.click("MySQL", 0);
@@ -486,7 +489,7 @@ test("DOM：首列重复的行在相邻列都能连上", () => {
 	);
 });
 
-test("DOM：报告过的表格能连出全部正确答案（重复行 + 一对多）", () => {
+test("DOM：报告过的表格能连出全部正确答案（重复行）", () => {
 	// 这张表里 HTTPS 两行合并成一个节点，但正确答案要求它连 443 与 测试 两条；
 	// 以前"改连即替换"会让第 7 条顶掉第 3 条，这道题永远答不对。
 	const question = parseTable(userHeader, userRows);

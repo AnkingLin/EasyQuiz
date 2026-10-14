@@ -122,6 +122,44 @@ test("规范里的填空题示例能用 accept 规则判对", () => {
 });
 
 /**
+ * 「一个条目对多个条目负责时重复写行」是配对题里最容易写错的一条：作者很容易以为
+ * 一格能塞多个条目（旧写法用 ` / ` 分隔）。规范里的配对示例必须证明重复行确实会合并，
+ * 且合并后的节点要连出全部连线才判对。
+ */
+test("规范里的配对示例用重复行表达一个条目对多个条目负责", () => {
+	const match = must(
+		examples.find((markdown) => markdown.includes("type: match") && markdown.includes("| PostgreSQL | 关系型 |")),
+		"规范里应有「重复行」写法的配对示例"
+	);
+	const { question } = parseExample(match);
+	const left = question.board[0]?.items.map((item) => item.text) ?? [];
+	const right = question.board[1]?.items.map((item) => item.text) ?? [];
+	assertEqual(right.join(","), "关系型,键值型", `答案列应去重合并（实际：${right.join(",")}）`);
+	assertEqual(left.length, 3, `首列应有三个条目（实际：${left.join(",")}）`);
+
+	// 合并后的「关系型」挂着两条线，一条不少才算全对。
+	assertEqual(question.boardPairs.length, 3, "两行共用「关系型」，共三条连线");
+	const all = question.boardPairs.map((pair) => ({ left: pair.left, right: pair.right }));
+	assertEqual(gradeAnswer(question, { kind: "match", pairs: all }).correct, true, "三条都连上应判对");
+	assertEqual(
+		gradeAnswer(question, { kind: "match", pairs: all.slice(0, 2) }).correct,
+		false,
+		"少连一条应判错"
+	);
+});
+
+test("规范说明一格就是一个条目，斜杠不是分隔符", () => {
+	assert(
+		skill.includes("one cell is one entry"),
+		"规范应明确写出「一个单元格就是一个条目」"
+	);
+	assert(
+		skill.includes("`MySQL / PostgreSQL` is a single item"),
+		"规范应举例说明斜杠不会被拆分成多个条目"
+	);
+});
+
+/**
  * 「空位必须写在题面标题下面」是规范里最容易写错的一条，这里把它钉住：
  * 规范必须明确写出这条要求，而且标记留在标题行上确实解析不出空位。
  */

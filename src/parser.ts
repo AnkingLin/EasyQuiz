@@ -76,9 +76,6 @@ const DEFAULT_STATS: QuizStats = {
 	lastAt: null,
 };
 
-/** 单元格内的一对多条目的分隔符：` / ` 或 `／`。 */
-const CELL_PART_SEPARATOR = /\s*(?:\/|／)\s*/;
-
 // ---------------------------------------------------------------------------
 // 文本工具
 // ---------------------------------------------------------------------------
@@ -907,9 +904,10 @@ function isSeparatorRow(cells: string[]): boolean {
  *
  * - 每一列都有若干条目；连线只发生在**相邻两列**之间（第 1↔2、2↔3…），
  *   因此表格行顺序等价于一条从左到右的链：`A | B | C` 表示 A-B 与 B-C。
- * - 同一格的 ` / ` 表示"一对多"：`MySQL / PostgreSQL | 关系型` 会拆成两个条目，
- *   它们都与「关系型」相连。
- * - 同一列内文本相同的条目合并为一个（否则题板上会出现两个文字相同的节点）。
+ * - 一个单元格就是一个条目，单元格内容**原样保留**：`MySQL / PostgreSQL` 里的
+ *   斜杠只是文字，不会被拆成两个条目。
+ * - 同一列内文本相同的条目合并为一个（否则题板上会出现两个文字相同的节点）；
+ *   需要"一个条目对多个条目负责"时，靠重复表格行来表达。
  * - 条目 key 只由「列号 + 文本哈希」决定，与表格行顺序无关。
  */
 function buildBoardColumns(header: string[], table: string[][]): BoardColumn[] {
@@ -948,17 +946,14 @@ function buildBoardColumns(header: string[], table: string[][]): BoardColumn[] {
 		columns[left.column]?.expected.push(pair);
 	};
 
-	// 逐行展开：每行的相邻列两两相连。
+	// 逐行展开：每行的相邻列两两相连。单元格内容不再拆分——一格即一个条目。
+	// 单元格已由 `parseTableRow` 去过首尾空白，因此这里直接用原值。
 	for (const row of table) {
 		for (let index = 0; index + 1 < header.length; index++) {
-			const leftParts = splitCell(row[index] ?? "");
-			const rightParts = splitCell(row[index + 1] ?? "");
-			if (leftParts.length === 0 || rightParts.length === 0) continue;
-			for (const leftText of leftParts) {
-				for (const rightText of rightParts) {
-					addPair(itemFor(index, leftText), itemFor(index + 1, rightText));
-				}
-			}
+			const leftText = row[index] ?? "";
+			const rightText = row[index + 1] ?? "";
+			if (leftText === "" || rightText === "") continue;
+			addPair(itemFor(index, leftText), itemFor(index + 1, rightText));
 		}
 	}
 
@@ -988,14 +983,6 @@ function leftHash(text: string): string {
 		hash = Math.imul(hash, 16777619);
 	}
 	return (hash >>> 0).toString(16);
-}
-
-/** 拆分单元格：` / ` 或 `／` 分隔的多个条目。 */
-function splitCell(cell: string): string[] {
-	return cell
-		.split(CELL_PART_SEPARATOR)
-		.map((part) => part.trim())
-		.filter((part) => part !== "");
 }
 
 /**
