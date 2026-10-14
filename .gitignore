@@ -18,6 +18,9 @@ main.js
 # 测试打包产物
 .test-build
 
+# README 素材生成器的打包产物（源文件在 tools/readme-assets/ 下）
+tools/readme-assets/browser/bundle.js
+
 # 手工排查用的临时脚本与截图
 .scratch
 

@@ -1,0 +1,140 @@
+/*
+ * README 素材的"外壳"样式。
+ *
+ * 只负责模拟观察者看到的环境（阅读视图里的笔记、侧边栏窗口、对话框），
+ * 题卡内部的一切仍然由 `styles.css` 决定——外壳不碰 `.easy-quiz-*` 的样式，
+ * 免得出图好看但不是插件真实的样子。
+ */
+
+/* ------------------------------------------------------------ 阅读视图笔记 */
+
+/*
+ * 宽度由 `#stage` 决定（生成器按场景给 520 / 560 / 760 / 1080px）。
+ * 这里刻意不用 `max-content`：题面的解析文字较长时，max-content 会让整个
+ * 笔记撑得比视口还宽，截图右边就会被切掉。
+ */
+.eq-note {
+	width: 100%;
+	padding: 16px 20px 20px;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+}
+
+.eq-note__head {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding-bottom: 10px;
+	margin-bottom: 14px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.eq-note__title {
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.eq-note__badge {
+	margin-left: auto;
+	font-size: 11px;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 999px;
+	padding: 1px 8px;
+}
+
+/* 题卡是块级内容，给一点上下留白，视觉上像夹在笔记文字之间 */
+.eq-note__body > .easy-quiz-block {
+	margin: 0;
+}
+
+.eq-note__body .easy-quiz-card {
+	width: 100%;
+}
+
+/* -------------------------------------------------- 源码 ⇄ 卡片并排对照 */
+
+.eq-split {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 20px;
+	align-items: start;
+}
+
+.eq-split__pane {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	min-width: 0;
+}
+
+.eq-split__label {
+	font-size: 11px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+}
+
+.eq-split__code {
+	margin: 0;
+	padding: 12px 14px;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	font-family: var(--font-monospace);
+	font-size: 12px;
+	line-height: 1.55;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	color: var(--text-normal);
+}
+
+.eq-split__pane .easy-quiz-card {
+	margin: 0;
+}
+
+/* ------------------------------------------------------------------ 窗口 */
+
+.eq-window--sidebar {
+	width: 100%;
+}
+
+.eq-window--sidebar .eq-window__body .easy-quiz-practice {
+	/* 侧边栏有固定高度，这里给一个能看全内容的尺寸 */
+	height: auto;
+	max-height: none;
+	overflow: visible;
+	padding: 12px;
+}
+
+/* 生成器给窗口根元素加的标记：窗口自身的 padding 与外框留白重复，去掉它 */
+.easy-quiz-practice.eq-sidebar-host {
+	padding: 0;
+}
+
+.eq-window--modal {
+	width: 100%;
+}
+
+.eq-window--modal .eq-window__body {
+	padding: 18px 20px 20px;
+}
+
+.eq-window--modal .eq-modal__content > .setting-item:first-child {
+	border-top: none;
+}
+
+/* 对话框里的预览块：别让它把对话框撑得过高 */
+.eq-window--modal .easy-quiz-insert__preview {
+	max-height: none;
+}
+
+/* 对话框的标题（真实 Obsidian 由 Modal 渲染，这里补一个视觉对应） */
+.eq-modal__content::before {
+	content: "";
+	display: block;
+}

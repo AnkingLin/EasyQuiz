@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>EasyQuiz README asset generator</title>
+<!-- 插件自己的样式表：截图必须用它，否则截的不是真实界面 -->
+<link rel="stylesheet" href="../../../styles.css" />
+<!-- Obsidian 默认主题的近似实现（按钮、setting 行、Markdown 排版） -->
+<link rel="stylesheet" href="../theme.css" />
+<!-- 外壳：阅读视图笔记、侧边栏窗口、对话框 -->
+<link rel="stylesheet" href="../shell.css" />
+</head>
+<body>
+<!-- 截图内容的落点：宽度与主题由 entry.ts 按场景设置 -->
+<div id="stage"></div>
+<!--
+	工作台：场景构建期间临时挂载节点用。必须在文档里，因为配对题要靠真实布局
+	画连线（renderMatch 会检查 isConnected）。它在视口之外，不影响截图。
+-->
+<div id="workbench" aria-hidden="true"></div>
+<!-- 场景清单 / 失败原因的输出位置 -->
+<pre id="list" hidden></pre>
+<script src="./bundle.js"></script>
+</body>
+</html>
