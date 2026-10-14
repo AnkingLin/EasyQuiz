@@ -426,6 +426,8 @@ history:
 
 ![插入题目对话框：题型、题干标题，以及实时的 Markdown 预览](docs/assets/zh/modal-insert.png)
 
+题库文件还可以从**文件浏览器**里直接开刷：在文件列表或文件树里点题库文件右侧的 **⋯ → 刷这个题库**，刷题窗口会打开并**直接停在这个题库的刷题设置页**——省掉"打开窗口、再在列表里找它"这两步。菜单项只对 Markdown 题库文件出现，多选或非题库文件时不会打扰你。
+
 ## 设置
 
 | 设置 | 默认值 | 说明 |
@@ -471,8 +473,8 @@ npm run assets     # 重新生成两份 README 用到的截图与 GIF
 测试套件分两层：
 
 - **纯逻辑**（`parser`、`stem`、`grade`、`writeback`、`match-board`、`insert`、`session`）：纯 node，无 DOM。
-- **DOM**（`tests/quiz-match-dom.test.ts`、`tests/quiz-insert-modal.test.ts`、`tests/quiz-practice-view.test.ts`、`tests/quiz-knowledge-link.test.ts`、`tests/quiz-i18n.test.ts`）：
-  在 jsdom 下通过 `renderQuizCard` 渲染真实的题卡与连线板并点击其节点，因此点击处理、连线目标、各列之间的隔离、`MarkdownRenderer` 契约以及知识点链接都是被验证过的，而不是假设的；插入对话框通过 `InsertQuestionModal` 打开并驱动其控件；刷题窗口通过 `PracticeView` 打开并走完它的全部三个页面——包括列表页的搜索、文件夹折叠与整组勾选。`tests/dom.ts` 安装 Obsidian 风格的 DOM 辅助函数（`createDiv`、`addClass`、…），`tests/obsidian-stub.ts` 则代替只有类型定义的 `obsidian` 包。
+- **DOM**（`tests/quiz-match-dom.test.ts`、`tests/quiz-insert-modal.test.ts`、`tests/quiz-practice-view.test.ts`、`tests/quiz-knowledge-link.test.ts`、`tests/quiz-file-menu.test.ts`、`tests/quiz-i18n.test.ts`）：
+  在 jsdom 下通过 `renderQuizCard` 渲染真实的题卡与连线板并点击其节点，因此点击处理、连线目标、各列之间的隔离、`MarkdownRenderer` 契约以及知识点链接都是被验证过的，而不是假设的；插入对话框通过 `InsertQuestionModal` 打开并驱动其控件；刷题窗口通过 `PracticeView` 打开并走完它的全部三个页面——包括列表页的搜索、文件夹折叠与整组勾选；文件浏览器菜单也由它自己的真实事件处理函数驱动。`tests/dom.ts` 安装 Obsidian 风格的 DOM 辅助函数（`createDiv`、`addClass`、…），`tests/obsidian-stub.ts` 则代替只有类型定义的 `obsidian` 包。
 
 `tests/quiz-skill-doc.test.ts` 把文档和代码闭环起来：它读取 `skills/easyquiz-authoring/SKILL.md`，抽出每个被标记的示例，交给真正的解析器与判分器。文档里的骨架如果无法作答，测试套件就会失败。
 
@@ -505,6 +507,7 @@ src/view.ts          practice card rendering (including the header's knowledge-p
 src/practice-view.ts practice window: question-bank list / practice settings / practice
 src/insert.ts        question templates and insertion positioning (pure logic)
 src/insert-modal.ts  insert-question dialog and the editor write
+src/file-menu.ts     the file explorer menu entry that starts practising a bank
 src/labels.ts        question-type labels and default stem titles, shared by card/dialog/window (pure logic)
 src/i18n/            English/Chinese message tables and the language state (pure logic)
 skills/              agent-facing authoring spec (SKILL.md), examples verified by the test suite
@@ -512,13 +515,13 @@ tests/               parser / stem / grading / write-back / insert / session tes
 tools/readme-assets/ README 截图与 GIF 生成器（见上一节）
 ```
 
-`parser` / `stem` / `grade` / `writeback` / `hash` / `insert` / `session` / `labels` / `i18n` 刻意**不**导入 `obsidian`，因此它们可以在纯 Node 下运行；所有对 Obsidian API 的依赖都限制在 `runtime.ts`、`view.ts`、`practice-view.ts` 和 `insert-modal.ts` 里。文案表也是如此：它们是普通对象，所以解析器不必接触 Obsidian API 就能产生本地化的提示。
+`parser` / `stem` / `grade` / `writeback` / `hash` / `insert` / `session` / `labels` / `i18n` 刻意**不**导入 `obsidian`，因此它们可以在纯 Node 下运行；所有对 Obsidian API 的依赖都限制在 `runtime.ts`、`view.ts`、`practice-view.ts`、`insert-modal.ts` 和 `file-menu.ts` 里。文案表也是如此：它们是普通对象，所以解析器不必接触 Obsidian API 就能产生本地化的提示。
 
 题干渲染时会**去掉**那些有自己交互控件的部分——选项列表、配对表格以及 `==answer==` 文本都会被剥离，以免同一内容显示两遍。
 
 ## 状态
 
-已实现并有测试覆盖：解析器、题干预处理、五种题型的判分、记录写回、连线板逻辑、题目模板及其插入定位、题卡界面（选项、可点击连线的多列配对及打乱、内嵌的点击输入式空位及其随内容变宽、问答题自评，以及可点击的知识点链接）、刷题窗口（带逐文件数据的题库列表，外加搜索、文件夹折叠与整组勾选；带题型/抽题筛选的刷题设置；以及一次一道题、在原处揭示答案并给出最终报告的一轮），还有带语言设置的英文/中文界面。题库文件被修改会触发防抖的阅读视图刷新，并使窗口缓存的解析结果失效。
+已实现并有测试覆盖：解析器、题干预处理、五种题型的判分、记录写回、连线板逻辑、题目模板及其插入定位、题卡界面（选项、可点击连线的多列配对及打乱、内嵌的点击输入式空位及其随内容变宽、问答题自评，以及可点击的知识点链接）、刷题窗口（带逐文件数据的题库列表，外加搜索、文件夹折叠与整组勾选；带题型/抽题筛选的刷题设置；以及一次一道题、在原处揭示答案并给出最终报告的一轮）、从文件浏览器菜单直接跳到某个题库刷题设置的入口，还有带语言设置的英文/中文界面。题库文件被修改会触发防抖的阅读视图刷新，并使窗口缓存的解析结果失效。
 
 尚未实现：把多次写回合并成一次文件写入，以及跨轮次的统计（错题本、图表）——目前只有窗口为单轮计算出的那些数据。
 

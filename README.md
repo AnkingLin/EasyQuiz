@@ -481,6 +481,11 @@ interface language — so an English UI inserts English skeletons:
 
 ![The insert-question dialog, showing the type, the stem heading, and a live Markdown preview](docs/assets/en/modal-insert.png)
 
+Question banks can also be started straight from the **file explorer**: pick **⋯ → Practise this question
+bank** next to a bank file in the file list or the file tree, and the practice window opens **directly on
+that bank's practice settings** — no need to open the window and then hunt for the file. The item only
+appears for Markdown question banks; multi-selections and other files are left alone.
+
 ## Settings
 
 | Setting | Default | Notes |
@@ -527,12 +532,13 @@ The suite has two layers:
 
 - **Pure logic** (`parser`, `stem`, `grade`, `writeback`, `match-board`, `insert`, `session`): plain node, no DOM.
 - **DOM** (`tests/quiz-match-dom.test.ts`, `tests/quiz-insert-modal.test.ts`, `tests/quiz-practice-view.test.ts`,
-  `tests/quiz-knowledge-link.test.ts`, `tests/quiz-i18n.test.ts`):
+  `tests/quiz-knowledge-link.test.ts`, `tests/quiz-file-menu.test.ts`, `tests/quiz-i18n.test.ts`):
   renders the real card and board through `renderQuizCard` under jsdom and clicks its nodes, so click handling,
   line targets, per-column isolation, the `MarkdownRenderer` contract and the knowledge-point link are checked
   rather than assumed; the insert dialog is opened through `InsertQuestionModal` and its controls are driven;
   the practice window is opened through `PracticeView` and walked through all three of its pages — including
-  the list's search, folder folding and per-folder selection.
+  the list's search, folder folding and per-folder selection; and the file-explorer menu is driven through
+  its real event handlers.
   `tests/dom.ts` installs the Obsidian-style DOM helpers (`createDiv`, `addClass`, …) and
   `tests/obsidian-stub.ts` stands in for the type-only `obsidian` package.
 
@@ -577,6 +583,7 @@ src/view.ts          practice card rendering (including the header's knowledge-p
 src/practice-view.ts practice window: question-bank list / practice settings / practice
 src/insert.ts        question templates and insertion positioning (pure logic)
 src/insert-modal.ts  insert-question dialog and the editor write
+src/file-menu.ts     the file explorer menu entry that starts practising a bank
 src/labels.ts        question-type labels and default stem titles, shared by card/dialog/window (pure logic)
 src/i18n/            English/Chinese message tables and the language state (pure logic)
 skills/              agent-facing authoring spec (SKILL.md), examples verified by the test suite
@@ -586,7 +593,7 @@ tools/readme-assets/ README screenshot & GIF generator (see above)
 
 `parser` / `stem` / `grade` / `writeback` / `hash` / `insert` / `session` / `labels` / `i18n` deliberately
 do **not** import `obsidian`, so they run under plain Node; every Obsidian API dependency is confined to
-`runtime.ts`, `view.ts`, `practice-view.ts`, and `insert-modal.ts`. That includes the
+`runtime.ts`, `view.ts`, `practice-view.ts`, `insert-modal.ts`, and `file-menu.ts`. That includes the
 message tables: they are plain objects, so the parser can produce a localized warning without touching the
 Obsidian API.
 
@@ -601,8 +608,9 @@ write-back, matching-board logic, question templates with their insertion positi
 grow with their content, short-answer self-assessment, and the clickable knowledge-point link), the practice
 window (question-bank list with per-file data plus search, folder folding and per-folder selection;
 practice settings with type/sampling filters; and the one-question-at-a-time round with in-place answer
-reveal and a final report), and the English/Chinese interface with its language setting. Question-bank
-edits trigger a debounced reading-view refresh and invalidate the window's cached parsing.
+reveal and a final report), the file-explorer menu entry that jumps straight to a bank's practice settings,
+and the English/Chinese interface with its language setting. Question-bank edits trigger a debounced
+reading-view refresh and invalidate the window's cached parsing.
 
 Not yet implemented: batching of multiple write-backs into one file write, and statistics that span rounds
 (a mistake book, charts) beyond what the window computes for a single round.

@@ -246,6 +246,18 @@ test("英文：题型名、默认标题与设置文案", async () => {
 	});
 });
 
+test("英文：文件菜单里的刷题入口是英文", async () => {
+	await inLanguage("en", () => {
+		assertEqual(t("fileMenu.practice"), "Practise this question bank", "文件菜单文案");
+		assertEqual(t("practice.list.matched", { count: 3 }), "Matched 3 question-bank files", "搜索匹配数");
+		assertEqual(
+			t("practice.list.noMatch", { query: "net" }),
+			'No question-bank file matches "net".',
+			"搜索无结果说明"
+		);
+	});
+});
+
 test("英文：校验通知在单题与多题下都读得通", async () => {
 	await inLanguage("en", () => {
 		// 英文没有量词，计数必须放在标签后面，否则会出现 `1 questions` 这种错误说法。
@@ -519,6 +531,7 @@ test("中文：同一批文案仍是原来的中文（没有被英文改动带�
 		assertEqual(typeLabel("blank"), "填空", "题型名");
 		assertEqual(defaultTitles().single, "单选题干", "默认题干标题");
 		assertEqual(t("practice.toolbar.selectAll"), "全选可作答", "全选按钮");
+		assertEqual(t("fileMenu.practice"), "刷这个题库", "文件菜单文案");
 		assertEqual(t("practice.list.foldAll"), "全部折叠", "全部折叠按钮");
 		assertEqual(t("card.feedback.correct"), "回答正确", "对错反馈");
 		assertEqual(at([t("stats.untried")], 0), "未作答", "角标");

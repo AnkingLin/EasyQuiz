@@ -68,6 +68,8 @@ export class MarkdownRenderer {
 export class TFile {
 	path = "";
 	basename = "";
+	/** 真实 Obsidian 由路径派生；这里默认按 Markdown 笔记给，测试可显式改写。 */
+	extension = "md";
 	stat = { mtime: 0 };
 }
 export class Plugin {}
@@ -75,6 +77,85 @@ export class PluginSettingTab {}
 export class Notice {}
 export class MarkdownView {}
 export class Events {}
+
+/**
+ * 菜单里的一个条目：只保留视图会用到的那几件事。
+ *
+ * 真实 Obsidian 的标题会渲染成 DOM，测试里只存在对象上——因此断言"菜单里有没有这一项"
+ * 读的是 `title`，而不是去查文档。
+ */
+export class MenuItem {
+	title = "";
+	icon: string | null = null;
+	private handlers: (() => unknown)[] = [];
+
+	setTitle(title: string): this {
+		this.title = title;
+		return this;
+	}
+	setIcon(icon: string | null): this {
+		this.icon = icon;
+		return this;
+	}
+	onClick(callback: () => unknown): this {
+		this.handlers.push(callback);
+		return this;
+	}
+	/** 模拟点击。 */
+	click(): void {
+		for (const handler of this.handlers) handler();
+	}
+}
+
+/** 菜单：`addItem` 的回调立即执行，条目按加入顺序保存。 */
+export class Menu {
+	items: MenuItem[] = [];
+
+	addItem(callback: (item: MenuItem) => unknown): this {
+		const item = new MenuItem();
+		callback(item);
+		this.items.push(item);
+		return this;
+	}
+
+	/** 按标题取条目（测试用）。 */
+	find(title: string): MenuItem | undefined {
+		return this.items.find((item) => item.title === title);
+	}
+}
+
+/** 事件引用：测试里只需要"注册过"这个事实。 */
+export interface EventRef {
+	kind: string;
+}
+
+/**
+ * 工作区替身：只实现视图与菜单注册用到的部分。
+ *
+ * `on()` 会把监听器留下来，测试因此可以主动触发事件，观察菜单被加了什么。
+ */
+export class Workspace {
+	private listeners = new Map<string, ((...args: never[]) => unknown)[]>();
+
+	on(name: string, callback: (...args: never[]) => unknown): EventRef {
+		const list = this.listeners.get(name) ?? [];
+		list.push(callback);
+		this.listeners.set(name, list);
+		return { kind: name };
+	}
+
+	/** 触发某个事件（测试用）。 */
+	emit(name: string, ...args: unknown[]): void {
+		for (const listener of this.listeners.get(name) ?? []) {
+			(listener as unknown as (...a: unknown[]) => unknown)(...args);
+		}
+	}
+
+	/** 某个事件上挂了多少个监听器。 */
+	listenerCount(name: string): number {
+		return (this.listeners.get(name) ?? []).length;
+	}
+}
 export class WorkspaceLeaf {}
 export class View {
 	app: unknown = {};

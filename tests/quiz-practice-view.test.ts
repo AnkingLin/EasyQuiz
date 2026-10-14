@@ -823,3 +823,39 @@ test("顶部步骤往回走：从刷题页回到题库列表且统计仍然可�
 	assert(textOf(harness.view).includes("题库文件"), "应回到题库列表");
 	assertEqual(findAll(harness.view, ".easy-quiz-practice__file").length, 2, "列表应重新画出");
 });
+
+// ---------------------------------------------------------------------------
+// 从文件菜单直接进入某个题库的刷题设置
+// ---------------------------------------------------------------------------
+
+test("openPickerFor：直接进入该题库的刷题设置页", async () => {
+	const harness = standardHarness();
+	await harness.view.openPickerFor("题库/子目录/乙.md");
+
+	assert(textOf(harness.view).includes("刷题设置"), "应停在刷题设置页");
+	assert(textOf(harness.view).includes("题库/子目录/乙.md（可作答 1）"), "应选中菜单里点的那份题库");
+	assert(textOf(harness.view).includes("这一轮将刷 1 题"), "设置页应已经算好题数");
+});
+
+test("openPickerFor：丢弃上一轮的选择，只留这一份题库", async () => {
+	const harness = standardHarness();
+	// 先在列表页选中两份，再从文件菜单点一份：菜单的意图是"就刷这个"。
+	await harness.view.activate();
+	click(find(harness.view, "button[data-action='select-all']", "缺少全选按钮"));
+	await flush();
+	assert(textOf(harness.view).includes("已选 2 份"), "先选中两份");
+
+	await harness.view.openPickerFor("题库/甲.md");
+	assert(textOf(harness.view).includes("符合当前条件 3 题"), "只应剩甲的三道题");
+	assert(!textOf(harness.view).includes("题库/子目录/乙.md（"), "乙不该留在选择里");
+});
+
+test("openPickerFor：文件不存在时设置页给出空状态而不是报错", async () => {
+	const harness = standardHarness();
+	await harness.view.openPickerFor("题库/已经没有这个文件.md");
+
+	// 选中的路径解析不出文件时，设置页按 0 题处理：不抛错、也点不动开始。
+	assert(textOf(harness.view).includes("符合当前条件 0 题"), "找不到文件时按 0 题处理");
+	const start = find(harness.view, "button[data-action='start-session']", "缺少开始按钮") as HTMLButtonElement;
+	assert(start.disabled, "没有候选题时开始按钮应禁用");
+});

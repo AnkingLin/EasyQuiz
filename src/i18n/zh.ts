@@ -53,6 +53,7 @@ export const zh: MessageTable = {
 	"command.openPractice": "打开刷题窗口",
 	"command.insert": "插入题目",
 	"menu.insert": "插入题目",
+	"fileMenu.practice": "刷这个题库",
 	"notice.recorded": "已记录本次作答。",
 	"notice.notQuizFile": "「{name}」不是题库文件（缺少 quiz: true 或 #quiz）。",
 	"notice.validation": "共 {total} 道题：可作答 {ok}，需修正 {bad}。",

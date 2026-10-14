@@ -16,6 +16,7 @@ import "./quiz-match-dom.test";
 import "./quiz-knowledge-link.test";
 import "./quiz-session.test";
 import "./quiz-practice-view.test";
+import "./quiz-file-menu.test";
 import "./quiz-skill-doc.test";
 import "./quiz-styles.test";
 import "./quiz-i18n.test";

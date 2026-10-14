@@ -60,6 +60,7 @@ export const en = {
 	"command.openPractice": "Open practice window",
 	"command.insert": "Insert question",
 	"menu.insert": "Insert question",
+	"fileMenu.practice": "Practise this question bank",
 	"notice.recorded": "Attempt recorded.",
 	"notice.notQuizFile": "\"{name}\" is not a question bank (missing quiz: true or #quiz).",
 	// 计数一律放在标签后面：英文没有量词，`1 questions` 这类写法会读起来是错的。

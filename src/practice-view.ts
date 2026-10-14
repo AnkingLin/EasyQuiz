@@ -207,6 +207,20 @@ export class PracticeView extends ItemView {
 		await this.render();
 	}
 
+	/**
+	 * 直接打开某个题库文件的刷题设置页（文件浏览器菜单的入口）。
+	 *
+	 * 只把这份文件设为选中，其余勾选一律丢弃：从菜单点进来时用户要刷的
+	 * 就是这一个题库，上一轮留在窗口里的选择只会带来困惑。
+	 */
+	async openPickerFor(path: string): Promise<void> {
+		this.picked = [path];
+		this.page = 1;
+		this.entries = null;
+		this.stale = true;
+		await this.render();
+	}
+
 	async onOpen(): Promise<void> {
 		await this.render();
 	}

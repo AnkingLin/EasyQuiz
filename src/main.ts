@@ -18,6 +18,7 @@ import { DEFAULT_SETTINGS, QuizService, RuntimeSettings } from "./runtime";
 import { LanguagePreference, LANGUAGE_PREFERENCES, setLanguage, resolveLanguage, t } from "./i18n";
 import { renderQuizCard } from "./view";
 import { insertQuestionAtCursor, InsertQuestionOptions } from "./insert-modal";
+import { registerFileMenu } from "./file-menu";
 import { PRACTICE_VIEW_TYPE, PracticeView } from "./practice-view";
 
 /**
@@ -125,6 +126,9 @@ export default class EasyQuizPlugin extends Plugin {
 			})
 		);
 
+		// 文件浏览器里的「更多选项」菜单：题库文件多一个「刷这个题库」入口。
+		registerFileMenu(this.app.workspace, this, (ref) => this.registerEvent(ref));
+
 		this.addSettingTab(new EasyQuizSettingTab(this.app, this));
 	}
 
@@ -170,6 +174,21 @@ export default class EasyQuizPlugin extends Plugin {
 		await leaf.setViewState({ type: PRACTICE_VIEW_TYPE, active: true });
 		const view = leaf.view;
 		if (view instanceof PracticeView) await view.activate();
+	}
+
+	/**
+	 * 打开刷题窗口并直接进入某个题库的刷题设置页（文件菜单的入口）。
+	 *
+	 * 复用 `openPracticeView` 的"单例窗口"逻辑：已经有窗口就地切换页面，
+	 * 没有才新建一个，避免从文件菜单点几下就开出好几个窗口。
+	 */
+	async openPracticeFor(path: string): Promise<void> {
+		const existing = this.app.workspace.getLeavesOfType(PRACTICE_VIEW_TYPE);
+		const leaf = existing[0] ?? this.app.workspace.getRightLeaf(false);
+		if (leaf === null) return;
+		await leaf.setViewState({ type: PRACTICE_VIEW_TYPE, active: true });
+		const view = leaf.view;
+		if (view instanceof PracticeView) await view.openPickerFor(path);
 	}
 
 	/** 让设置页定位到本插件（视图里的「打开设置」按钮）。 */
