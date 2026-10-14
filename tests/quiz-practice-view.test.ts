@@ -391,6 +391,72 @@ test("刷题设置：移除选中的文件后回到空状态", async () => {
 	find(harness.view, "button[data-action='goto-list']", "应能返回题库列表");
 });
 
+test("改选另一个题库后，这一轮只刷新选中的文件", async () => {
+	const harness = standardHarness();
+	// 先选甲并进入设置页：甲此时已经被解析并缓存在窗口里。
+	await openPicker(harness, "题库/甲.md");
+	// 返回题库列表，取消勾选甲，改勾子目录里的乙。
+	click(find(harness.view, "button[data-action='goto-list']", "缺少返回题库列表按钮"));
+	await flush();
+
+	const boxA = find(
+		harness.view,
+		"input[data-action='pick-file'][data-path='题库/甲.md']",
+		"缺少甲的勾选框"
+	) as HTMLInputElement;
+	boxA.checked = false;
+	change(boxA);
+	const boxB = find(
+		harness.view,
+		"input[data-action='pick-file'][data-path='题库/子目录/乙.md']",
+		"缺少乙的勾选框"
+	) as HTMLInputElement;
+	boxB.checked = true;
+	change(boxB);
+	click(find(harness.view, "button[data-action='to-picker']", "缺少进入设置按钮"));
+	await flush();
+
+	assert(textOf(harness.view).includes("符合当前条件 1 题"), "只选乙时候选应只有 1 道题");
+	assert(!textOf(harness.view).includes("题库/甲.md（"), "设置页不应再列出已经取消勾选的甲");
+
+	await startSession(harness);
+	assertEqual(harness.renders.length, 1, "这一轮只应渲染新选中文件的题");
+	assertEqual(at(harness.renders, 0, "缺少渲染").question.id, "b1", "抽到的应是乙文件里的题");
+	assertEqual(at(harness.renders, 0, "缺少渲染").ctx.file.path, "题库/子目录/乙.md", "题卡应指向乙文件");
+	// 队列长度是"叠加"最直接的证据：甲的三道题不该混进来。
+	assert(textOf(harness.view).includes("第 1 / 1 题"), "这一轮队列只应有乙的那一道题");
+});
+
+test("改选题库：先选子目录文件再改选根目录文件同样不叠加", async () => {
+	const harness = standardHarness();
+	// 与上一条方向相反：先选乙（1 题），再改选甲（3 题）。
+	await openPicker(harness, "题库/子目录/乙.md");
+	click(find(harness.view, "button[data-action='goto-list']", "缺少返回题库列表按钮"));
+	await flush();
+
+	const boxB = find(
+		harness.view,
+		"input[data-action='pick-file'][data-path='题库/子目录/乙.md']",
+		"缺少乙的勾选框"
+	) as HTMLInputElement;
+	boxB.checked = false;
+	change(boxB);
+	const boxA = find(
+		harness.view,
+		"input[data-action='pick-file'][data-path='题库/甲.md']",
+		"缺少甲的勾选框"
+	) as HTMLInputElement;
+	boxA.checked = true;
+	change(boxA);
+	click(find(harness.view, "button[data-action='to-picker']", "缺少进入设置按钮"));
+	await flush();
+
+	assert(textOf(harness.view).includes("符合当前条件 3 题"), "只选甲时候选应是 3 道题");
+	await startSession(harness);
+	assertEqual(at(harness.renders, 0, "缺少渲染").ctx.file.path, "题库/甲.md", "题卡应指向甲文件");
+	assert(textOf(harness.view).includes("第 1 / 3 题"), "这一轮队列应只含甲的 3 道题");
+});
+
 // ---------------------------------------------------------------------------
 // 页面 3：刷题
 // ---------------------------------------------------------------------------

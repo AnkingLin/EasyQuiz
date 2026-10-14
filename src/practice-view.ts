@@ -599,9 +599,24 @@ export class PracticeView extends ItemView {
 	 * `force` 为 true 时重新解析（设置页按钮、或题库文件刚被改动）。
 	 * 本窗口自己写回的记录也会把 `stale` 打开，因此这里统一收敛这一处状态：
 	 * 解析一次就把 `stale` 清掉，避免每画一张卡片都重解析一遍。
+	 *
+	 * 缓存与当前选中集合严格对齐：不在 `picked` 里的解析结果一律丢弃，
+	 * 保证下游（`candidates` / `buildSession`）看到的只有这一轮真正选中的题库。
 	 */
 	private async loadParsed(force = false): Promise<void> {
 		const reparse = force || this.stale;
+
+		// 选中集合可能已经换过文件（返回列表改勾选）。缓存里没有被选中的解析结果
+		// 必须丢掉：`buildSession` 遍历的是整张表，留着它就会把取消勾选的题库
+		// 一起抽进这一轮，表现为两个题库的题叠在一起。
+		const picked = new Set(this.picked);
+		for (const path of [...this.parsedByPath.keys()]) {
+			if (!picked.has(path)) this.parsedByPath.delete(path);
+		}
+		for (const path of [...this.fileAt.keys()]) {
+			if (!picked.has(path)) this.fileAt.delete(path);
+		}
+
 		for (const path of this.picked) {
 			const file = this.host.service.fileAtPath(path);
 			if (file === null) {
