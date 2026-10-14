@@ -426,6 +426,37 @@ test("英文：刷题窗口的列表页与勾选按钮", async () => {
 	});
 });
 
+test("英文：搜索、折叠与全部文件夹文案都是英文", async () => {
+	await inLanguage("en", async () => {
+		const view = buildView();
+		await view.activate();
+
+		// 搜索框的提示文案来自文案表，且没有中文残留。
+		const box = must(
+			view.contentEl.querySelector<HTMLInputElement>("input[data-action='search']") ?? undefined,
+			"缺少搜索框"
+		);
+		assertEqual(box.placeholder, "Search by file name or path", "搜索框提示");
+
+		// 分组标题、匹配数与折叠按钮同样要是英文。
+		const view2 = buildView();
+		await view2.activate();
+		click(action(view2, "fold-all"));
+		await flush();
+		const text = view2.contentEl.textContent ?? "";
+		assert(text.includes("Collapse all"), "全部折叠按钮应为英文");
+		assert(text.includes("Expand all"), "全部展开按钮应为英文");
+		assert(!/[\u4e00-\u9fff]/.test(text), `折叠后界面不应有中文（实际：${text}）`);
+
+		// 搜索没命中时的说明也是英文。
+		box.value = "nothing-matches";
+		box.dispatchEvent(new testWindow.Event("input", { bubbles: true }));
+		const searched = view.contentEl.textContent ?? "";
+		assert(searched.includes('No question-bank file matches "nothing-matches"'), `应给出英文空结果说明（实际：${searched}）`);
+		assert(!/[\u4e00-\u9fff]/.test(searched), `搜索后界面不应有中文（实际：${searched}）`);
+	});
+});
+
 test("英文：走完刷题窗口的三个页面，全程没有中文", async () => {
 	await inLanguage("en", async () => {
 		const view = buildView();
@@ -488,6 +519,7 @@ test("中文：同一批文案仍是原来的中文（没有被英文改动带�
 		assertEqual(typeLabel("blank"), "填空", "题型名");
 		assertEqual(defaultTitles().single, "单选题干", "默认题干标题");
 		assertEqual(t("practice.toolbar.selectAll"), "全选可作答", "全选按钮");
+		assertEqual(t("practice.list.foldAll"), "全部折叠", "全部折叠按钮");
 		assertEqual(t("card.feedback.correct"), "回答正确", "对错反馈");
 		assertEqual(at([t("stats.untried")], 0), "未作答", "角标");
 	});

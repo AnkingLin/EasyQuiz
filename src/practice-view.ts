@@ -79,6 +79,13 @@ interface FileEntry {
 	error: string | null;
 }
 
+/** 列表页里的一个文件夹分组：文件夹名 + 其中的文件（已按路径排序）。 */
+interface FolderGroup {
+	/** `FileSummary.folder`；vault 根为 ""。 */
+	folder: string;
+	entries: FileEntry[];
+}
+
 /** 当前页面：0 题库列表 / 1 刷题设置 / 2 刷题。 */
 type Page = 0 | 1 | 2;
 
@@ -90,6 +97,10 @@ export class PracticeView extends ItemView {
 	private page: Page = 0;
 	/** 题库列表的缓存；null 表示还没扫过。 */
 	private entries: FileEntry[] | null = null;
+	/** 列表页的搜索词：按文件名或路径过滤。 */
+	private query = "";
+	/** 列表页被折叠的文件夹（键取自 `FileSummary.folder`，vault 根为 ""）。 */
+	private folded = new Set<string>();
 	/** 设置页里选中的文件路径。 */
 	private picked: string[] = [];
 	/** 设置页里的抽题配置。 */
@@ -126,6 +137,8 @@ export class PracticeView extends ItemView {
 	private startEl: HTMLButtonElement | null = null;
 	/** 列表页底部操作条上的"已选几份"文案。 */
 	private footerTextEl: HTMLElement | null = null;
+	/** 列表页"匹配到几份"的说明；没搜索时隐藏。 */
+	private matchedEl: HTMLElement | null = null;
 
 	constructor(leaf: WorkspaceLeaf, host: EasyQuizHost, openSettings: () => void) {
 		super(leaf);
@@ -155,6 +168,9 @@ export class PracticeView extends ItemView {
 			picked: [...this.picked],
 			mode: this.config.mode,
 			randomCount: this.config.randomCount,
+			// 搜索词与折叠状态属于"用户怎么看这份清单"，重建工作区时应当保留。
+			query: this.query,
+			folded: [...this.folded],
 		};
 	}
 
@@ -166,6 +182,12 @@ export class PracticeView extends ItemView {
 		const picked = data["picked"];
 		if (Array.isArray(picked)) {
 			this.picked = picked.filter((item): item is string => typeof item === "string");
+		}
+		const query = data["query"];
+		if (typeof query === "string") this.query = query;
+		const folded = data["folded"];
+		if (Array.isArray(folded)) {
+			this.folded = new Set(folded.filter((item): item is string => typeof item === "string"));
 		}
 		const mode = data["mode"];
 		if (mode === "order" || mode === "random" || mode === "wrong") this.config.mode = mode;
@@ -200,6 +222,7 @@ export class PracticeView extends ItemView {
 		this.countEl = null;
 		this.startEl = null;
 		this.footerTextEl = null;
+		this.matchedEl = null;
 	}
 
 	/** 宿主声明题库数据可能已变化：下次渲染前重新解析。 */
@@ -234,6 +257,7 @@ export class PracticeView extends ItemView {
 		this.countEl = null;
 		this.startEl = null;
 		this.footerTextEl = null;
+		this.matchedEl = null;
 
 		this.renderSteps();
 
@@ -301,6 +325,43 @@ export class PracticeView extends ItemView {
 	// 页面 1：题库列表
 	// -----------------------------------------------------------------------
 
+	/**
+	 * 列表页的过滤结果：命中搜索词的文件，以及它们按文件夹的分组。
+	 *
+	 * 纯计算，不碰 DOM——搜索、分组、折叠三件事共用这一份结果，
+	 * 因此"搜出来的文件"与"勾得上的文件"永远是同一批。
+	 */
+	private visible(): { matched: FileEntry[]; groups: FolderGroup[] } {
+		const entries = this.entries ?? [];
+		const needle = this.query.trim().toLowerCase();
+		const matched =
+			needle === ""
+				? entries
+				: entries.filter(
+						(entry) =>
+							entry.file.path.toLowerCase().includes(needle) ||
+							entry.file.basename.toLowerCase().includes(needle)
+					);
+
+		const groups: FolderGroup[] = [];
+		for (const entry of matched) {
+			const folder = entry.summary.folder;
+			const last = groups[groups.length - 1];
+			// `visible()` 的输入已按路径排序，同一个文件夹的文件必然相邻。
+			if (last === undefined || last.folder !== folder) {
+				groups.push({ folder, entries: [entry] });
+			} else {
+				last.entries.push(entry);
+			}
+		}
+		return { matched, groups };
+	}
+
+	/** 文件夹在界面上的显示名；vault 根用一句人话代替空字符串。 */
+	private folderLabel(folder: string): string {
+		return folder === "" ? t("practice.list.rootFolder") : `/${folder}`;
+	}
+
 	/** 扫描 vault 里的题库文件并逐份解析；结果缓存在 `entries` 里。 */
 	private async scan(): Promise<FileEntry[]> {
 		if (this.entries !== null && !this.stale) return this.entries;
@@ -358,21 +419,22 @@ export class PracticeView extends ItemView {
 			cls: "easy-quiz-practice__totals",
 			text: this.totalsText(summarizeAll(entries.map((entry) => entry.summary))),
 		});
+		// "匹配到几份"只在搜索时出现：没有搜索词时它和上面的合计说的是同一件事。
+		this.matchedEl = body.createDiv({ cls: "easy-quiz-practice__matched" });
+		this.updateMatchedNote();
 
 		const list = body.createDiv({ cls: "easy-quiz-practice__files" });
-		let folder: string | null = null;
-		for (const entry of entries) {
-			if (entry.summary.folder !== folder) {
-				folder = entry.summary.folder;
-				list.createDiv({
-					cls: "easy-quiz-practice__folder",
-					text: folder === "" ? t("practice.list.rootFolder") : `/${folder}`,
-				});
-			}
-			this.renderFileRow(list, entry);
-		}
+		this.fillList(list);
 
 		this.renderListFooter(body);
+	}
+
+	/** 刷新"匹配到几份"那行：搜索时才显示，没有搜索词就藏起来。 */
+	private updateMatchedNote(): void {
+		if (this.matchedEl === null) return;
+		const searching = this.query.trim() !== "";
+		this.matchedEl.toggleClass("is-hidden", !searching);
+		if (searching) this.matchedEl.setText(t("practice.list.matched", { count: this.visible().matched.length }));
 	}
 
 	private totalsText(totals: SummaryTotals): string {
@@ -387,14 +449,40 @@ export class PracticeView extends ItemView {
 		].join(" · ");
 	}
 
+	/**
+	 * 工具条：搜索框 + 全选 / 清空 / 折叠 / 重新扫描。
+	 *
+	 * 「全选可作答」作用于**当前搜索结果**，不是整份 vault：搜索本身就是
+	 * 一次筛选，先搜再全选是最顺手的用法。没有搜索词时它就是"选中全部"。
+	 */
 	private renderListToolbar(body: HTMLElement, entries: FileEntry[]): void {
 		const toolbar = body.createDiv({ cls: "easy-quiz-practice__toolbar" });
-		const usable = entries.filter((entry) => entry.summary.answerable > 0);
+
+		const search = toolbar.createEl("input", { cls: "easy-quiz-practice__search" });
+		search.type = "search";
+		search.value = this.query;
+		search.placeholder = t("practice.search.placeholder");
+		search.setAttribute("aria-label", t("practice.search.placeholder"));
+		search.dataset["action"] = "search";
+		search.addEventListener("input", () => {
+			this.setQuery(search.value);
+		});
+
+		const clearSearch = this.button(toolbar, "clear-search", t("practice.search.clear"));
+		clearSearch.disabled = this.query === "";
+		clearSearch.addEventListener("click", () => {
+			this.setQuery("");
+			void this.render();
+		});
+
+		const { matched } = this.visible();
 
 		const all = this.button(toolbar, "select-all", t("practice.toolbar.selectAll"));
-		all.disabled = usable.length === 0;
+		all.disabled = !matched.some((entry) => entry.summary.answerable > 0);
 		all.addEventListener("click", () => {
-			this.picked = usable.map((entry) => entry.file.path);
+			// 候选项在点击时才取：搜索词可能已经变过，渲染时算好的那份会过期。
+			const usable = this.visible().matched.filter((entry) => entry.summary.answerable > 0);
+			this.picked = [...new Set([...this.picked, ...usable.map((entry) => entry.file.path)])];
 			void this.render();
 		});
 
@@ -405,12 +493,142 @@ export class PracticeView extends ItemView {
 			void this.render();
 		});
 
+		const foldAll = this.button(toolbar, "fold-all", t("practice.list.foldAll"));
+		foldAll.disabled = entries.length === 0;
+		foldAll.addEventListener("click", () => {
+			this.folded = new Set((this.entries ?? []).map((entry) => entry.summary.folder));
+			void this.render();
+		});
+
+		const unfoldAll = this.button(toolbar, "unfold-all", t("practice.list.unfoldAll"));
+		unfoldAll.disabled = this.folded.size === 0;
+		unfoldAll.addEventListener("click", () => {
+			this.folded = new Set();
+			void this.render();
+		});
+
 		const rescan = this.button(toolbar, "rescan", t("practice.toolbar.rescan"));
 		rescan.addEventListener("click", () => {
 			this.entries = null;
 			this.stale = true;
 			void this.render();
 		});
+	}
+
+	/**
+	 * 换搜索词并就地重画列表。
+	 *
+	 * 只更新"会随搜索结果变化的部分"，不整页重画：整页重画会把输入框换成新节点，
+	 * 中文输入法正在拼字的那个框就断了。
+	 */
+	private setQuery(value: string): void {
+		this.query = value;
+		this.redrawList();
+	}
+
+	/** 就地重画文件夹分组、匹配数与底部操作条（搜索、折叠都走这里）。 */
+	private redrawList(): void {
+		const list = this.bodyEl?.querySelector<HTMLElement>(".easy-quiz-practice__files") ?? null;
+		if (list === null) return;
+		this.fillList(list);
+		this.updateMatchedNote();
+
+		// 搜索结果改变了「全选可作答」的范围，按钮可用状态要跟着换。
+		const matched = this.visible().matched;
+		const all = this.bodyEl?.querySelector("button[data-action='select-all']") ?? null;
+		if (this.isButton(all)) all.disabled = !matched.some((entry) => entry.summary.answerable > 0);
+		const clearSearch = this.bodyEl?.querySelector("button[data-action='clear-search']") ?? null;
+		if (this.isButton(clearSearch)) clearSearch.disabled = this.query === "";
+		// 折叠状态刚变过：「全部展开」只有真的折了东西才该可点。
+		const unfoldAll = this.bodyEl?.querySelector("button[data-action='unfold-all']") ?? null;
+		if (this.isButton(unfoldAll)) unfoldAll.disabled = this.folded.size === 0;
+		this.syncToolbar();
+	}
+
+	/** 按当前搜索词画出文件夹分组；没有命中时给一句说明。 */
+	private fillList(list: HTMLElement): void {
+		list.empty();
+		const { matched, groups } = this.visible();
+		if (matched.length === 0) {
+			list.createDiv({
+				cls: "easy-quiz-practice__nomatch",
+				text: t("practice.list.noMatch", { query: this.query.trim() }),
+			});
+		}
+		for (const group of groups) this.renderFolderGroup(list, group);
+	}
+
+	/**
+	 * 一个文件夹：可点击的标题（折叠 / 展开）+ 该组内的文件行。
+	 *
+	 * 标题右侧自带勾选框，用来整组勾选——文件多的时候"按文件夹挑"比逐个点快得多。
+	 */
+	private renderFolderGroup(list: HTMLElement, group: FolderGroup): void {
+		const isFolded = this.folded.has(group.folder);
+		const wrapper = list.createDiv({ cls: "easy-quiz-practice__group" });
+		if (isFolded) wrapper.addClass("is-folded");
+
+		const head = wrapper.createDiv({ cls: "easy-quiz-practice__folder" });
+		head.dataset["action"] = "toggle-folder";
+		head.dataset["folder"] = group.folder;
+		head.setAttribute("role", "button");
+		head.setAttribute("tabindex", "0");
+		head.setAttribute(
+			"aria-label",
+			t(isFolded ? "practice.folder.expand" : "practice.folder.collapse", {
+				folder: this.folderLabel(group.folder),
+			})
+		);
+
+		// 箭头字符由 CSS 用三角形画，避免依赖图标字体。
+		head.createSpan({ cls: "easy-quiz-practice__folder-caret" });
+		head.createSpan({ cls: "easy-quiz-practice__folder-name", text: this.folderLabel(group.folder) });
+		const usable = group.entries.filter((entry) => entry.summary.answerable > 0);
+		const selected = usable.filter((entry) => this.picked.includes(entry.file.path)).length;
+		head.createSpan({
+			cls: "easy-quiz-practice__folder-count",
+			text:
+				this.query.trim() === ""
+					? t("practice.folder.files", { count: group.entries.length })
+					: t("practice.folder.filesFiltered", {
+							count: group.entries.length,
+							total: (this.entries ?? []).filter((entry) => entry.summary.folder === group.folder).length,
+						}),
+		});
+
+		const check = head.createEl("input", { cls: "easy-quiz-practice__folder-check" });
+		check.type = "checkbox";
+		check.dataset["action"] = "pick-folder";
+		check.dataset["folder"] = group.folder;
+		check.disabled = usable.length === 0;
+		check.checked = usable.length > 0 && selected === usable.length;
+		// 只勾了一部分时给出"部分选中"的第三种状态。
+		check.indeterminate = selected > 0 && selected < usable.length;
+		check.setAttribute("aria-label", t("practice.folder.check", { folder: this.folderLabel(group.folder) }));
+		check.addEventListener("click", (event) => event.stopPropagation());
+		check.addEventListener("change", () => {
+			const paths = usable.map((entry) => entry.file.path);
+			this.picked = check.checked
+				? [...new Set([...this.picked, ...paths])]
+				: this.picked.filter((path) => !paths.includes(path));
+			this.redrawList();
+		});
+
+		const toggle = (): void => {
+			if (this.folded.has(group.folder)) this.folded.delete(group.folder);
+			else this.folded.add(group.folder);
+			this.redrawList();
+		};
+		head.addEventListener("click", toggle);
+		head.addEventListener("keydown", (event) => {
+			if (event.key !== "Enter" && event.key !== " ") return;
+			event.preventDefault();
+			toggle();
+		});
+
+		if (isFolded) return;
+		const rows = wrapper.createDiv({ cls: "easy-quiz-practice__group-files" });
+		for (const entry of group.entries) this.renderFileRow(rows, entry);
 	}
 
 	/**
@@ -534,12 +752,35 @@ export class PracticeView extends ItemView {
 		return el !== null && typeof (el as { disabled?: unknown }).disabled === "boolean";
 	}
 
-	/** 勾选变化后就地更新底部操作条（选中份数 + 按钮可用状态）。 */
+	/** 勾选变化后就地更新底部操作条与各文件夹的整组勾选框。 */
 	private syncToolbar(): void {
 		if (this.startEl !== null) this.startEl.disabled = this.picked.length === 0;
 		if (this.footerTextEl !== null) this.footerTextEl.setText(this.pickerLabel());
 		const clear = this.bodyEl?.querySelector("button[data-action='clear-selection']") ?? null;
 		if (this.isButton(clear)) clear.disabled = this.picked.length === 0;
+		this.syncFolderChecks();
+	}
+
+	/**
+	 * 让每个文件夹标题上的勾选框反映组内状态。
+	 *
+	 * 单个文件被勾上/取消时要一起更新：整组全选、全不选、部分选中（半勾）是三种不同的样子，
+	 * 漏掉这一步就会出现"组里明明全勾了，标题上还是半勾"的错觉。
+	 *
+	 * 按渲染顺序一一对应，而不是用选择器按文件夹名去找：文件夹名可能带引号或反斜杠，
+	 * 拼进选择器就要额外转义，不如让分组自己带着勾选框。
+	 */
+	private syncFolderChecks(): void {
+		const checks = this.bodyEl?.querySelectorAll(".easy-quiz-practice__group") ?? [];
+		this.visible().groups.forEach((group, index) => {
+			const wrapper = checks[index];
+			const check = wrapper?.querySelector<HTMLInputElement>("input[data-action='pick-folder']") ?? null;
+			if (check === null || check === undefined) return;
+			const usable = group.entries.filter((entry) => entry.summary.answerable > 0);
+			const selected = usable.filter((entry) => this.picked.includes(entry.file.path)).length;
+			check.checked = usable.length > 0 && selected === usable.length;
+			check.indeterminate = selected > 0 && selected < usable.length;
+		});
 	}
 
 	private gotoPicker(): void {

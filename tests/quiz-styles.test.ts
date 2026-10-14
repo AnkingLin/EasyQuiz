@@ -24,6 +24,16 @@ function ruleBlock(css: string, selector: string): string {
 	return block;
 }
 
+/** 取出某个选择器的声明块（不要求含 background，供纯几何声明使用）。 */
+function anyRuleBlock(css: string, selector: string): string {
+	const start = css.indexOf(`\n${selector} {`);
+	assert(start >= 0, `样式表里找不到规则 ${selector}`);
+	const open = css.indexOf("{", start);
+	const close = css.indexOf("}", open);
+	assert(open > 0 && close > open, `${selector} 的规则块不完整`);
+	return css.slice(open + 1, close);
+}
+
 /** 所有使用了「实心 success 底色」的地方：这个写法在默认主题下必然导致文字同色。 */
 function solidSuccessBackgrounds(css: string): string[] {
 	const offenders: string[] = [];
@@ -65,4 +75,20 @@ test("样式：选择题的正确项用淡绿打底并保留描边", () => {
 		`正确选项的底色应是半透明淡染，实际：${block.trim()}`
 	);
 	assert(/border-color:\s*var\(--text-success\)/.test(block), "正确选项应保留绿色描边");
+});
+
+/**
+ * 折叠箭头指向。
+ *
+ * 箭头是用边框拼的三角形：基准态必须**朝下**（展开），折叠态旋转成**朝右**。
+ * 这两个方向恰好相反，写反了界面就会"展开时显示折叠箭头"——而 jsdom 没有渲染，
+ * 只有截图才看得出来，因此这里直接对声明做断言。
+ */
+test("样式：文件夹箭头展开时朝下、折叠时朝右", () => {
+	const caret = anyRuleBlock(styles, ".easy-quiz-practice__folder-caret");
+	assert(/border-top:\s*\d+px solid currentColor/.test(caret), `箭头基准态应朝下（用 border-top 画尖），实际：${caret.trim()}`);
+	assert(!/border-left:\s*\d+px solid currentColor/.test(caret), "基准态不应是朝右的三角");
+
+	const folded = anyRuleBlock(styles, ".easy-quiz-practice__group.is-folded .easy-quiz-practice__folder-caret");
+	assert(/rotate\(-90deg\)/.test(folded), `折叠时应把朝下的箭头旋转成朝右，实际：${folded.trim()}`);
 });

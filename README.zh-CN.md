@@ -222,7 +222,13 @@ type: essay
 
 vault 里的每个题库文件，按文件夹分组，每一行都带着它的数据：题目总数、可作答数、需修正数、各题型数量、作答次数、正确率，以及最近一次作答的日期。解析失败的文件会报告自己的错误，不会破坏整个列表。
 
-勾选一个或多个文件——或者点**全选可作答**——就能放在一起刷：
+文件一多，这一页提供三种收敛方式：
+
+- **搜索**——按文件名或路径过滤，输入即生效，并显示**匹配到几份**。搜索不会动你已经勾好的选择。
+- **折叠文件夹**——点文件夹标题即可收起或展开该组；**全部折叠** / **全部展开**一次处理所有分组。折叠状态会跟着工作区一起保存。
+- **整组勾选**——每个文件夹标题右侧都有一个勾选框，整组勾上或取消；组内只有部分被选中时显示为半勾。
+
+勾选一个或多个文件——或者点**全选可作答**（作用于当前搜索结果）——就能放在一起刷：
 
 ![题库列表：逐文件的数据，以及勾选两份的状态](docs/assets/zh/window-list.png)
 
@@ -456,7 +462,7 @@ history:
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (312 cases)
+npm test           # bundle and run the test suite (336 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 npm run assets     # 重新生成两份 README 用到的截图与 GIF
@@ -466,7 +472,7 @@ npm run assets     # 重新生成两份 README 用到的截图与 GIF
 
 - **纯逻辑**（`parser`、`stem`、`grade`、`writeback`、`match-board`、`insert`、`session`）：纯 node，无 DOM。
 - **DOM**（`tests/quiz-match-dom.test.ts`、`tests/quiz-insert-modal.test.ts`、`tests/quiz-practice-view.test.ts`、`tests/quiz-knowledge-link.test.ts`、`tests/quiz-i18n.test.ts`）：
-  在 jsdom 下通过 `renderQuizCard` 渲染真实的题卡与连线板并点击其节点，因此点击处理、连线目标、各列之间的隔离、`MarkdownRenderer` 契约以及知识点链接都是被验证过的，而不是假设的；插入对话框通过 `InsertQuestionModal` 打开并驱动其控件；刷题窗口通过 `PracticeView` 打开并走完它的全部三个页面。`tests/dom.ts` 安装 Obsidian 风格的 DOM 辅助函数（`createDiv`、`addClass`、…），`tests/obsidian-stub.ts` 则代替只有类型定义的 `obsidian` 包。
+  在 jsdom 下通过 `renderQuizCard` 渲染真实的题卡与连线板并点击其节点，因此点击处理、连线目标、各列之间的隔离、`MarkdownRenderer` 契约以及知识点链接都是被验证过的，而不是假设的；插入对话框通过 `InsertQuestionModal` 打开并驱动其控件；刷题窗口通过 `PracticeView` 打开并走完它的全部三个页面——包括列表页的搜索、文件夹折叠与整组勾选。`tests/dom.ts` 安装 Obsidian 风格的 DOM 辅助函数（`createDiv`、`addClass`、…），`tests/obsidian-stub.ts` 则代替只有类型定义的 `obsidian` 包。
 
 `tests/quiz-skill-doc.test.ts` 把文档和代码闭环起来：它读取 `skills/easyquiz-authoring/SKILL.md`，抽出每个被标记的示例，交给真正的解析器与判分器。文档里的骨架如果无法作答，测试套件就会失败。
 
@@ -512,7 +518,7 @@ tools/readme-assets/ README 截图与 GIF 生成器（见上一节）
 
 ## 状态
 
-已实现并有测试覆盖：解析器、题干预处理、五种题型的判分、记录写回、连线板逻辑、题目模板及其插入定位、题卡界面（选项、可点击连线的多列配对及打乱、内嵌的点击输入式空位及其随内容变宽、问答题自评，以及可点击的知识点链接）、刷题窗口（带逐文件数据的题库列表、带题型/抽题筛选的刷题设置，以及一次一道题、在原处揭示答案并给出最终报告的一轮），还有带语言设置的英文/中文界面。题库文件被修改会触发防抖的阅读视图刷新，并使窗口缓存的解析结果失效。
+已实现并有测试覆盖：解析器、题干预处理、五种题型的判分、记录写回、连线板逻辑、题目模板及其插入定位、题卡界面（选项、可点击连线的多列配对及打乱、内嵌的点击输入式空位及其随内容变宽、问答题自评，以及可点击的知识点链接）、刷题窗口（带逐文件数据的题库列表，外加搜索、文件夹折叠与整组勾选；带题型/抽题筛选的刷题设置；以及一次一道题、在原处揭示答案并给出最终报告的一轮），还有带语言设置的英文/中文界面。题库文件被修改会触发防抖的阅读视图刷新，并使窗口缓存的解析结果失效。
 
 尚未实现：把多次写回合并成一次文件写入，以及跨轮次的统计（错题本、图表）——目前只有窗口为单轮计算出的那些数据。
 

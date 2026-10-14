@@ -240,7 +240,17 @@ Every question-bank file in the vault, grouped by folder, each with its data on 
 questions, answerable, how many need fixing, per-type counts, attempts, accuracy, and the date of the last
 attempt. A file that fails to parse reports its own error without breaking the list.
 
-Tick one or more files — or **Select all answerable** — to practise them together:
+With a large library, this page gives you three ways to narrow it down:
+
+- **Search** — filters by file name or path as you type, and reports **how many files matched**. Searching
+  never touches the files you have already ticked.
+- **Fold folders** — click a folder header to collapse or expand that group; **Collapse all** / **Expand
+  all** do every group at once. The folded state is saved with the workspace.
+- **Tick a whole folder** — every folder header carries a checkbox that selects or clears the group, and
+  shows a half-tick when only part of it is selected.
+
+Tick one or more files — or **Select all answerable** (which applies to the current search results) — to
+practise them together:
 
 ![The question-bank list, with per-file data and two files ticked](docs/assets/en/window-list.png)
 
@@ -507,7 +517,7 @@ interface language — so an English UI inserts English skeletons:
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (312 cases)
+npm test           # bundle and run the test suite (336 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 npm run assets     # regenerate the screenshots and GIFs used by the READMEs
@@ -521,7 +531,8 @@ The suite has two layers:
   renders the real card and board through `renderQuizCard` under jsdom and clicks its nodes, so click handling,
   line targets, per-column isolation, the `MarkdownRenderer` contract and the knowledge-point link are checked
   rather than assumed; the insert dialog is opened through `InsertQuestionModal` and its controls are driven;
-  the practice window is opened through `PracticeView` and walked through all three of its pages.
+  the practice window is opened through `PracticeView` and walked through all three of its pages — including
+  the list's search, folder folding and per-folder selection.
   `tests/dom.ts` installs the Obsidian-style DOM helpers (`createDiv`, `addClass`, …) and
   `tests/obsidian-stub.ts` stands in for the type-only `obsidian` package.
 
@@ -575,8 +586,9 @@ tools/readme-assets/ README screenshot & GIF generator (see above)
 
 `parser` / `stem` / `grade` / `writeback` / `hash` / `insert` / `session` / `labels` / `i18n` deliberately
 do **not** import `obsidian`, so they run under plain Node; every Obsidian API dependency is confined to
-`runtime.ts`, `view.ts`, `practice-view.ts`, and `insert-modal.ts`. That includes the message tables: they
-are plain objects, so the parser can produce a localized warning without touching the Obsidian API.
+`runtime.ts`, `view.ts`, `practice-view.ts`, and `insert-modal.ts`. That includes the
+message tables: they are plain objects, so the parser can produce a localized warning without touching the
+Obsidian API.
 
 The stem is rendered **without** the parts that get their own interactive control — the option list, the
 matching table, and the `==answer==` text are stripped so that nothing is displayed twice.
@@ -587,10 +599,10 @@ Implemented and covered by tests: the parser, stem preprocessing, grading for al
 write-back, matching-board logic, question templates with their insertion positioning, the practice card UI
 (choice options, click-to-connect multi-column matching with shuffling, inline click-to-type blanks that
 grow with their content, short-answer self-assessment, and the clickable knowledge-point link), the practice
-window (question-bank list with per-file data, practice settings with type/sampling filters, and the
-one-question-at-a-time round with in-place answer reveal and a final report), and the English/Chinese
-interface with its language setting. Question-bank edits trigger a debounced reading-view refresh and
-invalidate the window's cached parsing.
+window (question-bank list with per-file data plus search, folder folding and per-folder selection;
+practice settings with type/sampling filters; and the one-question-at-a-time round with in-place answer
+reveal and a final report), and the English/Chinese interface with its language setting. Question-bank
+edits trigger a debounced reading-view refresh and invalidate the window's cached parsing.
 
 Not yet implemented: batching of multiple write-backs into one file write, and statistics that span rounds
 (a mistake book, charts) beyond what the window computes for a single round.

@@ -607,16 +607,111 @@
 	gap: var(--eqq-2);
 }
 
-/* 分组标题：靠留白与字重区分层级，不用分割线 */
+/* 搜索与折叠都是"整理清单"的动作，因此它们共用一行工具条 */
+.easy-quiz-practice__search {
+	flex: 1 1 14em;
+	min-width: 0;
+}
+
+.easy-quiz-practice__matched {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+/* 隐藏但仍然留在布局里会让下面凭空多出一条空隙，因此直接不参与布局 */
+.easy-quiz-practice__matched.is-hidden {
+	display: none;
+}
+
+.easy-quiz-practice__nomatch {
+	padding: var(--eqq-4);
+	border: 1px dashed var(--eqq-line);
+	border-radius: var(--eqq-r-md);
+	color: var(--text-muted);
+	text-align: center;
+	font-size: var(--font-ui-small);
+	overflow-wrap: anywhere;
+}
+
+/* 一个文件夹：标题 + 组内文件 */
+.easy-quiz-practice__group {
+	display: flex;
+	flex-direction: column;
+	gap: var(--eqq-2);
+}
+
+.easy-quiz-practice__group-files {
+	display: flex;
+	flex-direction: column;
+	gap: var(--eqq-2);
+}
+
+/*
+ * 分组标题：整行可点（折叠 / 展开），靠留白与字重区分层级，不用分割线。
+ * `is-link` 的鼠标指针与悬停底色说明它是可点的。
+ */
 .easy-quiz-practice__folder {
+	display: flex;
+	align-items: center;
+	gap: var(--eqq-2);
 	margin-top: var(--eqq-3);
-	margin-bottom: calc(-1 * var(--eqq-1));
+	padding: var(--eqq-1) var(--eqq-2);
+	border-radius: var(--eqq-r-sm);
 	font-size: var(--font-ui-smaller);
 	font-weight: var(--font-medium, 500);
 	letter-spacing: 0.02em;
 	color: var(--text-muted);
 	font-family: var(--font-monospace);
 	overflow-wrap: anywhere;
+	cursor: pointer;
+	user-select: none;
+	transition: background 0.12s ease, color 0.12s ease;
+}
+
+.easy-quiz-practice__folder:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.easy-quiz-practice__folder:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 1px;
+}
+
+/*
+ * 折叠箭头：用边框画三角形，不依赖图标字体。
+ * 基准朝下（= 已展开），折起来时旋转成朝右（= 已折叠），与文件浏览器里的习惯一致。
+ */
+.easy-quiz-practice__folder-caret {
+	flex: none;
+	width: 0;
+	height: 0;
+	margin-left: 2px;
+	border-left: 4px solid transparent;
+	border-right: 4px solid transparent;
+	border-top: 5px solid currentColor;
+	transition: transform 0.12s ease;
+}
+
+.easy-quiz-practice__folder-name {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.easy-quiz-practice__folder-count {
+	flex: none;
+	color: var(--text-faint);
+	font-variant-numeric: tabular-nums;
+}
+
+/* 组标题上的勾选框：整组勾选/取消 */
+.easy-quiz-practice__folder-check {
+	flex: none;
+}
+
+.easy-quiz-practice__group.is-folded .easy-quiz-practice__folder-caret {
+	transform: rotate(-90deg);
 }
 
 .easy-quiz-practice__file {
@@ -1099,6 +1194,28 @@
 	.easy-quiz-practice__toolbar button {
 		flex: 1 1 auto;
 		min-height: 40px;
+	}
+
+	/* 搜索框独占一行：手机上输入框太窄就没法看清自己在搜什么 */
+	.easy-quiz-practice__search {
+		flex: 1 1 100%;
+		min-height: 40px;
+	}
+
+	/* 文件夹标题行在窄屏也要留着整行的点击区域 */
+	.easy-quiz-practice__folder {
+		flex-wrap: wrap;
+		padding: var(--eqq-2);
+		min-height: 40px;
+	}
+
+	.easy-quiz-practice__folder-count {
+		margin-left: auto;
+	}
+
+	.easy-quiz-practice__folder-check {
+		width: 20px;
+		height: 20px;
 	}
 
 	/* 文件行：勾选框 + 文字一行，「设置刷题」按钮独占下一行 */

@@ -316,6 +316,190 @@ test("题库列表：没有题库文件时给出三种识别方式", async () =>
 });
 
 // ---------------------------------------------------------------------------
+// 页面 1：搜索与折叠
+// ---------------------------------------------------------------------------
+
+/** 在搜索框里输入内容（模拟用户打字）。 */
+function search(view: PracticeView, value: string): void {
+	const box = find(view, "input[data-action='search']", "缺少搜索框") as HTMLInputElement;
+	box.value = value;
+	box.dispatchEvent(new testWindow.Event("input", { bubbles: true }));
+}
+
+/** 点一下文件夹标题（折叠 / 展开）。 */
+function toggleFolder(view: PracticeView, folder: string): void {
+	click(find(view, `.easy-quiz-practice__folder[data-folder='${folder}']`, `缺少文件夹 ${folder} 的标题`));
+}
+
+/** 当前画出来的文件行路径。 */
+function visibleFiles(view: PracticeView): string[] {
+	return findAll(view, ".easy-quiz-practice__file").map(
+		(row) => (row.querySelector<HTMLElement>(".easy-quiz-practice__file-path")?.textContent ?? "").replace(/^\//, "")
+	);
+}
+
+test("题库列表：搜索按文件名或路径过滤，并给出匹配数", async () => {
+	const harness = standardHarness();
+	await harness.view.activate();
+	assertEqual(visibleFiles(harness.view).length, 2, "搜索前两份文件都在");
+
+	search(harness.view, "乙");
+	assertEqual(visibleFiles(harness.view).join(","), "题库/子目录/乙.md", "按文件名应只剩乙");
+	assert(textOf(harness.view).includes("匹配到 1 个题库文件"), "应显示匹配数");
+
+	// 换成路径片段：甲不在结果里，则说明比对确实覆盖了完整路径。
+	search(harness.view, "题库/甲");
+	assertEqual(visibleFiles(harness.view).join(","), "题库/甲.md", "按路径应只剩甲");
+
+	// 清空搜索后恢复全量，且匹配数那行收起来。
+	search(harness.view, "");
+	assertEqual(visibleFiles(harness.view).length, 2, "清空搜索后应恢复全部");
+	assert(
+		find(harness.view, ".easy-quiz-practice__matched", "缺少匹配数一行").classList.contains("is-hidden"),
+		"没有搜索词时匹配数应隐藏"
+	);
+});
+
+test("题库列表：搜索没有命中时给出说明，而不是空白列表", async () => {
+	const harness = standardHarness();
+	await harness.view.activate();
+
+	search(harness.view, "不存在的题库");
+	assertEqual(visibleFiles(harness.view).length, 0, "不应再有文件行");
+	assert(textOf(harness.view).includes("没有题库文件匹配"), "应说明没有命中");
+	assert(textOf(harness.view).includes("不存在的题库"), "说明里应带上搜索词");
+});
+
+test("题库列表：搜索不改变已经勾选的文件", async () => {
+	const harness = standardHarness();
+	await harness.view.activate();
+
+	const box = find(harness.view, "input[data-action='pick-file'][data-path='题库/甲.md']", "缺少勾选框") as HTMLInputElement;
+	box.checked = true;
+	change(box);
+
+	// 搜到别的文件：甲被过滤掉不再显示，但选择必须留着（否则搜索就成了隐式清空）。
+	search(harness.view, "乙");
+	assert(!textOf(harness.view).includes("/题库/甲.md"), "搜索时甲不在结果里");
+	assert(textOf(harness.view).includes("已选 1 份"), "勾选不应被搜索清掉");
+
+	search(harness.view, "");
+	assertEqual(
+		(find(harness.view, "input[data-action='pick-file'][data-path='题库/甲.md']", "缺少勾选框") as HTMLInputElement).checked,
+		true,
+		"恢复搜索后甲仍是勾上的"
+	);
+});
+
+test("题库列表：点文件夹标题折叠与展开该组", async () => {
+	const harness = standardHarness();
+	await harness.view.activate();
+	assertEqual(visibleFiles(harness.view).length, 2, "初始两份文件都可见");
+
+	toggleFolder(harness.view, "题库/子目录");
+	assertEqual(visibleFiles(harness.view).join(","), "题库/甲.md", "折叠后该组内的文件不再显示");
+	find(harness.view, ".easy-quiz-practice__folder[data-folder='题库/子目录']", "折叠后标题仍应在");
+
+	toggleFolder(harness.view, "题库/子目录");
+	assertEqual(visibleFiles(harness.view).length, 2, "再点一次应展开");
+});
+
+test("题库列表：全部折叠 / 全部展开作用于所有文件夹", async () => {
+	const harness = standardHarness();
+	await harness.view.activate();
+
+	click(find(harness.view, "button[data-action='fold-all']", "缺少全部折叠按钮"));
+	await flush();
+	assertEqual(visibleFiles(harness.view).length, 0, "全部折叠后不应有文件行");
+	assertEqual(findAll(harness.view, ".easy-quiz-practice__folder").length, 2, "两个文件夹标题都要留着");
+
+	click(find(harness.view, "button[data-action='unfold-all']", "缺少全部展开按钮"));
+	await flush();
+	assertEqual(visibleFiles(harness.view).length, 2, "全部展开后文件应回来");
+});
+
+test("题库列表：文件夹标题上的勾选框整组勾选", async () => {
+	const harness = standardHarness();
+	await harness.view.activate();
+
+	const box = find(
+		harness.view,
+		"input[data-action='pick-folder'][data-folder='题库']",
+		"缺少题库文件夹的整组勾选框"
+	) as HTMLInputElement;
+	box.checked = true;
+	change(box);
+
+	assert(textOf(harness.view).includes("已选 1 份"), "整组勾选应选中该文件夹里的甲");
+	assertEqual(
+		(find(harness.view, "input[data-action='pick-file'][data-path='题库/甲.md']", "缺少勾选框") as HTMLInputElement).checked,
+		true,
+		"组内文件行要同步勾上"
+	);
+	assertEqual(
+		(find(harness.view, "input[data-action='pick-file'][data-path='题库/子目录/乙.md']", "缺少勾选框") as HTMLInputElement).checked,
+		false,
+		"别的文件夹不应被带上"
+	);
+
+	// 取消整组：组内文件也要一起放下。
+	box.checked = false;
+	change(box);
+	assert(textOf(harness.view).includes("已选 0 份"), "取消整组后应一份不剩");
+});
+
+test("题库列表：组内全勾后文件夹勾选框显示为已选", async () => {
+	const harness = standardHarness();
+	await harness.view.activate();
+
+	const file = find(harness.view, "input[data-action='pick-file'][data-path='题库/甲.md']", "缺少勾选框") as HTMLInputElement;
+	file.checked = true;
+	change(file);
+
+	const group = find(harness.view, "input[data-action='pick-folder'][data-folder='题库']", "缺少整组勾选框") as HTMLInputElement;
+	assertEqual(group.checked, true, "组内唯一的文件被勾上后，整组勾选框应显示已选");
+	assertEqual(group.indeterminate, false, "全选时不该是半勾");
+});
+
+test("题库列表：搜索后全选只作用于当前结果", async () => {
+	const harness = standardHarness();
+	await harness.view.activate();
+
+	search(harness.view, "乙");
+	click(find(harness.view, "button[data-action='select-all']", "缺少全选按钮"));
+	await flush();
+
+	assert(textOf(harness.view).includes("已选 1 份"), "只应选中搜索结果里的那一份");
+
+	// 清空搜索才看得到甲：它不该被刚才那次全选带上。
+	search(harness.view, "");
+	const boxA = find(harness.view, "input[data-action='pick-file'][data-path='题库/甲.md']", "缺少甲的勾选框") as HTMLInputElement;
+	const boxB = find(
+		harness.view,
+		"input[data-action='pick-file'][data-path='题库/子目录/乙.md']",
+		"缺少乙的勾选框"
+	) as HTMLInputElement;
+	assertEqual(boxA.checked, false, "被搜索词排除的甲不该被选中");
+	assertEqual(boxB.checked, true, "搜索结果里的乙应已勾上");
+});
+
+test("题库列表：清空搜索按钮在输入后可用", async () => {
+	const harness = standardHarness();
+	await harness.view.activate();
+
+	const clear = find(harness.view, "button[data-action='clear-search']", "缺少清空搜索按钮") as HTMLButtonElement;
+	assert(clear.disabled, "没有搜索词时清空按钮应禁用");
+
+	search(harness.view, "甲");
+	assert(!clear.disabled, "有搜索词后清空按钮应可用");
+
+	click(clear);
+	await flush();
+	assertEqual(visibleFiles(harness.view).length, 2, "点清空后应恢复全部文件");
+	assertEqual((find(harness.view, "input[data-action='search']", "缺少搜索框") as HTMLInputElement).value, "", "搜索框应被清空");
+});
+
+// ---------------------------------------------------------------------------
 // 页面 2：刷题设置
 // ---------------------------------------------------------------------------
 
