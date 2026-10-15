@@ -577,11 +577,24 @@
 	line-height: var(--line-height-normal);
 }
 
+/*
+ * 工具条靠 `align-self` 而不是 `margin-left: auto` 贴到行尾。
+ *
+ * 页头是 `flex-wrap: wrap`，工具条与标题**同处一行**：此前用 `margin-left: auto`
+ * 把它推到右边，而 flex 容器在"一行放不下、提前换行"时会把正的剩余空间全算进
+ * auto 外边距——于是工具条换到第二行之后，那 140 多 px 的外边距跟着一起过去，
+ * 表现为左侧凭空缩进。`align-self` 只作用于交叉轴，换行前后都不会改变行内位置。
+ *
+ * 顺带一个好处：页头是 `align-items: center`，而工具条通常比标题高，居中会让
+ * 它的左边和标题的左边对不齐；改成靠行首对齐正好接上页头的左边界。
+ */
 .easy-quiz-practice__toolbar {
 	display: flex;
 	flex-wrap: wrap;
+	align-self: flex-start;
+	/* 不参与拉伸：撑满交叉轴会让工具条里换行的按钮摊得很开 */
+	flex: none;
 	gap: var(--eqq-2);
-	margin-left: auto;
 }
 
 .easy-quiz-practice__loading,
@@ -1153,6 +1166,10 @@
 	overflow-wrap: anywhere;
 }
 
+/*
+ * 工具条现在靠 `align-self` 定位（见上方规则），不再有 auto 外边距；
+ * 这条覆盖保留下来是为了让"总结面板里的操作按钮"与面板左边界齐平。
+ */
 .easy-quiz-practice__summary .easy-quiz-practice__toolbar {
 	margin-left: 0;
 }
@@ -1180,14 +1197,17 @@
 	}
 
 	/*
-	 * 工具条独占一行。注意这里是列方向的 flex 容器：flex-basis 指的是高度，
-	 * 因此用 width 铺满、flex 不伸缩，否则工具条会撑到整列那么高。
+	 * 工具条独占一行。
+	 *
+	 * `width: 100%` 同时解决两件事：在（行方向的）页头里让它放不下而换到第二行，
+	 * 换行之后又正好占满整行。不能用 `flex-basis: 100%`：工具条也可能是列方向容器
+	 * （.easy-quiz-practice__panel / __summary）的子项，百分比会落到高度上。
+	 * `flex: 0 0 auto` 让宽度由 width 决定，也不参与任何拉伸。
 	 */
 	.easy-quiz-practice__toolbar {
 		flex: 0 0 auto;
 		width: 100%;
 		align-items: center;
-		margin-left: 0;
 	}
 
 	/* 工具条里的按钮横向铺开，点起来更像一排标签而不是小按钮 */
@@ -1218,10 +1238,21 @@
 		height: 20px;
 	}
 
-	/* 文件行：勾选框 + 文字一行，「设置刷题」按钮独占下一行 */
+	/*
+	 * 文件行：勾选框 + 文字一行，「设置刷题」按钮独占下一行。
+	 *
+	 * `__file-main` 的 `flex-basis` 必须压掉（基准 0）：flex 容器决定"这一项还放不
+	 * 放得下"时看的是**基准尺寸**，而它默认取内容宽度——文件路径长的一行会被判成
+	 * 放不下、整块换到第二行，于是同样结构的文件行有的缩进 12px、有的缩进 40px。
+	 * 基准归零后所有行都稳定地"勾选框 + 文字一行"。
+	 */
 	.easy-quiz-practice__file {
 		flex-wrap: wrap;
 		padding: var(--eqq-3);
+	}
+
+	.easy-quiz-practice__file-main {
+		flex: 1 1 0;
 	}
 
 	.easy-quiz-practice__file > button {
@@ -1235,7 +1266,13 @@
 		margin-top: 1px;
 	}
 
-	/* 底部操作条：说明一行，按钮一行 */
+	/*
+	 * 底部操作条：说明一行，按钮一行。
+	 *
+	 * 同样用 `width: 100%` 而不是 `flex-basis: 100%` 换行——`__footer-actions`
+	 * 在设置页与计数文字同一行，基准取内容宽度时会随文字长短时换时不换；
+	 * 固定按整行宽度判断，就永远是"计数一行、按钮一行"。
+	 */
 	.easy-quiz-practice__footer {
 		flex-direction: column;
 		align-items: stretch;
@@ -1243,6 +1280,7 @@
 	}
 
 	.easy-quiz-practice__footer-actions {
+		width: 100%;
 		margin-left: 0;
 	}
 
@@ -1333,11 +1371,17 @@
 		min-height: 44px;
 	}
 
-	/* 跳题输入框挪到第二行并靠右，避免把按钮挤成一条 */
+	/*
+	 * 跳题输入框：高度必须和同排的三个导航按钮一致。
+	 *
+	 * 这里是行方向的 `align-items: center`：输入框只要比按钮矮，上下就会各差
+	 * 一截，看起来像"没对齐"。导航按钮在窄屏是 44px，输入框也跟着取 44px；
+	 * 放不下时它会整块换到第二行并靠右，两种排布下都与按钮齐平。
+	 */
 	.easy-quiz-practice__jump {
 		flex: 0 0 auto;
 		margin-left: auto;
-		min-height: 40px;
+		min-height: 44px;
 	}
 }
 
