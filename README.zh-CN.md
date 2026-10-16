@@ -19,6 +19,7 @@
 | 笔记里到底要写什么？ | [一道题具体怎么写？](#一道题具体怎么写) |
 | 怎么刷完整个题库？ | [怎么刷完整个题库？](#怎么刷完整个题库) |
 | 怎么把题目关联回笔记？ | [怎么把题目关联到笔记？](#怎么把题目关联到笔记) |
+| 怎么在别的笔记里做某一道题？ | [怎么在别的笔记里嵌入一道题？](#怎么在别的笔记里嵌入一道题) |
 | 作答和成绩存在哪？ | [我的作答记录去哪了？](#我的作答记录去哪了) |
 | 界面能用中文吗？ | [界面能用中英哪种语言？](#界面能用中英哪种语言) |
 | 出问题了怎么办？ | [常见问题](#常见问题) |
@@ -240,7 +241,7 @@ vault 里的每个题库文件，按文件夹分组，每一行都带着它的�
 - **定量随机抽题**——打乱后取 N 道（填 0 或留空表示全部）。
 - **只刷错题**——只保留上次作答错误的题。
 - **题型**——任意子集；一个都不勾表示不限题型。
-- **打乱顺序**——打乱出题顺序与选择题的选项顺序。
+- **打乱顺序**——打乱出题顺序与选择题的选项顺序。选项顺序由这一轮的种子推出来，因此复盘答案、上一题/下一题来回切时都不会跳位，只有重新开始一轮才会重洗。判分按锚点，所以选项换位不会改变什么算对。
 
 ![刷题设置：抽题方式、题型、打乱顺序，以及开始按钮上方的计划题数](docs/assets/zh/window-picker.png)
 
@@ -272,6 +273,22 @@ vault 里的每个题库文件，按文件夹分组，每一行都带着它的�
 - 链接是可选的——没有链接的题目只是 `knowledgeLink: null`。
 
 完整的出题规范（包括五种题型与检查清单）见 [`skills/easyquiz-authoring/SKILL.md`](skills/easyquiz-authoring/SKILL.md)。它是写给编写或审阅题库的 AI agent 看的，其中的示例会被测试套件执行，所以文档里给出的骨架保证能解析通过。
+
+## 怎么在别的笔记里嵌入一道题？
+
+用题面标题引用一道题，它就会**就地渲染成一张真正能作答的题卡**：
+
+```markdown
+![[计算机网络/第三章#TCP 建立连接需要几次握手？]]
+```
+
+- 子路径写的是**题面标题文字，末尾的 `^[[[]]]` 知识点链接不要写进去**。
+- 记录仍然属于题库：在嵌入的题卡上作答，写回的还是那份题库笔记，与在题库笔记里作答完全一致；题卡上的**知识点**链接也仍然指向知识点笔记。
+- 适合拿已经写好的题拼出复习页、讲义或模拟卷——不必复制题目文字，也就不会出现多份内容各自跑偏。
+- 子路径对不上任何题面标题时，插件完全不动它，因此普通的 `![[某笔记#某一节]]` 与 Obsidian 原本的渲染一模一样。
+- 块引用（`![[题库#^block-id]]`）与脚注引用都不是题目，同样不接管。
+
+这里**刻意没有**直接用 Obsidian 自带的标题嵌入。原因有两个：普通嵌入会把选项列表和 `quiz` 数据块原文照搬出来，而不是题卡；而且 Obsidian 比对标题时会把标点归一化，末尾的 `^[[[知识点链接]]]` 会把这件事带偏，于是 `![[题库#标题]]` 匹配不上，静默退化成把**整份题库文件**渲染出来。EasyQuiz 自己识别这种嵌入，并把它换成题卡。
 
 ## 一道题具体怎么写？
 
@@ -312,7 +329,7 @@ tags:
 | `id` | 否 | 稳定标识符；省略时由标题文字推导（不含 `^[[[]]]` 知识点链接）。 |
 | `answer` | 视题型而定 | `single`：`c`；`multi`：`[a, b]`；`blank` 与 `match` 与 `essay`：不使用。 |
 | `blanks` | 否 | 每个空位的匹配规则：`strict` / `ignoreCase` / `regex` / `accept`。键是空位锚点。 |
-| `shuffle` | 否 | 打乱顺序。默认 `false`；`match` 始终打乱。 |
+| `shuffle` | 否 | 打乱**这道题**的选项顺序。默认 `false`；`match` 始终打乱。 |
 | `explanation` | 否 | 解析文字。也可以写成行内的 `> [!note]- 解析` 标注。 |
 | `score` | 否 | 分值，默认 1。 |
 | `stats` | 否 | **由插件写入**：`attempts` / `correct` / `lastResult` / `lastAt`。 |
@@ -500,6 +517,8 @@ src/main.ts          plugin entry: code-block processor, commands, view registra
 src/parser.ts        question-bank parser (pure logic, no obsidian import)
 src/types.ts         question model and parse-result types
 src/stem.ts          stem preprocessing: strips what the interactive controls render (pure logic)
+src/embed.ts         `![[bank#question]]` embed matching: src parsing, heading keys, question lookup (pure logic)
+src/plain-text.ts    display-only plain text for option/answer text in review notes (pure logic)
 src/grade.ts         grading for the five question types (pure logic)
 src/writeback.ts     record write-back: only stats/history/rev, validated before writing
 src/hash.ts          stem hash (rev change detection)
@@ -524,7 +543,7 @@ tools/readme-assets/ README 截图与 GIF 生成器（见上一节）
 
 ## 状态
 
-已实现并有测试覆盖：解析器、题干预处理、五种题型的判分、记录写回、连线板逻辑、题目模板及其插入定位、题卡界面（选项、可点击连线的多列配对及打乱、内嵌的点击输入式空位及其随内容变宽、问答题自评，以及可点击的知识点链接）、刷题窗口（带逐文件数据的题库列表，外加搜索、文件夹折叠与整组勾选；带题型/抽题筛选的刷题设置；以及一次一道题、在原处揭示答案并给出最终报告的一轮）、从文件浏览器菜单直接跳到某个题库刷题设置的入口，还有带语言设置的英文/中文界面。题库文件被修改会触发防抖的阅读视图刷新，并使窗口缓存的解析结果失效。
+已实现并有测试覆盖：解析器、题干预处理、五种题型的判分、记录写回、连线板逻辑、题目模板及其插入定位、题卡界面（选项按 Markdown 渲染、可点击连线的多列配对及打乱、内嵌的点击输入式空位及其随内容变宽、问答题自评，以及可点击的知识点链接）、刷题窗口（带逐文件数据的题库列表，外加搜索、文件夹折叠与整组勾选；带题型/抽题筛选与「打乱顺序」的刷题设置；以及一次一道题、在原处揭示答案并给出最终报告的一轮）、`![[题库#题目]]` 题目嵌入（在别的笔记里就地渲染成可作答的题卡），从文件浏览器菜单直接跳到某个题库刷题设置的入口，还有带语言设置的英文/中文界面。题库文件被修改会触发防抖的阅读视图刷新，并使窗口缓存的解析结果失效。
 
 尚未实现：把多次写回合并成一次文件写入，以及跨轮次的统计（错题本、图表）——目前只有窗口为单轮计算出的那些数据。
 
@@ -533,7 +552,7 @@ tools/readme-assets/ README 截图与 GIF 生成器（见上一节）
 ## 参与贡献
 
 - `main.ts` 只保留插件生命周期；功能逻辑放在 `src/` 下各自独立的模块里。
-- `parser` / `stem` / `grade` / `writeback` / `hash` / `insert` / `session` 不得导入 `obsidian`，这样它们才能在纯 Node 下保持可测试。
+- `parser` / `stem` / `embed` / `plain-text` / `grade` / `writeback` / `hash` / `insert` / `session` 不得导入 `obsidian`，这样它们才能在纯 Node 下保持可测试。
 - 绝不要硬编码界面文案：在 `src/i18n/en.ts` 里加键，在 `src/i18n/zh.ts` 里填写（两张表会互相做类型检查），然后通过 `t()` 读取。两张表里的 `{placeholders}` 要保持一致。
 - 改变用户可见的行为时，要同时更新 `README.md`、`README.zh-CN.md` **和** `skills/easyquiz-authoring/SKILL.md`——后者的示例会被 `npm test` 执行。如果改动在界面上看得见，还要运行 `npm run assets`，让图片保持准确。
 - 提交 PR 之前先运行 `npm run build`、`npm test` 和 `npm run lint`；CI 会跑这三项。

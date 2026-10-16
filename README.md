@@ -21,6 +21,7 @@ the questions, in your vault, under your own version control.
 | What exactly goes in the note? | [How exactly do I write a question?](#how-exactly-do-i-write-a-question) |
 | How do I practise a whole question bank? | [How do I practise a whole question bank?](#how-do-i-practise-a-whole-question-bank) |
 | How do I tie a question back to my notes? | [How do I tie a question to my notes?](#how-do-i-tie-a-question-to-my-notes) |
+| How do I practise one question inside another note? | [How do I embed a question in another note?](#how-do-i-embed-a-question-in-another-note) |
 | Where do my answers and scores end up? | [Where do my answers go?](#where-do-my-answers-go) |
 | Can I use it in English or Chinese? | [Can I use the interface in my language?](#can-i-use-the-interface-in-my-language) |
 | Something looks wrong — what now? | [Troubleshooting](#troubleshooting) |
@@ -262,7 +263,9 @@ Decide how to draw this round, and see **how many questions it will actually ask
 - **Random sample** — shuffle and take N (0 or empty = everything).
 - **Only wrong answers** — keep questions whose last attempt was wrong.
 - **Question types** — any subset; nothing ticked means all types.
-- **Shuffle** — randomise question order and choice-option order.
+- **Shuffle** — randomise question order and choice-option order. Option order is derived from the round's
+  seed, so it stays put while you review an answer or step between questions, and only re-shuffles when a
+  new round starts. Grading is by anchor, so a shuffled option never changes what counts as correct.
 
 ![Practice settings: how to draw, which types, and shuffle, with the planned count above the start button](docs/assets/en/window-picker.png)
 
@@ -307,6 +310,28 @@ The full authoring convention, including the five question types and the review 
 authoring or reviewing a bank, and its examples are executed by the test suite, so the documented
 skeletons are guaranteed to parse.
 
+## How do I embed a question in another note?
+
+Reference a question by its stem heading and it renders as a **real, answerable card** right there:
+
+```markdown
+![[计算机网络/第三章#TCP 建立连接需要几次握手？]]
+```
+
+- The subpath is the **stem heading text, with the trailing `^[[[]]]` knowledge link left out**.
+- Records still belong to the bank: answering in an embedded copy writes back to the bank note, exactly as
+  in reading view there. The **Knowledge point** link on the card still points at the knowledge note.
+- Use it to build a review note, a lecture handout, or a mock exam out of questions you already wrote —
+  without copying the question text (and therefore without letting the copies drift apart).
+- A subpath that does not name a stem heading is left completely alone, so ordinary embeds such as
+  `![[Some note#Some section]]` keep behaving exactly as Obsidian renders them.
+- Block references (`![[bank#^block-id]]`) and footnote references are not questions and are also left alone.
+
+This is deliberately **not** Obsidian's built-in heading embed. Two reasons: a plain embed would show the
+option list and the raw `quiz` data block instead of a card, and Obsidian's heading lookup normalises
+punctuation — which the trailing `^[[[knowledge link]]]` derails, making it silently fall back to rendering
+the **entire** bank file. EasyQuiz recognises the embed itself and replaces it with a card.
+
 ## How exactly do I write a question?
 
 ### Question bank file
@@ -348,7 +373,7 @@ single heading level per file (default H2).
 | `id` | no | Stable identifier; derived from the heading text (with the `^[[[]]]` knowledge link excluded) when omitted. |
 | `answer` | type-dependent | `single`: `c`; `multi`: `[a, b]`; `blank` and `match` and `essay`: not used. |
 | `blanks` | no | Per-blank matching rules: `strict` / `ignoreCase` / `regex` / `accept`. Keys are blank anchors. |
-| `shuffle` | no | Shuffle order. Default `false`; `match` is always shuffled. |
+| `shuffle` | no | Shuffle this question's choice options. Default `false`; `match` is always shuffled. |
 | `explanation` | no | Explanation text. May also be written inline as a `> [!note]- 解析` callout. |
 | `score` | no | Points, default 1. |
 | `stats` | no | **Written by the plugin**: `attempts` / `correct` / `lastResult` / `lastAt`. |
@@ -573,6 +598,8 @@ src/main.ts          plugin entry: code-block processor, commands, view registra
 src/parser.ts        question-bank parser (pure logic, no obsidian import)
 src/types.ts         question model and parse-result types
 src/stem.ts          stem preprocessing: strips what the interactive controls render (pure logic)
+src/embed.ts         `![[bank#question]]` embed matching: src parsing, heading keys, question lookup (pure logic)
+src/plain-text.ts    display-only plain text for option/answer text in review notes (pure logic)
 src/grade.ts         grading for the five question types (pure logic)
 src/writeback.ts     record write-back: only stats/history/rev, validated before writing
 src/hash.ts          stem hash (rev change detection)
@@ -604,13 +631,14 @@ matching table, and the `==answer==` text are stripped so that nothing is displa
 
 Implemented and covered by tests: the parser, stem preprocessing, grading for all five types, record
 write-back, matching-board logic, question templates with their insertion positioning, the practice card UI
-(choice options, click-to-connect multi-column matching with shuffling, inline click-to-type blanks that
-grow with their content, short-answer self-assessment, and the clickable knowledge-point link), the practice
-window (question-bank list with per-file data plus search, folder folding and per-folder selection;
-practice settings with type/sampling filters; and the one-question-at-a-time round with in-place answer
-reveal and a final report), the file-explorer menu entry that jumps straight to a bank's practice settings,
-and the English/Chinese interface with its language setting. Question-bank edits trigger a debounced
-reading-view refresh and invalidate the window's cached parsing.
+(choice options rendered as Markdown, click-to-connect multi-column matching with shuffling, inline
+click-to-type blanks that grow with their content, short-answer self-assessment, and the clickable
+knowledge-point link), the practice window (question-bank list with per-file data plus search, folder
+folding and per-folder selection; practice settings with type/sampling filters and **Shuffle**; and the
+one-question-at-a-time round with in-place answer reveal and a final report), the `![[bank#question]]`
+embed that renders an answerable card inside another note, the file-explorer menu entry that jumps straight
+to a bank's practice settings, and the English/Chinese interface with its language setting. Question-bank
+edits trigger a debounced reading-view refresh and invalidate the window's cached parsing.
 
 Not yet implemented: batching of multiple write-backs into one file write, and statistics that span rounds
 (a mistake book, charts) beyond what the window computes for a single round.
@@ -626,7 +654,7 @@ Not yet implemented: batching of multiple write-backs into one file write, and s
 ## Contributing
 
 - Keep `main.ts` to plugin lifecycle only; feature logic belongs in its own module under `src/`.
-- `parser` / `stem` / `grade` / `writeback` / `hash` / `insert` / `session` must not import `obsidian`, so
+- `parser` / `stem` / `embed` / `plain-text` / `grade` / `writeback` / `hash` / `insert` / `session` must not import `obsidian`, so
   they stay testable under plain Node.
 - Never hard-code interface text: add a key to `src/i18n/en.ts`, fill it in `src/i18n/zh.ts` (both tables
   are type-checked against each other), and read it through `t()`. Keep the same `{placeholders}` in both.

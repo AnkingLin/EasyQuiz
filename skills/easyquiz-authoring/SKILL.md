@@ -249,6 +249,35 @@ type: essay
 Always give `essay` questions an explicit `id`: they are the type most often reworded, and self-assessed
 records are the ones you least want to lose.
 
+## Choice options are Markdown
+
+An option's text is rendered as **Markdown**, so `**bold**`, `` `code` ``, `[[links]]`, and literal symbols
+such as `~` or `_` all survive. Write `H~2~O` and the card shows `H~2~O`; the answer anchor still decides
+grading, so option content never affects what counts as correct.
+
+Percentage signs, tildes, and underscores are common in real questions (`约 ~5%`, `snake_case`,
+`NH_3`). They are safe: only the anchors are stripped from the option text before rendering.
+
+`shuffle: true` on a question randomises **that question's option order**; the practice window's
+**Shuffle** setting does the same for a whole round. Grading is by anchor, so shuffling never changes which
+option is correct. Do not write `shuffle` expecting the *question* order to change — question order is
+decided in the practice window, not by the field.
+
+## Embedding a question in another note
+
+Any note can render one question as a live, answerable card by referencing its heading:
+
+```markdown
+![[计算机网络/传输层#TCP 建立连接需要几次握手？]]
+```
+
+- The subpath must be the **stem heading text with the trailing `^[[[]]]` knowledge link left out**.
+- Embedding changes nothing about records: answering writes back to the bank note, and the card's
+  knowledge-point link still points at the knowledge note.
+- A subpath that does not match a stem heading is ignored, so ordinary `![[note#section]]` embeds keep
+  Obsidian's normal behaviour.
+- Prefer embedding over copying: copies drift, embeds cannot.
+
 ## Fields you must never write by hand
 
 `stats` and `rev` (and `history`) are maintained by the plugin. Writing them yourself corrupts the
