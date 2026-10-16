@@ -221,8 +221,9 @@ async function buildCard(question: QuizQuestion, file: MemoryFile, options: Card
 		if ((options.select ?? []).length > 0) {
 			const rows = Array.from(card.querySelectorAll<HTMLElement>(".easy-quiz-card__option"));
 			for (const anchor of options.select ?? []) {
-				const index = question.options.findIndex((option) => option.anchor === anchor);
-				const row = rows[index];
+				// 按锚点找行，不能按解析顺序的下标找：选项顺序可能被 shuffle 打乱
+				// （题目的 `shuffle: true` 或窗口的「打乱顺序」都会），下标对不上就会点错行。
+				const row = rows.find((candidate) => candidate.dataset["anchor"] === anchor);
 				if (row === undefined) {
 					throw new Error(
 						`选项 ${anchor} 不存在：解析出 ${question.options.length} 个选项，渲染出 ${rows.length} 个选项行`

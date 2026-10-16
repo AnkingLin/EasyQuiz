@@ -10,11 +10,13 @@
 
 import { App, Component, MarkdownRenderer, MarkdownRenderChild, setIcon, TFile } from "obsidian";
 import { GradeResult, UserAnswer } from "./grade";
+import { contentHash } from "./hash";
 import { t } from "./i18n";
 import { typeLabel } from "./labels";
 import { createBoardState, splitConnection } from "./match-board";
 import { plainText } from "./plain-text";
 import { formatStats, QuizService, staleNote } from "./runtime";
+import { seededRandom } from "./session";
 import { BLANK_MARKER_PREFIX, formatStem } from "./stem";
 import { BlankMarkerMode, QuizQuestion } from "./types";
 
@@ -28,6 +30,18 @@ export interface CardContext {
 	blockLine?: number;
 	/** 空位标记样式，需与解析设置一致。 */
 	blankMarker: BlankMarkerMode;
+	/**
+	 * 打乱选择题的选项顺序（刷题窗口「打乱顺序」开关）。
+	 * 题目自己在数据块里写的 `shuffle: true` 同样生效，两者是「或」的关系。
+	 * 判分始终按锚点，因此选项换位不会改变对错（见 `grade.ts` 的 `gradeChoice`）。
+	 */
+	shuffleOptions?: boolean;
+	/**
+	 * 选项打乱用的会话种子。同一轮里保持不变，选项顺序因此在复盘、切题来回时不跳位。
+	 * 不传时按题目 id 派生，效果是「每道题有自己固定的一套顺序」——笔记里重渲染
+	 * 也不会让选项跳来跳去。
+	 */
+	shuffleSeed?: number;
 	/**
 	 * 承载 MarkdownRenderer 生命周期的 Component。
 	 * 不传时插件会自己创建一个 MarkdownRenderChild，并通过 `addRenderChild` 注册。
@@ -210,12 +224,17 @@ function renderDiagnostics(question: QuizQuestion, card: HTMLElement): void {
 /**
  * 渲染选择题的选项。
  *
- * **选项按 Markdown 渲染**（`option.markdown`，已去掉锚点）。早期版本直接把
- * `option.text` 当纯文本塞进 `textContent`，而 `text` 是给匹配用的规范化结果
- * （`normalizeText` 会删掉 `*` `_` `` ` `` `~`），于是 `H~2~O` 显示成 `H2O`、
- * `~5%` 显示成 `5%`。选项是作者写的 Markdown，就该按 Markdown 渲染。
- * 行内渲染（`MarkdownRenderer.render`）不会破坏选项行的排版，也不会渲染
- * 多行块结构——选项本身是单行列表项。
+ * 两个要点：
+ *
+ * 1. **选项按 Markdown 渲染**（`option.markdown`，已去掉锚点）。早期版本直接把
+ *    `option.text` 当纯文本塞进 `textContent`，而 `text` 是给匹配用的规范化结果
+ *    （`normalizeText` 会删掉 `*` `_` `` ` `` `~`），于是 `H~2~O` 显示成 `H2O`、
+ *    `~5%` 显示成 `5%`。选项是作者写的 Markdown，就该按 Markdown 渲染。
+ *    行内渲染（`MarkdownRenderer.render`）不会破坏选项行的排版，也不会渲染
+ *    多行块结构——选项本身是单行列表项。
+ *
+ * 2. **判分永远按锚点**，所以打乱选项位置不会影响对错：`renderChoice` 只改
+ *    DOM 顺序，提交的仍是 `{ anchors: [...] }`（见 `grade.ts` 的 `gradeChoice`）。
  */
 async function renderChoice(
 	question: QuizQuestion,
@@ -239,15 +258,24 @@ async function renderChoice(
 	// 复盘态：把正确选项标出来（提交后由 renderSubmit 统一驱动复盘）。
 	const review = ctx.reviewOnly === true;
 
-	for (const option of question.options) {
+	// 打乱选项位置：刷题窗口的「打乱顺序」开关，或题目自己写的 `shuffle: true`。
+	// 锚点跟着选项一起走，因此判分不受影响。
+	//
+	// 顺序必须**可复现**：一次渲染里随机的结果，在复盘重画、上一题/下一题来回切的时候
+	// 会重新洗一遍，用户刚记住的位置就变了，看起来像"答案认错了"。因此用内容哈希
+	// 派生的种子，同一道题永远得到同一套顺序（换一轮由 `shuffleSeed` 变）。
+	const randomize = ctx.shuffleOptions === true || question.shuffle;
+	const options = randomize ? shuffleOptionOrder(question, ctx.shuffleSeed) : question.options;
+
+	for (const option of options) {
 		// 用普通按钮而不是 <input type="radio">：避免表单控件在阅读视图里的原生行为
 		// （重渲染、键盘默认动作）干扰数据块渲染。
 		const row = list.createDiv({ cls: "easy-quiz-card__option" });
 		row.setAttribute("role", multi ? "checkbox" : "radio");
 		row.setAttribute("aria-checked", "false");
 		row.tabIndex = 0;
-		// 把锚点写到行上，外部工具（README 素材生成器、将来的自动化）即可按锚点定位选项，
-		// 不必依赖"第几个渲染出来的选项"。
+		// 把锚点写到行上：选项顺序可能被打乱，外部（README 素材生成器、将来的自动化）
+		// 因此不能靠"第几个渲染出来的选项"来定位，只能靠锚点。
 		if (option.anchor !== null) row.setAttribute("data-anchor", option.anchor);
 		if (option.anchor === null) row.addClass("is-disabled");
 		buttons.push({ anchor: option.anchor, el: row });
@@ -554,11 +582,13 @@ function createBoardColumn(grid: HTMLElement, name: string): HTMLElement {
 }
 
 /** 拆出 `左节点|右节点`。 */
-/** Fisher–Yates 打乱，返回新数组（不改动入参）。 */
-function shuffle<T>(items: readonly T[]): T[] {
+
+/** Fisher–Yates 打乱，返回新数组（不改动入参）；随机源可注入，便于复现。 */
+function shuffle<T>(items: readonly T[], random: () => number = Math.random): T[] {
 	const result = [...items];
 	for (let i = result.length - 1; i > 0; i--) {
-		const j = Math.floor(Math.random() * (i + 1));
+		// `random()` 返回 1 或非有限值时也要夹回合法下标，否则会写出越界位置。
+		const j = Math.min(Math.max(0, Math.floor(random() * (i + 1))), i);
 		const a = result[i];
 		const b = result[j];
 		if (a === undefined || b === undefined) continue;
@@ -566,6 +596,21 @@ function shuffle<T>(items: readonly T[]): T[] {
 		result[j] = a;
 	}
 	return result;
+}
+
+/**
+ * 打乱选择题选项，且结果**可复现**。
+ *
+ * 种子由「会话种子（可选）+ 题目 id + 题面哈希」派生：同一道题在同一轮里永远得到
+ * 同一套顺序，因此复盘重画、切题来回都不会跳位；换一轮或题目被改动后才会重洗。
+ * 用内容而不是 `Math.random` 做种，是为了让"打乱"看起来像一个稳定的呈现方式，
+ * 而不是每次重画都换一副牌——选项跳位最容易被误读成"答案认错了"。
+ */
+function shuffleOptionOrder(question: QuizQuestion, seed?: number): QuizQuestion["options"] {
+	const source = `${seed ?? 0}\u0000${question.id}\u0000${question.revNow}`;
+	// `contentHash` 是 8 位十六进制字符串，取它的 32 位整数值当种子。
+	const derived = Number.parseInt(contentHash(source), 16) >>> 0;
+	return shuffle(question.options, seededRandom(derived));
 }
 
 // ---------------------------------------------------------------------------

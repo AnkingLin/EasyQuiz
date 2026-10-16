@@ -313,6 +313,27 @@ export function shuffleWith<T>(items: readonly T[], random: () => number = Math.
 	return result;
 }
 
+/**
+ * 由种子派生的确定性随机源（xorshift32）。
+ *
+ * 用途：**选项顺序**要在同一轮刷题里保持稳定——复盘、切题再回来时选项不能跳位，
+ * 否则用户会以为"答案认错了"。用同一颗会话种子加题目 id 派生出的顺序每次都一样，
+ * 换一轮（种子变了）才会重新洗牌。`sampleWith` / `shuffleWith` 那种一次性的随机
+ * 直接吃 `Math.random`，不需要这个。
+ */
+export function seededRandom(seed: number): () => number {
+	// 种子为 0 时 xorshift 会一直停在 0，因此换一个非零初值。
+	let state = (seed >>> 0) || 0x9e3779b9;
+	return () => {
+		state ^= state << 13;
+		state >>>= 0;
+		state ^= state >>> 17;
+		state ^= state << 5;
+		state >>>= 0;
+		return state / 0x1_0000_0000;
+	};
+}
+
 /** 从数组里随机取不重复的 count 项（count <= 0 或超过长度时返回全部打乱后的数组）。 */
 export function sampleWith<T>(items: readonly T[], count: number, random: () => number = Math.random): T[] {
 	const shuffled = shuffleWith(items, random);

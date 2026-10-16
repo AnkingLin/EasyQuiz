@@ -123,6 +123,8 @@ export class PracticeView extends ItemView {
 	private finished = false;
 	/** 本轮至少写回过一次记录。 */
 	private dirty = false;
+	/** 本轮的选项打乱种子：同一轮里保持稳定，重开一轮才换。 */
+	private sessionSeed = 0;
 	/** 题卡自身的资源回收（例如配对题的尺寸观察者）。 */
 	private cardCleanups: (() => void)[] = [];
 
@@ -1063,6 +1065,8 @@ export class PracticeView extends ItemView {
 		this.reviewing = false;
 		this.finished = false;
 		this.dirty = false;
+		// 每一轮换一颗选项打乱种子：轮内复盘不跳位，重新开始一轮则重新洗牌。
+		this.sessionSeed = Math.floor(Math.random() * 0xffff_ffff);
 		this.page = 2;
 		await this.render();
 	}
@@ -1167,6 +1171,9 @@ export class PracticeView extends ItemView {
 			file,
 			el: host,
 			blankMarker: this.host.settings.blankMarker,
+			// 「打乱顺序」开关也作用于选择题的选项顺序（题目自己写的 shuffle: true 同样生效）。
+			shuffleOptions: this.config.shuffleOptions,
+			shuffleSeed: this.sessionSeed,
 			// 复盘态由窗口控制：提交后由 renderQuizCard 自己把答案摊在卡片里。
 			reviewOnly: this.reviewing,
 			onSubmitted: (result) => {
@@ -1327,6 +1334,8 @@ export class PracticeView extends ItemView {
 			this.results = this.queue.map(() => null);
 			this.reviewing = false;
 			this.finished = false;
+			// 新一轮：换一颗种子，选项重新洗一遍。
+			this.sessionSeed = Math.floor(Math.random() * 0xffff_ffff);
 			void this.render();
 		});
 
@@ -1342,6 +1351,8 @@ export class PracticeView extends ItemView {
 		this.results = this.queue.map(() => null);
 		this.reviewing = false;
 		this.finished = false;
+		// 新一轮：换一颗种子，选项重新洗一遍。
+		this.sessionSeed = Math.floor(Math.random() * 0xffff_ffff);
 		await this.render();
 	}
 }

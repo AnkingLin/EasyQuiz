@@ -812,6 +812,49 @@ test("打乱顺序：打开后仍是同一批题，只是顺序由随机决定",
 	assert(textOf(harness.view).includes("第 1 / 3 题"), "打乱顺序不改变题量");
 });
 
+/**
+ * 开关必须一路传到题卡：`shuffleOptions` 决定选择题的选项顺序，
+ * 只看题序打乱是不够的——README 与设置页的说明都承诺了「打乱选项顺序」。
+ */
+test("打乱顺序：开关会传给题卡，并带上一颗本轮固定的种子", async () => {
+	const harness = standardHarness();
+	await openPicker(harness, "题库/甲.md");
+
+	// 未打开时不应打乱选项。
+	await startSession(harness);
+	assertEqual(at(harness.renders, 0, "缺少渲染").ctx.shuffleOptions, false, "默认不打乱选项");
+
+	// 回到设置页打开开关，再开始一轮。
+	click(find(harness.view, "[data-action='goto-step'][data-step='1']", "缺少第二步导航"));
+	await flush();
+	driveToggle(harness.view, true);
+	await startSession(harness);
+
+	const ctx = at(harness.renders, 1, "缺少第二次渲染").ctx;
+	assertEqual(ctx.shuffleOptions, true, "开关应传给题卡");
+	assert(typeof ctx.shuffleSeed === "number", "应带上一颗种子，供选项顺序复现");
+});
+
+/**
+ * 同一轮里切题来回不能换一副牌：题卡每次渲染都拿到同一颗种子，
+ * 选项顺序因此稳定（否则用户刚记住的位置会变，看起来像"答案认错了"）。
+ */
+test("打乱顺序：同一轮内每一题拿到的种子相同", async () => {
+	const harness = standardHarness();
+	await openPicker(harness, "题库/甲.md");
+	driveToggle(harness.view, true);
+	await startSession(harness);
+
+	at(harness.renders, 0, "缺少渲染").ctx.onSubmitted?.({ correct: true, details: [], recorded: [] });
+	await flush();
+	click(find(harness.view, "button[data-action='next-question']", "缺少下一题按钮"));
+	await flush();
+
+	const first = at(harness.renders, 0, "缺少第一次渲染").ctx.shuffleSeed;
+	const second = at(harness.renders, 1, "缺少第二次渲染").ctx.shuffleSeed;
+	assertEqual(second, first, "同一轮内种子应保持一致");
+});
+
 test("顶部步骤往回走：从刷题页回到题库列表且统计仍然可用", async () => {
 	const harness = standardHarness();
 	await openPicker(harness, "题库/甲.md");
