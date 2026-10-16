@@ -50,17 +50,23 @@ export class MarkdownRenderChild extends Component {
 }
 
 export class MarkdownRenderer {
-	/** 记录 render 的调用参数，供测试断言 Component 一定被传入。 */
-	static calls: { component: unknown }[] = [];
+	/**
+	 * 记录 render 的调用参数。
+	 *
+	 * 除了 Component（用来钉住"必须传 Component，否则 Obsidian 会抛错"），这里也记下
+	 * 源码与目标元素：题面与选项都走这个入口，测试因此能直接断言"送进渲染器的是
+	 * 作者写的 Markdown 原文，而不是规范化后的纯文本"。
+	 */
+	static calls: { component: unknown; source: string; el: HTMLElement; path: string }[] = [];
 
 	static render(
 		_app: unknown,
-		_source: string,
-		_el: HTMLElement,
-		_path: string,
+		source: string,
+		el: HTMLElement,
+		path: string,
 		component: unknown
 	): Promise<void> {
-		MarkdownRenderer.calls.push({ component });
+		MarkdownRenderer.calls.push({ component, source, el, path });
 		return Promise.resolve();
 	}
 }

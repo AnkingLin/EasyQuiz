@@ -5,6 +5,7 @@
  */
 
 import { clauseSeparator, listSeparator, t } from "./i18n";
+import { plainText } from "./plain-text";
 import { BlankRule, QuizQuestion } from "./types";
 
 export type UserAnswer =
@@ -98,7 +99,9 @@ function gradeChoice(question: QuizQuestion, answer: { kind: "choice"; anchors: 
 function labelOf(question: QuizQuestion) {
 	return (anchor: string): string => {
 		const option = question.options.find((item) => item.anchor === anchor);
-		return option ? t("grade.anchorLabel", { anchor, text: option.text }) : anchor;
+		// 用显示用纯文本：`text` 为匹配做过规范化（删掉 `~` 等字符），
+		// 直接用在提示里会让用户看到与卡片上不一致的选项文字。
+		return option ? t("grade.anchorLabel", { anchor, text: plainText(option.markdown) }) : anchor;
 	};
 }
 

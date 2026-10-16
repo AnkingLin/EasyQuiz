@@ -191,6 +191,24 @@
 	overflow-wrap: anywhere;
 }
 
+/* 选项文本按 Markdown 渲染（见 view.ts 的 renderChoice）：单行内容也会被包进 <p>，
+   必须收掉段落外边距，否则每个选项都会被撑出多余的行高。 */
+.easy-quiz-card__option-text > p {
+	margin: 0;
+}
+
+/* 选项里一般只有行内内容；万一段落之间写了空行，也别把选项撑得太高。 */
+.easy-quiz-card__option-text > p + p {
+	margin-top: 0.35em;
+}
+
+/* 选项内的代码块属于异常写法（选项应当是单行），给它一个不撑破行的上限。 */
+.easy-quiz-card__option-text pre {
+	margin: 0;
+	max-width: 100%;
+	overflow-x: auto;
+}
+
 .easy-quiz-card__option:hover {
 	border-color: var(--background-modifier-border-focus, var(--interactive-accent));
 }

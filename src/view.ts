@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 刷题界面渲染：把一道题渲染成可交互的题卡。
  *
  * 设计约束（README §1.3）：实时预览下光标进入会把渲染结果还原为源码，
@@ -13,6 +13,7 @@ import { GradeResult, UserAnswer } from "./grade";
 import { t } from "./i18n";
 import { typeLabel } from "./labels";
 import { createBoardState, splitConnection } from "./match-board";
+import { plainText } from "./plain-text";
 import { formatStats, QuizService, staleNote } from "./runtime";
 import { BLANK_MARKER_PREFIX, formatStem } from "./stem";
 import { BlankMarkerMode, QuizQuestion } from "./types";
@@ -78,23 +79,26 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 	}
 
 	const bodyEl = card.createDiv({ cls: "easy-quiz-card__body" });
+
+	// Obsidian 要求传入承载生命周期的 Component：传 null 会直接抛错，
+	// 并使这一道题后续的渲染（包括题板）全部中断。
+	// 题面与选项都要渲染 Markdown，因此整张卡片共用一个，而不是各建一份。
+	let component = ctx.renderComponent;
+	if (component === undefined) {
+		const child = new MarkdownRenderChild(card);
+		ctx.addRenderChild?.(child);
+		component = child;
+	}
+
 	const stem = formatStem(question, ctx.blankMarker);
 	if (stem.trim() !== "") {
-		// Obsidian 要求传入承载生命周期的 Component：传 null 会直接抛错，
-		// 并使这一道题后续的渲染（包括题板）全部中断。
-		let component = ctx.renderComponent;
-		if (component === undefined) {
-			const child = new MarkdownRenderChild(bodyEl);
-			ctx.addRenderChild?.(child);
-			component = child;
-		}
 		await MarkdownRenderer.render(ctx.app, stem, bodyEl, ctx.file.path, component);
 	}
 
 	switch (question.type) {
 		case "single":
 		case "multi":
-			renderChoice(question, card, ctx);
+			await renderChoice(question, card, ctx, component);
 			break;
 		case "blank":
 			renderBlanks(question, bodyEl, card, ctx);
@@ -203,7 +207,22 @@ function renderDiagnostics(question: QuizQuestion, card: HTMLElement): void {
 // 选择题
 // ---------------------------------------------------------------------------
 
-function renderChoice(question: QuizQuestion, card: HTMLElement, ctx: CardContext): void {
+/**
+ * 渲染选择题的选项。
+ *
+ * **选项按 Markdown 渲染**（`option.markdown`，已去掉锚点）。早期版本直接把
+ * `option.text` 当纯文本塞进 `textContent`，而 `text` 是给匹配用的规范化结果
+ * （`normalizeText` 会删掉 `*` `_` `` ` `` `~`），于是 `H~2~O` 显示成 `H2O`、
+ * `~5%` 显示成 `5%`。选项是作者写的 Markdown，就该按 Markdown 渲染。
+ * 行内渲染（`MarkdownRenderer.render`）不会破坏选项行的排版，也不会渲染
+ * 多行块结构——选项本身是单行列表项。
+ */
+async function renderChoice(
+	question: QuizQuestion,
+	card: HTMLElement,
+	ctx: CardContext,
+	component: Component
+): Promise<void> {
 	const multi = question.type === "multi";
 	const selected = new Set<string>();
 	const list = card.createDiv({ cls: "easy-quiz-card__options" });
@@ -227,11 +246,25 @@ function renderChoice(question: QuizQuestion, card: HTMLElement, ctx: CardContex
 		row.setAttribute("role", multi ? "checkbox" : "radio");
 		row.setAttribute("aria-checked", "false");
 		row.tabIndex = 0;
+		// 把锚点写到行上，外部工具（README 素材生成器、将来的自动化）即可按锚点定位选项，
+		// 不必依赖"第几个渲染出来的选项"。
+		if (option.anchor !== null) row.setAttribute("data-anchor", option.anchor);
 		if (option.anchor === null) row.addClass("is-disabled");
 		buttons.push({ anchor: option.anchor, el: row });
 
 		// 选中标记由 CSS 的 ::before 绘制，无需额外的 DOM 节点。
-		row.createSpan({ cls: "easy-quiz-card__option-text", text: option.text });
+		const textEl = row.createSpan({ cls: "easy-quiz-card__option-text" });
+		// 选项文本是 Markdown（`**粗体**`、`H~2~O`、行内代码…），按 Markdown 渲染，
+		// 否则标记字符会连同内容一起被吃掉。渲染失败时退回纯文本，选项不会变空。
+		try {
+			await MarkdownRenderer.render(ctx.app, option.markdown, textEl, ctx.file.path, component);
+		} catch {
+			textEl.setText(option.text);
+		}
+		// 渲染后若只剩空白（例如选项内容恰好是空字符串），退回纯文本兜底。
+		if ((textEl.textContent ?? "").trim() === "" && option.markdown.trim() !== "") {
+			textEl.setText(option.markdown);
+		}
 
 		const toggle = () => {
 			const anchor = option.anchor;
@@ -665,7 +698,9 @@ function reviewAnswers(question: QuizQuestion): string[] {
 					: [question.answer];
 			return anchors.map((anchor) => {
 				const option = question.options.find((item) => item.anchor === anchor);
-				return option ? t("grade.anchorLabel", { anchor, text: option.text }) : anchor;
+				// 用 `plainText(markdown)` 而不是 `text`：后者为匹配做过规范化，
+				// 会把 `~` 之类的字符删掉，复盘里就会与卡片上看到的选项对不上。
+				return option ? t("grade.anchorLabel", { anchor, text: plainText(option.markdown) }) : anchor;
 			});
 		}
 		case "blank":
