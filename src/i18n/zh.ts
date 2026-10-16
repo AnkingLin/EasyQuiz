@@ -65,6 +65,7 @@ export const zh: MessageTable = {
 	"diagnostic.fileNotFound": "找不到文件，无法渲染题目。",
 	"diagnostic.parseFailed": "解析失败：{error}",
 	"diagnostic.blockOutsideStem": "这个数据块不属于任何题面标题，无法渲染为题目。请把它放到某个标题之下。",
+	"diagnostic.embedNotFound": "找到了这个标题，但没能从它下面解析出可作答的题目。请检查该题的数据块。",
 
 	// -----------------------------------------------------------------------
 	// 题卡

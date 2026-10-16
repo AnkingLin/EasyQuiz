@@ -75,6 +75,8 @@ export const en = {
 	"diagnostic.parseFailed": "Parse failed: {error}",
 	"diagnostic.blockOutsideStem":
 		"This block is not under any stem heading, so it cannot be rendered as a question. Move it under a heading.",
+	"diagnostic.embedNotFound":
+		"That heading exists, but no answerable question could be parsed from it. Check the question's data block.",
 
 	// -----------------------------------------------------------------------
 	// 题卡
