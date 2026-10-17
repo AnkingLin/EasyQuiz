@@ -1,6 +1,6 @@
 {
 	"name": "easy-quiz",
-	"version": "1.0.7",
+	"version": "1.0.8",
 	"description": "An Obsidian plugin for markdown-native quiz practice.",
 	"main": "main.js",
 	"type": "module",
