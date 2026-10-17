@@ -501,10 +501,14 @@
 	width: 100%;
 	max-width: 860px;
 	margin-inline: auto;
-	padding: var(--eqq-3) var(--eqq-3) var(--eqq-4);
+	/*
+	 * 底部不留 padding：页脚/导航是 `position: sticky; bottom: 0`，它停在
+	 * **滚动容器的 padding box** 内沿——容器有 16px 底部留白时，这条固定操作条
+	 * 就等于悬在离底边 16px 的地方，露出一条空隙。留白改由操作条自己的 padding
+	 * 承担（见 `__footer` / `__nav`），它就能真正贴住底边。
+	 */
+	padding: var(--eqq-3) var(--eqq-3) 0;
 	overflow-y: auto;
-	/* 滚动到底时不要让最后一行贴着边缘 */
-	scroll-padding-block-end: var(--eqq-4);
 }
 
 /* ------------------------------------------------------ 顶部步骤 */
@@ -870,6 +874,9 @@
 /*
  * 主要操作停在滚动容器底部：长列表滚到底就能直接出发，
  * 手机上也不必再翻回顶部找按钮。
+ *
+ * 上下都用 padding 而不是外边距：它贴在滚动容器内沿，底部的呼吸空间必须算进
+ * 自己的盒子里，否则滚动到底时按钮会紧贴窗口下边缘。
  */
 .easy-quiz-practice__footer {
 	display: flex;
@@ -880,7 +887,7 @@
 	bottom: 0;
 	z-index: 2;
 	margin-top: auto;
-	padding: var(--eqq-3) 0 0;
+	padding: var(--eqq-3) 0;
 	background: var(--background-primary);
 	border-top: 1px solid var(--eqq-line);
 }
@@ -937,26 +944,49 @@
 	background: transparent;
 }
 
-/* 三个设置行合成一张卡片：视觉上属于同一个「这一轮怎么抽题」的决定 */
+/*
+ * 三个设置行合成一张卡片：视觉上属于同一个「这一轮怎么抽题」的决定。
+ *
+ * 四周留白交给每一行自己的 padding（见下），面板不再额外加左右 padding：
+ * 之前面板给 16px、设置行给 0，行内的设置名因此被推到离卡片边缘 16px 的位置，
+ * 上半部分又完全没有内边距，看起来像是"内容贴着卡片上沿、只有下面留了空"。
+ */
 .easy-quiz-practice__panel {
 	display: flex;
 	flex-direction: column;
 	border: 1px solid var(--eqq-line);
 	border-radius: var(--eqq-r-md);
 	background: var(--eqq-surface);
-	padding: 0 var(--eqq-4);
+	padding: 0;
 }
 
-/* 设置行沿用 Obsidian 的 Setting 布局，只收紧间距并把相邻行用发丝线分开 */
+/*
+ * 设置行沿用 Obsidian 的 Setting 布局，但要压住它自己的盒子：
+ *
+ * Obsidian 的 `.setting-item` 是 `padding: 16px; margin-bottom: 8px`（1.11 起），
+ * 那个 8px 只加在下面——放进卡片里就成了"下面多一截、上面没有"的不对称留白，
+ * 左右还会叠上卡片自己的 padding。这里把外边距清零、改为上下对称的 padding，
+ * 相邻两行之间再靠发丝线分开；首尾行多留一点，避免文字贴着卡片圆角。
+ */
 .easy-quiz-practice__setting {
-	padding: var(--eqq-3) 0;
+	padding: var(--eqq-3) var(--eqq-4);
+	margin-bottom: 0;
 	/* Obsidian 自身给 .setting-item 加了上边框，这里改用下边框，避免出现双线 */
 	border-top: none;
 	border-bottom: 1px solid var(--eqq-line);
 }
 
+.easy-quiz-practice__setting:first-child {
+	border-top-left-radius: var(--eqq-r-md);
+	border-top-right-radius: var(--eqq-r-md);
+	padding-top: var(--eqq-4);
+}
+
 .easy-quiz-practice__setting:last-child {
 	border-bottom: none;
+	border-bottom-left-radius: var(--eqq-r-md);
+	border-bottom-right-radius: var(--eqq-r-md);
+	padding-bottom: var(--eqq-4);
 }
 
 .easy-quiz-practice__modes,
@@ -1062,7 +1092,8 @@
 	position: sticky;
 	bottom: 0;
 	z-index: 2;
-	padding: var(--eqq-3) 0 var(--eqq-2);
+	/* 同 `__footer`：底部留白算进自己的盒子，才能真正贴住底边 */
+	padding: var(--eqq-3) 0;
 	background: var(--background-primary);
 }
 
@@ -1217,7 +1248,7 @@
 @media (max-width: 640px) {
 	.easy-quiz-practice {
 		gap: var(--eqq-2);
-		padding: var(--eqq-2) var(--eqq-2) var(--eqq-3);
+		padding: var(--eqq-2) var(--eqq-2) 0;
 	}
 
 	.easy-quiz-card {
@@ -1324,14 +1355,20 @@
 	}
 
 	/* 设置行改成上下排列，控件占满整行，不再和说明文字抢宽度 */
-	.easy-quiz-practice__panel {
-		padding: 0 var(--eqq-3);
-	}
-
 	.easy-quiz-practice__setting {
 		flex-direction: column;
 		align-items: stretch;
 		gap: var(--eqq-2);
+		/* 窄屏窗口本身只有 8px 外边距，行内留白收到 12px 才不会显得挤 */
+		padding: var(--eqq-3);
+	}
+
+	.easy-quiz-practice__setting:first-child {
+		padding-top: var(--eqq-4);
+	}
+
+	.easy-quiz-practice__setting:last-child {
+		padding-bottom: var(--eqq-4);
 	}
 
 	.easy-quiz-practice__setting .setting-item-info {

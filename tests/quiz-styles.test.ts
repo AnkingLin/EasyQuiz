@@ -34,6 +34,16 @@ function anyRuleBlock(css: string, selector: string): string {
 	return css.slice(open + 1, close);
 }
 
+/** 取出某个选择器**最后一处**声明块（选择器可能在变量表里也出现过一次）。 */
+function lastRuleBlock(css: string, selector: string): string {
+	const start = css.lastIndexOf(`\n${selector} {`);
+	assert(start >= 0, `样式表里找不到规则 ${selector}`);
+	const open = css.indexOf("{", start);
+	const close = css.indexOf("}", open);
+	assert(open > 0 && close > open, `${selector} 的规则块不完整`);
+	return css.slice(open + 1, close);
+}
+
 /** 所有使用了「实心 success 底色」的地方：这个写法在默认主题下必然导致文字同色。 */
 function solidSuccessBackgrounds(css: string): string[] {
 	const offenders: string[] = [];
@@ -176,7 +186,85 @@ test("样式：窄屏文件行的正文基准归零（否则长短路径缩进�
 	);
 });
 
-/** 跳题输入框要和同排的导航按钮一样高，否则行内居中会让它上下各差一截。 */
+/** 取出一段声明里 `padding` 的简写值；没有声明就直接报错。 */
+function paddingValue(block: string, selector: string): string {
+	const match = /padding:\s*([^;]+);/.exec(block);
+	// 不用 assert：TS 无法从它推断出非空，后面的下标会报"可能为 undefined"。
+	if (match === null || match[1] === undefined) {
+		throw new Error(`${selector} 应显式声明 padding，实际：${block.trim()}`);
+	}
+	return match[1].trim();
+}
+
+/** 按空白拆出简写值里的每一段（`noUncheckedIndexedAccess` 下取值要显式判空）。 */
+function paddingParts(block: string, selector: string): string[] {
+	return paddingValue(block, selector).split(/\s+/);
+}
+
+/**
+ * 贴在滚动容器底部的操作条必须真正贴住底边。
+ *
+ * `.easy-quiz-practice` 自己就是滚动容器，而 `position: sticky; bottom: 0` 停的是
+ * **容器的 padding box**：容器只要留了底部 padding，页脚/导航就会悬在离底边
+ * 那个距离的位置，露出一条空隙（sticky 的两个方向都会受影响，滚到底最明显）。
+ * 因此底部留白必须由操作条自己的 padding 承担。这里是纯排版问题，jsdom 没有
+ * 布局引擎量不出来，只能对声明做断言。
+ */
+test("样式：滚动容器不留底部 padding（否则底部操作条悬空）", () => {
+	// 变量表里也有一份 `.easy-quiz-practice {`，取最后一处（真正的容器规则）
+	const parts = paddingParts(lastRuleBlock(styles, ".easy-quiz-practice"), ".easy-quiz-practice");
+	// 1 值 = 四边相同；2~3 值 = 最后一个含底部；4 值 = 第三个就是底部
+	const bottom = parts.length === 1 ? parts[0] : parts.length >= 3 ? (parts[2] ?? "0") : "0";
+	assert(
+		bottom !== undefined && /^0(px)?$/.test(bottom),
+		`滚动容器的 padding-bottom 必须是 0（当前 ${String(bottom)}）：sticky 页脚会停在 padding box 内沿，露出一条空隙`
+	);
+
+	for (const selector of [".easy-quiz-practice__footer", ".easy-quiz-practice__nav"]) {
+		const block = anyRuleBlock(styles, selector);
+		assert(/position:\s*sticky/.test(block), `${selector} 应仍是 sticky 定位，实际：${block.trim()}`);
+		assert(/bottom:\s*0/.test(block), `${selector} 应停在底部（bottom: 0），实际：${block.trim()}`);
+		assert(
+			paddingParts(block, selector).length >= 2,
+			`${selector} 的 padding 应同时给出上下值（底部留白算进自己的盒子），实际：${paddingValue(block, selector)}`
+		);
+	}
+});
+
+/**
+ * 设置行放进卡片后不能再叠 Obsidian 自己的盒模型。
+ *
+ * Obsidian 1.11 起 `.setting-item` 是 `padding: 16px; margin-bottom: 8px`：
+ * 那个 8px 只加在下面，放进卡片里就成了"下面多一截、上面没有"的不对称留白；
+ * 16px 的 padding 又会和卡片自己的 padding 叠在一起，留白过厚。
+ * 这里断言插件把外边距清零、改用上下对称的 padding，并把左右留白收到一行之内。
+ */
+test("样式：设置行不再保留 Obsidian 的 margin-bottom（会变成不对称留白）", () => {
+	const block = anyRuleBlock(styles, ".easy-quiz-practice__setting");
+	assert(
+		/margin-bottom:\s*0/.test(block),
+		`设置行必须压掉 Obsidian 的 margin-bottom: 8px，否则只有下面有留白，实际：${block.trim()}`
+	);
+	const parts = paddingParts(block, ".easy-quiz-practice__setting");
+	const [top] = parts;
+	assert(
+		parts.length >= 2,
+		`设置行的 padding 应写成「上下 左右」两值形式，留白才对称，实际：${parts.join(" ")}`
+	);
+	assert(top !== undefined && top !== "0", `设置行的上下 padding 不能是 0，实际：${parts.join(" ")}`);
+
+	// 面板不再重复给左右留白，否则设置内容会被推得离卡片边缘过远
+	const panel = anyRuleBlock(styles, ".easy-quiz-practice__panel");
+	const panelPadding = /padding:\s*([^;]+);/.exec(panel);
+	if (panelPadding !== null && panelPadding[1] !== undefined) {
+		const value = panelPadding[1].trim();
+		assert(
+			/^0(px)?$/.test(value),
+			`设置面板不应再叠加 padding（留白交给每一行），实际：${value}`
+		);
+	}
+});
+
 test("样式：窄屏跳题输入框与导航按钮等高（44px）", () => {
 	const mobile = mobileBlock(styles);
 	const nav = nestedRuleBlock(mobile, ".easy-quiz-practice__nav button");

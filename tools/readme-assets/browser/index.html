@@ -3,10 +3,12 @@
 <head>
 <meta charset="utf-8" />
 <title>EasyQuiz README asset generator</title>
-<!-- 插件自己的样式表：截图必须用它，否则截的不是真实界面 -->
-<link rel="stylesheet" href="../../../styles.css" />
 <!-- Obsidian 默认主题的近似实现（按钮、setting 行、Markdown 排版） -->
 <link rel="stylesheet" href="../theme.css" />
+<!-- 插件自己的样式表：截图必须用它，否则截的不是真实界面。
+     必须排在主题之后——Obsidian 里插件样式就是在 app.css 之后加载的，
+     顺序反过来会让 theme.css 里的近似规则盖掉插件的真实规则。 -->
+<link rel="stylesheet" href="../../../styles.css" />
 <!-- 外壳：阅读视图笔记、侧边栏窗口、对话框 -->
 <link rel="stylesheet" href="../shell.css" />
 </head>
