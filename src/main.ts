@@ -8,11 +8,13 @@ import {
 	Menu,
 	moment,
 	Notice,
+	Platform,
 	Plugin,
 	PluginSettingTab,
 	Setting,
 	TFile,
 } from "obsidian";
+import type { WorkspaceLeaf } from "obsidian";
 import { BlankMarkerMode, ParsedQuizFile, QuizQuestion } from "./types";
 import { DEFAULT_SETTINGS, QuizService, RuntimeSettings } from "./runtime";
 import {
@@ -27,6 +29,8 @@ import { LanguagePreference, LANGUAGE_PREFERENCES, setLanguage, resolveLanguage,
 import { renderQuizCard } from "./view";
 import { insertQuestionAtCursor, InsertQuestionOptions } from "./insert-modal";
 import { registerFileMenu } from "./file-menu";
+import { placementOf } from "./practice-placement";
+import type { PracticePlacement } from "./practice-placement";
 import { PRACTICE_VIEW_TYPE, PracticeView } from "./practice-view";
 
 /**
@@ -116,12 +120,31 @@ export default class EasyQuizPlugin extends Plugin {
 			id: "open-practice-window",
 			name: t("command.openPractice"),
 			callback: () => {
-				void this.openPracticeView();
+				void this.openPracticeView("sidebar");
+			},
+		});
+
+		this.addCommand({
+			id: "open-practice-tab",
+			name: t("command.openPracticeTab"),
+			callback: () => {
+				void this.openPracticeView("tab");
+			},
+		});
+
+		// 弹出窗口只有桌面端有；移动端干脆不把这个命令注册出来，免得点了没反应。
+		this.addCommand({
+			id: "open-practice-popout",
+			name: t("command.openPracticePopout"),
+			checkCallback: (checking) => {
+				if (Platform.isMobileApp) return false;
+				if (!checking) void this.openPracticeView("popout");
+				return true;
 			},
 		});
 
 		this.addRibbonIcon("graduation-cap", t("command.openPractice"), () => {
-			void this.openPracticeView();
+			void this.openPracticeView("sidebar");
 		});
 
 		this.addCommand({
@@ -176,29 +199,49 @@ export default class EasyQuizPlugin extends Plugin {
 	/**
 	 * 打开（或聚焦）刷题窗口。
 	 *
-	 * Obsidian 没有"单例视图"的开关：先找已经打开的同类型叶子复用，
-	 * 没有才在右侧新建一个，避免命令连点开出好几个窗口。
+	 * `where` 决定开在哪里：
+	 *  - `sidebar`：右侧边栏，命令与丝带图标的默认位置；
+	 *  - `tab`：主区域的新标签页；
+	 *  - `popout`：独立的弹出窗口（仅桌面端）。
+	 *
+	 * Obsidian 没有"单例视图"的开关：同一个位置只留一个刷题视图——已经开着就地
+	 * 切回来，避免连点命令开出好几个。不同位置互不影响，因此可以同时开着一个
+	 * 侧边栏窗和一个标签页。
 	 * 这里刻意不调用 `revealLeaf`（Obsidian 1.7.2 起才有），
 	 * 以保持 manifest 里声明的最低版本；`active: true` 已能让叶子显示出来。
 	 */
-	private async openPracticeView(): Promise<void> {
-		const existing = this.app.workspace.getLeavesOfType(PRACTICE_VIEW_TYPE);
-		const leaf = existing[0] ?? this.app.workspace.getRightLeaf(false);
+	private async openPracticeView(where: PracticePlacement = "sidebar"): Promise<void> {
+		const leaf = this.practiceLeafAt(where) ?? this.newPracticeLeaf(where);
 		if (leaf === null) return;
 		await leaf.setViewState({ type: PRACTICE_VIEW_TYPE, active: true });
 		const view = leaf.view;
 		if (view instanceof PracticeView) await view.activate();
 	}
 
+	/** 找已经开在指定位置的刷题视图；没有就返回 null。 */
+	private practiceLeafAt(where: PracticePlacement): WorkspaceLeaf | null {
+		for (const leaf of this.app.workspace.getLeavesOfType(PRACTICE_VIEW_TYPE)) {
+			if (placementOf(leaf.view.containerEl, document) === where) return leaf;
+		}
+		return null;
+	}
+
+	/** 在指定位置新建一个刷题视图的叶子。 */
+	private newPracticeLeaf(where: PracticePlacement): WorkspaceLeaf | null {
+		const workspace = this.app.workspace;
+		if (where === "sidebar") return workspace.getRightLeaf(false);
+		return workspace.getLeaf(where === "popout" ? "window" : "tab");
+	}
+
 	/**
 	 * 打开刷题窗口并直接进入某个题库的刷题设置页（文件菜单的入口）。
 	 *
-	 * 复用 `openPracticeView` 的"单例窗口"逻辑：已经有窗口就地切换页面，
-	 * 没有才新建一个，避免从文件菜单点几下就开出好几个窗口。
+	 * 复用任一个已经打开的刷题视图：已经有窗口就地切换页面，
+	 * 没有才在右侧边栏新建一个，避免从文件菜单点几下就开出好几个窗口。
 	 */
 	async openPracticeFor(path: string): Promise<void> {
 		const existing = this.app.workspace.getLeavesOfType(PRACTICE_VIEW_TYPE);
-		const leaf = existing[0] ?? this.app.workspace.getRightLeaf(false);
+		const leaf = existing[0] ?? this.newPracticeLeaf("sidebar");
 		if (leaf === null) return;
 		await leaf.setViewState({ type: PRACTICE_VIEW_TYPE, active: true });
 		const view = leaf.view;

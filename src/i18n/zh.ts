@@ -51,6 +51,8 @@ export const zh: MessageTable = {
 	"command.refresh": "刷新题库视图",
 	"command.validate": "校验当前题库文件",
 	"command.openPractice": "打开刷题窗口",
+	"command.openPracticeTab": "在新标签页打开刷题窗口",
+	"command.openPracticePopout": "在新窗口打开刷题窗口",
 	"command.insert": "插入题目",
 	"menu.insert": "插入题目",
 	"fileMenu.practice": "刷这个题库",

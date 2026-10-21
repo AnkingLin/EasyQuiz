@@ -232,8 +232,10 @@ diagnostic card that names the line and the fix:
 
 ## How do I practise a whole question bank?
 
-**Open practice window** (or the ribbon icon) opens a sidebar with three pages, so a whole session never
-leaves it.
+**Open practice window** (or the ribbon icon) opens the window in the right sidebar, with three pages, so a
+whole session never leaves it. The same window can also be opened in a main-area tab or in its own window —
+see **Open practice window in a new tab** / **Open practice window in a new window** in the command palette.
+Each location keeps one window of its own, so a sidebar session and a tab session can run side by side.
 
 ### 1. Question-bank list
 
@@ -495,7 +497,9 @@ the setting.
 
 | Command | What it does |
 |---|---|
-| Open practice window | Opens the practice window (also on the ribbon icon) |
+| Open practice window | Opens the practice window in the right sidebar (also on the ribbon icon) |
+| Open practice window in a new tab | Opens the practice window as a main-area tab |
+| Open practice window in a new window | Opens the practice window in its own window (desktop only) |
 | Insert question | Opens a dialog to build a question skeleton and inserts it at the cursor |
 | Validate current question bank | Reports how many questions are answerable vs. need fixing |
 | Refresh quiz view | Forces the reading view to re-render the quiz blocks (also happens after edits) |

@@ -58,6 +58,8 @@ export const en = {
 	"command.refresh": "Refresh quiz view",
 	"command.validate": "Validate current question bank",
 	"command.openPractice": "Open practice window",
+	"command.openPracticeTab": "Open practice window in a new tab",
+	"command.openPracticePopout": "Open practice window in a new window",
 	"command.insert": "Insert question",
 	"menu.insert": "Insert question",
 	"fileMenu.practice": "Practise this question bank",
