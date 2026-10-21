@@ -502,12 +502,13 @@
 	max-width: 860px;
 	margin-inline: auto;
 	/*
-	 * 底部不留 padding：页脚/导航是 `position: sticky; bottom: 0`，它停在
-	 * **滚动容器的 padding box** 内沿——容器有 16px 底部留白时，这条固定操作条
-	 * 就等于悬在离底边 16px 的地方，露出一条空隙。留白改由操作条自己的 padding
-	 * 承担（见 `__footer` / `__nav`），它就能真正贴住底边。
+	 * 上下都不留 padding：页脚/导航与刷题页的进度条都是 `position: sticky`，
+	 * 它们停的是**滚动容器的 padding box** 内沿——容器一旦留了上下留白，这两条
+	 * 固定操作条就等于悬在离边沿那一截的地方，露出一条空隙，滚动时内容还会从
+	 * 缝里穿过去。留白改由操作条自己（`__footer` / `__nav`）和首个元素
+	 * （`__steps`）承担，它们才能真正贴住边沿。
 	 */
-	padding: var(--eqq-3) var(--eqq-3) 0;
+	padding: 0 var(--eqq-3) 0;
 	overflow-y: auto;
 }
 
@@ -518,6 +519,12 @@
 	display: flex;
 	gap: var(--eqq-1);
 	flex: none;
+	/*
+	 * 窗口顶部的留白挂在这里而不是容器上（见 `.easy-quiz-practice` 的注释）：
+	 * 它是首个元素，随内容一起滚走，不会像容器 padding 那样把吸顶的进度条
+	 * 永久顶下来。
+	 */
+	margin-top: var(--eqq-3);
 	padding: var(--eqq-1);
 	border-radius: var(--eqq-r-pill);
 	background: var(--background-secondary);
@@ -1248,7 +1255,12 @@
 @media (max-width: 640px) {
 	.easy-quiz-practice {
 		gap: var(--eqq-2);
-		padding: var(--eqq-2) var(--eqq-2) 0;
+		padding: 0 var(--eqq-2) 0;
+	}
+
+	/* 上下留白同上：交给首个元素与底部的操作条，容器自己不留 */
+	.easy-quiz-practice__steps {
+		margin-top: var(--eqq-2);
 	}
 
 	.easy-quiz-card {

@@ -108,7 +108,8 @@
 	height: auto;
 	max-height: none;
 	overflow: visible;
-	padding: 12px;
+	/* 顶部留白由首个元素（__steps）自己承担，外壳只补左右与底部，别叠成两层 */
+	padding: 0 12px 12px;
 }
 
 /* 生成器给窗口根元素加的标记：窗口自身的 padding 与外框留白重复，去掉它 */

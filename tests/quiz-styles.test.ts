@@ -202,23 +202,41 @@ function paddingParts(block: string, selector: string): string[] {
 }
 
 /**
- * 贴在滚动容器底部的操作条必须真正贴住底边。
+ * 贴在滚动容器边沿的操作条必须真正贴住边沿——上下都是。
  *
- * `.easy-quiz-practice` 自己就是滚动容器，而 `position: sticky; bottom: 0` 停的是
- * **容器的 padding box**：容器只要留了底部 padding，页脚/导航就会悬在离底边
- * 那个距离的位置，露出一条空隙（sticky 的两个方向都会受影响，滚到底最明显）。
- * 因此底部留白必须由操作条自己的 padding 承担。这里是纯排版问题，jsdom 没有
- * 布局引擎量不出来，只能对声明做断言。
+ * `.easy-quiz-practice` 自己就是滚动容器，而 `position: sticky` 停的是
+ * **容器的 padding box**：容器只要留了某一边的 padding，吸在那一边的操作条
+ * 就会悬在离边沿那个距离的位置，露出一条空隙，滚动时内容还会从缝里穿过去。
+ * 因此上下留白都不能挂在容器上，要由操作条自己的 padding（页脚/导航）或
+ * 首个元素（`__steps`）承担。这里是纯排版问题，jsdom 没有布局引擎量不出来，
+ * 只能对声明做断言。
  */
-test("样式：滚动容器不留底部 padding（否则底部操作条悬空）", () => {
+test("样式：滚动容器上下都不留 padding（否则吸底/吸顶条悬空）", () => {
 	// 变量表里也有一份 `.easy-quiz-practice {`，取最后一处（真正的容器规则）
 	const parts = paddingParts(lastRuleBlock(styles, ".easy-quiz-practice"), ".easy-quiz-practice");
-	// 1 值 = 四边相同；2~3 值 = 最后一个含底部；4 值 = 第三个就是底部
+	// 1 值 = 四边相同；2~3 值 = 最后一个含底部；4 值 = 第一/第三个分别是上/下
+	const top = parts.length === 1 ? parts[0] : (parts[0] ?? "");
 	const bottom = parts.length === 1 ? parts[0] : parts.length >= 3 ? (parts[2] ?? "0") : "0";
+	assert(
+		top !== undefined && /^0(px)?$/.test(top),
+		`滚动容器的 padding-top 必须是 0（当前 ${String(top)}）：吸顶的进度条会停在 padding box 内沿，露出一条空隙`
+	);
 	assert(
 		bottom !== undefined && /^0(px)?$/.test(bottom),
 		`滚动容器的 padding-bottom 必须是 0（当前 ${String(bottom)}）：sticky 页脚会停在 padding box 内沿，露出一条空隙`
 	);
+
+	// 顶部留白改由首个元素承担：它随内容滚走，不会把吸顶条顶下来
+	const steps = anyRuleBlock(styles, ".easy-quiz-practice__steps");
+	assert(
+		/margin-top:\s*var\(--eqq-\d\)/.test(steps),
+		`窗口顶部的留白应由 __steps 自己的 margin-top 承担，实际：${steps.trim()}`
+	);
+
+	// 吸顶的进度条与吸底的两条操作条
+	const progress = anyRuleBlock(styles, ".easy-quiz-practice__progress");
+	assert(/position:\s*sticky/.test(progress), `__progress 应仍是 sticky 定位，实际：${progress.trim()}`);
+	assert(/top:\s*0/.test(progress), `__progress 应停在顶部（top: 0），实际：${progress.trim()}`);
 
 	for (const selector of [".easy-quiz-practice__footer", ".easy-quiz-practice__nav"]) {
 		const block = anyRuleBlock(styles, selector);
