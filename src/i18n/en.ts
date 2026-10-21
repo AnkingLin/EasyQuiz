@@ -71,6 +71,19 @@ export const en = {
 		"Checked {total}: {ok} answerable, {bad} need fixing; file-level warnings: {count}.",
 
 	// -----------------------------------------------------------------------
+	// 更新内容
+	// -----------------------------------------------------------------------
+	"whatsNew.title": "What's new in EasyQuiz {version}",
+	"whatsNew.intro": "Highlights in this update:",
+	"whatsNew.close": "Got it",
+	"whatsNew.practicePlacement":
+		"Open the practice window in a main-area tab, or in its own window on desktop, not just the sidebar; each location keeps its own round.",
+	"whatsNew.progressBanner":
+		"The progress banner stays pinned to the top of the practice page while the questions scroll.",
+	"whatsNew.optionAnchors":
+		"Choice-option anchors are optional: with none at all, options are numbered in order; with only some, the unanchored options are hidden.",
+
+	// -----------------------------------------------------------------------
 	// 诊断卡片（数据块渲染）
 	// -----------------------------------------------------------------------
 	"diagnostic.fileNotFound": "File not found; the question cannot be rendered.",
@@ -262,7 +275,6 @@ export const en = {
 	"parser.typeInvalid": "`type: {value}` is not valid. Valid values: {types}.",
 	"parser.columnUnnamed": "Column {index}",
 	"parser.columnGrouped": "{base} (group {count})",
-	"parser.optionUnanchored": "Option \"{text}\" has no anchor (`^id`), so it cannot be used to record answers.",
 	"parser.anchorDuplicate": "Anchor `^{anchor}` is duplicated; grading will be unstable.",
 	"parser.answerIgnoredMatch": "A matching question takes its answer from the table's row order; the `answer` field was ignored.",
 	"parser.answerIgnoredEssay": "A short-answer question has no fixed answer; the `answer` field was ignored.",

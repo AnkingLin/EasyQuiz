@@ -22,6 +22,7 @@
 | 怎么在别的笔记里做某一道题？ | [怎么在别的笔记里嵌入一道题？](#怎么在别的笔记里嵌入一道题) |
 | 作答和成绩存在哪？ | [我的作答记录去哪了？](#我的作答记录去哪了) |
 | 界面能用中文吗？ | [界面能用中英哪种语言？](#界面能用中英哪种语言) |
+| 最近更新了什么？ | [更新内容](#更新内容) |
 | 出问题了怎么办？ | [常见问题](#常见问题) |
 | 怎么构建、怎么贡献？ | [开发](#开发) |
 
@@ -71,7 +72,7 @@
 
 ### 单选
 
-选项就是原生列表。答案绑定的是**锚点**（`^a`）而不是位置，所以插入、删除或重排选项永远不会让记录错位。
+选项就是原生列表。答案绑定的是**锚点**（`^a`）而不是位置，所以自己写了锚点的选项在插入、删除或重排之后，记录仍然不会错位。锚点可以省略：一个都没写时，会按从上到下的顺序自动编号为 `a`、`b`、`c`……，因此 `answer: c` 仍然指第三个选项；只写了一部分时，没写锚点的选项不会出现在题卡里，只有写了锚点的选项能作答。
 
 ````markdown
 ## TCP 建立连接需要几次握手？ ^[[[计算机网络/传输层#TCP 三次握手]]]
@@ -99,7 +100,7 @@ explanation: 三次握手用于同步双方的初始序列号。
 
 ### 多选
 
-形状相同，只是 `answer` 变成列表。选对一部分也算错，复盘会把所有正确锚点列出来，方便对照漏了哪个：
+形状相同，只是 `answer` 变成列表；锚点规则与单选相同。选对一部分也算错，复盘会把所有正确锚点列出来，方便对照漏了哪个：
 
 ````markdown
 ## 下列哪些属于传输层协议？ ^[[[计算机网络/传输层#传输层协议]]]
@@ -211,7 +212,8 @@ type: essay
 | `type: single`/`multi` 但没有列表 | 结构不符；不可作答 |
 | `type: match` 但没有表格，或列数少于 2 | 结构不符 |
 | `type: blank` 但没有 `==…==` | 结构不符 |
-| 选项缺少锚点，或锚点重复 | 不可作答 |
+| 部分选项没有锚点 | 没锚点的选项从题卡隐藏，其余选项照常作答 |
+| 选项锚点重复 | 不可作答 |
 | `answer` 指向不存在的锚点 | 不可作答 |
 | YAML 解析错误 | 降级；显示原始错误 |
 
@@ -348,6 +350,8 @@ tags:
 The minimum TCP header length is ==20== ^b1 bytes.
 ````
 
+选择题选项的锚点可以省略：一个都没写时按位置自动编号为 `a`、`b`、`c`……；只写了一部分时，没写锚点的选项会从题卡隐藏。如果选项可能被重排、记录又必须跟着同一个选项走，就写显式锚点。
+
 配对表格**不**使用锚点：表格单元格里的 `^id` 会被当作普通文字，行级锚点也不支持。配对题的记录以行内容哈希加行号作为键，所以修改表格只会把受影响的记录标记为「题面已变更」，而不会悄悄丢弃它们。
 
 ### 配对题细节
@@ -468,12 +472,22 @@ history:
 2. 把 `main.js`、`manifest.json` 和 `styles.css` 复制进去。
 3. 重新加载 Obsidian，在**设置 → 第三方插件**下启用该插件。
 
+## 更新内容
+
+### 1.0.9
+
+- **在哪儿刷都行。** 刷题窗口不再只属于右侧边栏：**在新标签页打开刷题窗口**会把它放进主区域，桌面端还可以用**在新窗口打开刷题窗口**开一个独立窗口。每个位置各保留一轮，侧边栏和标签页可以同时刷。
+- **进度条固定在顶部。** 刷题页的进度条固定在滚动区域顶部，刷长轮次时得分和位置始终看得见。
+- **锚点可以省略。** 选择题选项一个锚点都没写时，会按位置自动编号为 `a`、`b`、`c`……；只写了一部分时，没写锚点的选项会从题卡隐藏。
+
+每个版本只会提示一次。更早的版本见 [GitHub Releases](https://github.com/AnkingLin/EasyQuiz/releases)。
+
 ## 常见问题
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
 | `quiz` 数据块显示为普通代码块 | 笔记没有被识别为题库，或者数据块不在任何题面标题之下 | 加上 `quiz: true`，并检查标题层级与**题面标题层级**设置一致 |
-| 题卡出现了，但点**提交答案**没有反应 | 该题已降级（数据块上方会显示提示） | 按提示指出的问题修正——通常是 `type`、缺失的锚点或 YAML 错误 |
+| 题卡出现了，但点**提交答案**没有反应 | 该题已降级（数据块上方会显示提示） | 按提示指出的问题修正——通常是 `type`、重复的锚点或 YAML 错误 |
 | 编辑题目后屏幕上还留着旧题卡 | 阅读视图不会自己重渲染代码块 | 插件会自动刷新；否则运行**刷新题库视图** |
 | 重命名之后记录不再累积 | `id` 是由旧的标题文字推导出来的 | 给这道题写一个显式的 `id`；记录以文件路径 + 题目 id 为键 |
 | 某个 `quiz` 数据块被完全忽略 | 它不在任何被当作题目的标题之下 | 把它移到某个题面标题之下 |
@@ -486,7 +500,7 @@ history:
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (336 cases)
+npm test           # bundle and run the test suite (396 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 npm run assets     # 重新生成两份 README 用到的截图与 GIF
@@ -529,6 +543,8 @@ src/session.ts       practice planning: file summaries, filtering, sampling, pro
 src/runtime.ts       Obsidian adapter: file detection, dependency injection, atomic writes
 src/view.ts          practice card rendering (including the header's knowledge-point link)
 src/practice-view.ts practice window: question-bank list / practice settings / practice
+src/whats-new.ts     update notes by version and the upgrade check (pure logic)
+src/whats-new-modal.ts the one-time What's new dialog
 src/insert.ts        question templates and insertion positioning (pure logic)
 src/insert-modal.ts  insert-question dialog and the editor write
 src/file-menu.ts     the file explorer menu entry that starts practising a bank
@@ -556,7 +572,7 @@ tools/readme-assets/ README 截图与 GIF 生成器（见上一节）
 - `main.ts` 只保留插件生命周期；功能逻辑放在 `src/` 下各自独立的模块里。
 - `parser` / `stem` / `embed` / `plain-text` / `grade` / `writeback` / `hash` / `insert` / `session` 不得导入 `obsidian`，这样它们才能在纯 Node 下保持可测试。
 - 绝不要硬编码界面文案：在 `src/i18n/en.ts` 里加键，在 `src/i18n/zh.ts` 里填写（两张表会互相做类型检查），然后通过 `t()` 读取。两张表里的 `{placeholders}` 要保持一致。
-- 改变用户可见的行为时，要同时更新 `README.md`、`README.zh-CN.md` **和** `skills/easyquiz-authoring/SKILL.md`——后者的示例会被 `npm test` 执行。如果改动在界面上看得见，还要运行 `npm run assets`，让图片保持准确。
+- 改变用户可见的行为时，要同时更新 `README.md`、`README.zh-CN.md` **和** `skills/easyquiz-authoring/SKILL.md`——后者的示例会被 `npm test` 执行。如果改动在界面上看得见，还要运行 `npm run assets`，让图片保持准确；如果希望用户更新后看到提示，还要在两份 README 和 `src/whats-new.ts` 里加上对应的更新条目。
 - 提交 PR 之前先运行 `npm run build`、`npm test` 和 `npm run lint`；CI 会跑这三项。
 
 支持的语言：**English**（[README.md](README.md)）和 **中文**（本文件）。

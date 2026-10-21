@@ -32,6 +32,8 @@ import { registerFileMenu } from "./file-menu";
 import { placementOf } from "./practice-placement";
 import type { PracticePlacement } from "./practice-placement";
 import { PRACTICE_VIEW_TYPE, PracticeView } from "./practice-view";
+import { shouldAnnounce, whatsNewFor } from "./whats-new";
+import { WhatsNewModal } from "./whats-new-modal";
 
 /**
  * 界面语言的候选来源，按可信度排序。
@@ -49,10 +51,18 @@ function languageSources(): (string | null)[] {
 	return sources;
 }
 
+/** data.json 的形状：设置之外还存着「更新提示已经展示到哪一版」。 */
+interface StoredData extends Partial<RuntimeSettings> {
+	/** 旧版本的数据里没有这个字段，读出来可能是任何东西。 */
+	whatsNewSeen?: unknown;
+}
+
 export default class EasyQuizPlugin extends Plugin {
 	// 两者都在 onload 中先于任何注册动作完成初始化。
 	settings!: RuntimeSettings;
 	service!: QuizService;
+	/** 已经提示过更新内容的版本；null 表示还没有记录。 */
+	private whatsNewSeen: string | null = null;
 
 	async onload() {
 		await this.loadSettings();
@@ -167,6 +177,11 @@ export default class EasyQuizPlugin extends Plugin {
 		registerFileMenu(this.app.workspace, this, (ref) => this.registerEvent(ref));
 
 		this.addSettingTab(new EasyQuizSettingTab(this.app, this));
+
+		// 更新后只提示一次这一版的改动。等布局就绪再弹，避免和启动时的界面绘制抢一步。
+		this.app.workspace.onLayoutReady(() => {
+			void this.announceWhatsNew();
+		});
 	}
 
 	/** 对话框所需的设置项；题型标题层级与数据块语言都跟随设置。 */
@@ -195,6 +210,31 @@ export default class EasyQuizPlugin extends Plugin {
 	}
 
 	onunload() {}
+
+	/**
+	 * 更新后提示一次这一版的改动。
+	 *
+	 * 版本记录与设置存在同一份 data.json 里，因此不需要额外文件。先记版本再弹窗：
+	 * 用户马上关掉也不会每次加载都再弹一次。没有为当前版本写更新内容时保持安静，
+	 * 不会升级后只看到一个空对话框。
+	 */
+	private async announceWhatsNew(): Promise<void> {
+		const current = this.manifest.version;
+		if (this.whatsNewSeen === current) return;
+
+		const previous = this.whatsNewSeen;
+		this.whatsNewSeen = current;
+		try {
+			await this.saveSettings();
+		} catch (error) {
+			// 写盘失败不该挡住提示；下次加载会重新尝试。
+			console.error("EasyQuiz: could not save the What's New marker", error);
+		}
+
+		if (!shouldAnnounce(previous, current)) return;
+		const entry = whatsNewFor(current);
+		if (entry !== null) new WhatsNewModal(this.app, entry).open();
+	}
 
 	/**
 	 * 打开（或聚焦）刷题窗口。
@@ -493,8 +533,10 @@ export default class EasyQuizPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		const stored = (await this.loadData()) as Partial<RuntimeSettings> | null;
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, stored ?? {});
+		const stored = (await this.loadData()) as StoredData | null;
+		const { whatsNewSeen, ...settings } = stored ?? {};
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, settings);
+		this.whatsNewSeen = typeof whatsNewSeen === "string" ? whatsNewSeen : null;
 		// data.json 可能被手工改坏：语言只认这三种取值，其余一律回到「跟随 Obsidian」，
 		// 否则设置页的下拉框会显示成空值。
 		if (!LANGUAGE_PREFERENCES.includes(this.settings.language)) {
@@ -503,7 +545,7 @@ export default class EasyQuizPlugin extends Plugin {
 	}
 
 	async saveSettings() {
-		await this.saveData(this.settings);
+		await this.saveData({ ...this.settings, whatsNewSeen: this.whatsNewSeen });
 		this.service?.updateSettings(this.settings);
 	}
 }

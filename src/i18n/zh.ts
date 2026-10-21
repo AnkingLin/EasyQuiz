@@ -62,6 +62,16 @@ export const zh: MessageTable = {
 	"notice.validationFileWarnings": "共 {total} 道题：可作答 {ok}，需修正 {bad}，文件级提示 {count} 条。",
 
 	// -----------------------------------------------------------------------
+	// 更新内容
+	// -----------------------------------------------------------------------
+	"whatsNew.title": "EasyQuiz {version} 更新内容",
+	"whatsNew.intro": "这次更新包括：",
+	"whatsNew.close": "知道了",
+	"whatsNew.practicePlacement": "刷题窗口除了右侧边栏，还能开在主区域的标签页，桌面端还能开独立窗口；每个位置各保留一轮。",
+	"whatsNew.progressBanner": "刷题页滚动时，进度条固定在页面顶部。",
+	"whatsNew.optionAnchors": "选择题选项的锚点可以省略：一个都没写时按顺序自动编号，只写了一部分时没锚点的选项会从题卡隐藏。",
+
+	// -----------------------------------------------------------------------
 	// 诊断卡片（数据块渲染）
 	// -----------------------------------------------------------------------
 	"diagnostic.fileNotFound": "找不到文件，无法渲染题目。",
@@ -243,7 +253,6 @@ export const zh: MessageTable = {
 	"parser.typeInvalid": "`type: {value}` 非法。合法取值：{types}。",
 	"parser.columnUnnamed": "第 {index} 列",
 	"parser.columnGrouped": "{base}（第 {count} 组）",
-	"parser.optionUnanchored": "选项「{text}」缺少锚点（`^id`），无法用于记录答案。",
 	"parser.anchorDuplicate": "锚点 `^{anchor}` 重复，判分会不稳定。",
 	"parser.answerIgnoredMatch": "配对题的答案由表格行顺序决定，`answer` 字段已忽略。",
 	"parser.answerIgnoredEssay": "问答题没有固定答案，`answer` 字段已忽略。",

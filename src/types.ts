@@ -1,4 +1,4 @@
-﻿/**
+/**
  * EasyQuiz 题目模型与解析结果类型。
  *
  * 设计原则（见 README §2）：
@@ -37,8 +37,6 @@ export type WarningCode =
 	| "unknown-field"
 	/** 题面结构与该题型不符 */
 	| "structure-mismatch"
-	/** 选择题选项缺少锚点 */
-	| "option-unanchored"
 	/** 锚点重复或与其它锚点冲突 */
 	| "anchor-duplicate"
 	/** 文件级提示 */
@@ -55,7 +53,7 @@ export interface ParseWarning {
 
 /** 选择题 / 填空题 / 配对题共用的选项条目（已解析的正文文本）。 */
 export interface QuizOption {
-	/** 锚点；选择题必填，配对条目与填空空位为 null。 */
+	/** 锚点；选择题全缺省时按位置自动补 a、b、c…，部分缺省时无锚点的选项在题卡中隐藏；配对条目与填空空位为 null。 */
 	anchor: string | null;
 	/** 纯文本形式（用于匹配与记录）。 */
 	text: string;

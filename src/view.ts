@@ -18,7 +18,7 @@ import { plainText } from "./plain-text";
 import { formatStats, QuizService, staleNote } from "./runtime";
 import { seededRandom } from "./session";
 import { BLANK_MARKER_PREFIX, formatStem } from "./stem";
-import { BlankMarkerMode, QuizQuestion } from "./types";
+import { BlankMarkerMode, QuizOption, QuizQuestion } from "./types";
 
 export interface CardContext {
 	app: App;
@@ -66,6 +66,14 @@ export interface CardContext {
 function answerAnchors(question: QuizQuestion): string[] {
 	if (question.answer === null) return [];
 	return Array.isArray(question.answer) ? question.answer : [question.answer];
+}
+
+/** 带锚点的选项；没有锚点的选项在部分缺省时不进入题面。 */
+type AnchoredOption = QuizOption & { anchor: string };
+
+/** 只取有锚点的选项：部分缺省时，没写锚点的选项直接从题面隐藏。 */
+function anchoredOptions(question: QuizQuestion): AnchoredOption[] {
+	return question.options.filter((option): option is AnchoredOption => option.anchor !== null);
 }
 
 /**
@@ -245,11 +253,11 @@ async function renderChoice(
 	const multi = question.type === "multi";
 	const selected = new Set<string>();
 	const list = card.createDiv({ cls: "easy-quiz-card__options" });
-	const buttons: { anchor: string | null; el: HTMLElement }[] = [];
+	const buttons: { anchor: string; el: HTMLElement }[] = [];
 
 	const sync = () => {
 		for (const button of buttons) {
-			const isSelected = button.anchor !== null && selected.has(button.anchor);
+			const isSelected = selected.has(button.anchor);
 			button.el.toggleClass("is-selected", isSelected);
 			button.el.setAttribute("aria-checked", isSelected ? "true" : "false");
 		}
@@ -265,7 +273,7 @@ async function renderChoice(
 	// 会重新洗一遍，用户刚记住的位置就变了，看起来像"答案认错了"。因此用内容哈希
 	// 派生的种子，同一道题永远得到同一套顺序（换一轮由 `shuffleSeed` 变）。
 	const randomize = ctx.shuffleOptions === true || question.shuffle;
-	const options = randomize ? shuffleOptionOrder(question, ctx.shuffleSeed) : question.options;
+	const options = randomize ? shuffleOptionOrder(question, ctx.shuffleSeed) : anchoredOptions(question);
 
 	for (const option of options) {
 		// 用普通按钮而不是 <input type="radio">：避免表单控件在阅读视图里的原生行为
@@ -276,8 +284,7 @@ async function renderChoice(
 		row.tabIndex = 0;
 		// 把锚点写到行上：选项顺序可能被打乱，外部（README 素材生成器、将来的自动化）
 		// 因此不能靠"第几个渲染出来的选项"来定位，只能靠锚点。
-		if (option.anchor !== null) row.setAttribute("data-anchor", option.anchor);
-		if (option.anchor === null) row.addClass("is-disabled");
+		row.setAttribute("data-anchor", option.anchor);
 		buttons.push({ anchor: option.anchor, el: row });
 
 		// 选中标记由 CSS 的 ::before 绘制，无需额外的 DOM 节点。
@@ -296,7 +303,6 @@ async function renderChoice(
 
 		const toggle = () => {
 			const anchor = option.anchor;
-			if (anchor === null) return;
 			// 复盘态下选项只是"看答案"，不接受改选。
 			if (review) return;
 			if (multi) {
@@ -322,7 +328,6 @@ async function renderChoice(
 	if (review) {
 		const expected = answerAnchors(question);
 		for (const button of buttons) {
-			if (button.anchor === null) continue;
 			button.el.addClass(expected.includes(button.anchor) ? "is-answer" : "is-not-answer");
 		}
 	}
@@ -606,11 +611,12 @@ function shuffle<T>(items: readonly T[], random: () => number = Math.random): T[
  * 用内容而不是 `Math.random` 做种，是为了让"打乱"看起来像一个稳定的呈现方式，
  * 而不是每次重画都换一副牌——选项跳位最容易被误读成"答案认错了"。
  */
-function shuffleOptionOrder(question: QuizQuestion, seed?: number): QuizQuestion["options"] {
+function shuffleOptionOrder(question: QuizQuestion, seed?: number): AnchoredOption[] {
 	const source = `${seed ?? 0}\u0000${question.id}\u0000${question.revNow}`;
 	// `contentHash` 是 8 位十六进制字符串，取它的 32 位整数值当种子。
 	const derived = Number.parseInt(contentHash(source), 16) >>> 0;
-	return shuffle(question.options, seededRandom(derived));
+	// 只在可见（有锚点）的选项之间打乱：隐藏项不该影响用户看到的顺序。
+	return shuffle(anchoredOptions(question), seededRandom(derived));
 }
 
 // ---------------------------------------------------------------------------

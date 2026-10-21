@@ -239,11 +239,6 @@
 	box-shadow: inset 0 0 0 2px var(--background-primary);
 }
 
-.easy-quiz-card__option.is-disabled {
-	cursor: not-allowed;
-	opacity: 0.6;
-}
-
 .easy-quiz-card__option:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;

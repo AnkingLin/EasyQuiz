@@ -77,15 +77,17 @@ the parser.
 
 | `type` | Stem supplies | Metadata |
 |---|---|---|
-| `single` | A bullet list, one `^anchor` per option | `answer: c` (single anchor) |
-| `multi` | A bullet list, one `^anchor` per option | `answer: [a, b]` |
+| `single` | A bullet list; option anchors are optional | `answer: c` (single anchor) |
+| `multi` | A bullet list; option anchors are optional | `answer: [a, b]` |
 | `match` | A table, 2+ columns; row order *is* the answer | nothing (no `answer`) |
 | `blank` | Body prose (below the heading) with `==answer==` markers | optional `blanks:` rules |
 | `essay` | Free prose plus a collapsed `> [!question]- 参考答案` callout | nothing |
 
-Anchors use Obsidian's native block-ID syntax `^id` and are **required** on every choice option. Anchors
-are what bind answer records to options, so inserting, deleting, or reordering options never misaligns
-records — but a missing or duplicated anchor makes the question unanswerable.
+Anchors use Obsidian's native block-ID syntax `^id` and are optional on choice options. With no option
+anchors at all, options are numbered `a`, `b`, `c`… by position; with only some, the unanchored options are
+hidden from the card and only the anchored ones can be chosen. Anchors are what bind answer records to
+options, so write them when options may be reordered — inserting, deleting, or reordering an anchored
+option never misaligns records. Duplicate anchors still make the question unanswerable.
 
 <!-- example:start -->
 ````markdown
@@ -302,7 +304,8 @@ The type is never inferred. A question degrades to a plain code block with a hig
 | `single` / `multi` with no list | Structure mismatch |
 | `match` with no table or fewer than 2 columns | Structure mismatch |
 | `blank` with no marker | Structure mismatch — most often because the marked prose sits on the heading line instead of the body |
-| Option missing an anchor, or duplicate anchors | Not answerable |
+| Some choice options without anchors | Those options are hidden; the anchored ones stay answerable |
+| Duplicate option anchors | Not answerable |
 | `answer` pointing at a nonexistent anchor | Not answerable |
 | YAML parse error | Degrade; shows the raw error |
 | `quiz` block outside any stem heading | File-level warning; not recognised |
@@ -314,7 +317,8 @@ A degraded question never exposes a guessed answer.
 1. Every stem heading ends with `^[[[]]]`, and the target note exists.
 2. Every stem heading is a short **name**; the option list, matching table, blank prose, and reference
    callout all live on the lines below it. No `==answer==` marker is left on a heading line.
-3. Every choice option has a unique `^anchor`; `answer` names existing anchors.
+3. Choice-option anchors, when present, are unique (or omitted entirely so the options are auto-numbered);
+   `answer` names existing anchors.
 4. Stable questions have an explicit `id`; no `stats` / `rev` / `history` written by hand.
 5. One heading level per file, matching the configured stem heading level.
 6. Run **校验当前题库文件** in Obsidian — it reports `共 N 道题：可作答 X，需修正 Y`.

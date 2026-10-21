@@ -482,7 +482,7 @@ function parseQuestion(ctx: QuestionContext): QuizQuestion {
 	const structure = parseBodyStructure(body, heading.line + 1, localCtx);
 
 	const type = resolveType(meta.rawType, blockStart, localCtx);
-	const anchorCheck = checkAnchors(structure.options, localCtx);
+	const anchorCheck = resolveOptionAnchors(structure.options, type, localCtx);
 	const resolvedAnswer = resolveAnswer(meta.rawAnswer, type, structure.options, localCtx);
 	validateStructure(type, structure, resolvedAnswer, blockStart, localCtx);
 
@@ -1082,19 +1082,29 @@ function codeRanges(body: string): [number, number][] {
 // 校验
 // ---------------------------------------------------------------------------
 
-function checkAnchors(options: QuizOption[], ctx: QuestionContext): string[] {
+/**
+ * 选择题的选项锚点。
+ *
+ * 锚点可以省略：
+ * - 全部选项都没写：按位置补 `a`、`b`、`c`…，因此 `answer: c` 仍然可用；
+ * - 只写了一部分：保留显式锚点，没写锚点的选项在题卡中隐藏（anchor 仍为
+ *   null），但整道题不因此降级。
+ *
+ * 只有选择题使用选项锚点；其它题型的列表只是普通正文，不应该被锚点校验打扰。
+ */
+function resolveOptionAnchors(options: QuizOption[], type: QuizType | null, ctx: QuestionContext): string[] {
+	if (type !== "single" && type !== "multi") return [];
+
+	if (options.every((option) => option.anchor === null)) {
+		options.forEach((option, index) => {
+			option.anchor = defaultOptionAnchor(index);
+		});
+	}
+
 	const seen = new Set<string>();
 	const anchors: string[] = [];
 	for (const option of options) {
-		if (option.anchor === null) {
-			ctx.warnings.push({
-				code: "option-unanchored",
-				message: t("parser.optionUnanchored", { text: option.text }),
-				questionIndex: null,
-				line: null,
-			});
-			continue;
-		}
+		if (option.anchor === null) continue;
 		if (seen.has(option.anchor)) {
 			ctx.warnings.push({
 				code: "anchor-duplicate",
@@ -1108,6 +1118,13 @@ function checkAnchors(options: QuizOption[], ctx: QuestionContext): string[] {
 		anchors.push(option.anchor);
 	}
 	return anchors;
+}
+
+/** 缺省选项锚点：a…z，超过 26 个后按轮次编号为 a1、b1… */
+function defaultOptionAnchor(index: number): string {
+	const letter = String.fromCharCode(97 + (index % 26));
+	const round = Math.floor(index / 26);
+	return round === 0 ? letter : `${letter}${round}`;
 }
 
 function resolveAnswer(

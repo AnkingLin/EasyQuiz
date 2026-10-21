@@ -606,15 +606,44 @@ test("降级：type: blank 但题面无空位", () => {
 	assert(hasWarning(question, "structure-mismatch"), `应给出 structure-mismatch（warnings=${warnCodes(question)}）`);
 });
 
-test("降级：选项缺少锚点", () => {
-	const question = first(
+test("单选题：选项全部不写锚点时按顺序自动编号", () => {
+	const question = questionOf(
+		["## 题", "", "- 选项甲", "- 选项乙", "- 选项丙", "", "```quiz", "type: single", "answer: c", "```"].join("\n")
+	);
+	assertEqual(question.ok, true, `应解析成功（warnings=${warnCodes(question)}）`);
+	assertEqual(question.options.map((option) => option.anchor).join(","), "a,b,c", "按位置编号");
+	assertEqual(question.answer, "c", "answer 仍指向第三个选项");
+	assertEqual(question.answerAnchors.join(","), "a,b,c", "全部选项都可选");
+});
+
+test("多选题：选项全部不写锚点时同样按顺序自动编号", () => {
+	const question = questionOf(
+		["## 题", "", "- 选项甲", "- 选项乙", "- 选项丙", "", "```quiz", "type: multi", "answer: [a, c]", "```"].join("\n")
+	);
+	assertEqual(question.ok, true, `应解析成功（warnings=${warnCodes(question)}）`);
+	assertEqual(question.options.map((option) => option.anchor).join(","), "a,b,c", "按位置编号");
+	assertEqual(question.answerAnchors.join(","), "a,b,c", "全部选项都可选");
+});
+
+test("单选题：部分选项有锚点时，只保留有锚点的选项可选", () => {
+	const question = questionOf(
 		["## 题", "", "- 选项甲 ^a", "- 选项乙", "- 选项丙 ^c", "", "```quiz", "type: single", "answer: a", "```"].join("\n")
 	);
-	assertEqual(question.ok, false, "应降级");
-	assertEqual(question.options.length, 3, "三个选项都应被识别");
-	assertEqual(question.answer, null, "降级题不应暴露答案");
-	assertEqual(question.answerAnchors.length, 0, "降级题不应暴露可用锚点");
-	assert(hasWarning(question, "option-unanchored"), `应给出 option-unanchored（warnings=${warnCodes(question)}）`);
+	assertEqual(question.ok, true, `部分缺省不应降级（warnings=${warnCodes(question)}）`);
+	assertEqual(question.options.length, 3, "三个选项仍都应被识别");
+	assertEqual(question.options.map((option) => option.anchor).join(","), "a,,c", "未写锚点的选项保持 null");
+	assertEqual(question.answerAnchors.join(","), "a,c", "只有写了锚点的选项可选");
+	assertEqual(question.answer, "a", "答案保留");
+});
+
+test("降级：部分缺省时 answer 仍指向无锚点的选项", () => {
+	const question = questionOf(
+		["## 题", "", "- 选项甲 ^a", "- 选项乙", "- 选项丙 ^c", "", "```quiz", "type: single", "answer: b", "```"].join("\n")
+	);
+	assertEqual(question.ok, false, "指向隐藏选项的答案应降级");
+	const warning = question.warnings.find((item) => item.code === "field-invalid");
+	assert(warning !== undefined, `应给出 field-invalid（warnings=${warnCodes(question)}）`);
+	assert(warning!.message.includes("answer: b"), "提示应指出具体答案值");
 });
 
 test("降级：重复锚点", () => {
@@ -710,10 +739,10 @@ test("降级题绝不产生猜测出来的答案", () => {
 	}
 });
 
-test("fixture 中恰好 7 道可用题", () => {
+test("fixture 中恰好 8 道可用题", () => {
 	const good = file.questions.filter((question) => question.ok);
-	assertEqual(good.length, 7, `可用题数量（实际：${good.map((q) => q.title).join(" | ")}）`);
-	assertEqual(file.questions.length - good.length, 8, "降级题数量");
+	assertEqual(good.length, 8, `可用题数量（实际：${good.map((q) => q.title).join(" | ")}）`);
+	assertEqual(file.questions.length - good.length, 7, "降级题数量");
 });
 
 // ---------------------------------------------------------------------------

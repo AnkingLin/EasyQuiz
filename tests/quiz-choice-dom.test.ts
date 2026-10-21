@@ -44,6 +44,24 @@ const TILDE = [
 	"```",
 ].join("\n");
 
+/** 部分选项写了锚点：中间那个没有锚点，因此不会渲染到题面上。 */
+const PARTIAL = [
+	"---",
+	"quiz: true",
+	"---",
+	"",
+	"## 部分锚点",
+	"",
+	"- 选项甲 ^a",
+	"- 选项乙",
+	"- 选项丙 ^c",
+	"",
+	"```quiz",
+	"type: single",
+	"answer: a",
+	"```",
+].join("\n");
+
 async function render(
 	question: QuizQuestion,
 	extra: Partial<Parameters<typeof renderQuizCard>[1]> = {}
@@ -96,6 +114,29 @@ test("DOM：选项里的锚点不会进入渲染内容", async () => {
 	for (const source of optionSources()) {
 		assert(!source.includes("^a") && !source.includes("^b") && !source.includes("^c"), `锚点不应渲染出来（实际：${source}）`);
 	}
+});
+
+test("DOM：部分选项缺省锚点时，无锚点的选项从题面隐藏", async () => {
+	const question = parse(PARTIAL);
+	assertEqual(question.ok, true, "部分缺省不应降级");
+
+	MarkdownRenderer.calls.length = 0;
+	const host = await render(question);
+	const rows = [...host.querySelectorAll<HTMLElement>(".easy-quiz-card__option")];
+	assertEqual(rows.length, 2, "只渲染有锚点的选项");
+	assertEqual(
+		rows.map((row) => row.getAttribute("data-anchor")).join(","),
+		"a,c",
+		"渲染出来的选项都应带锚点"
+	);
+	assert(
+		!optionSources().some((source) => source.includes("选项乙")),
+		`无锚点的选项不应进入题面（实际：${JSON.stringify(optionSources())}）`
+	);
+
+	const first = must(rows[0], "缺少第一个选项");
+	first.click();
+	assert(first.classList.contains("is-selected"), "有锚点的选项应能选中");
 });
 
 /** 选项与题面共用同一个 Component：少传或各建一份都会让 Obsidian 报错/泄漏。 */

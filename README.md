@@ -24,6 +24,7 @@ the questions, in your vault, under your own version control.
 | How do I practise one question inside another note? | [How do I embed a question in another note?](#how-do-i-embed-a-question-in-another-note) |
 | Where do my answers and scores end up? | [Where do my answers go?](#where-do-my-answers-go) |
 | Can I use it in English or Chinese? | [Can I use the interface in my language?](#can-i-use-the-interface-in-my-language) |
+| What changed in the latest version? | [What's new](#whats-new) |
 | Something looks wrong — what now? | [Troubleshooting](#troubleshooting) |
 | How do I build or contribute? | [Development](#development) |
 
@@ -76,8 +77,11 @@ content**. Pick one:
 
 ### Single choice
 
-Options are a native list. Answers are tied to **anchors** (`^a`), not positions, so inserting, deleting,
-or reordering an option never misaligns your records.
+Options are a native list. Answers are tied to **anchors** (`^a`) rather than positions, so when you write
+anchors yourself, inserting, deleting, or reordering an option never misaligns your records. Anchors are
+optional: if no option has one, options are numbered `a`, `b`, `c`… from top to bottom, so `answer: c` still
+means the third option. If only some options have anchors, only those appear on the card; the unanchored
+ones are hidden.
 
 ````markdown
 ## TCP 建立连接需要几次握手？ ^[[[计算机网络/传输层#TCP 三次握手]]]
@@ -106,8 +110,8 @@ Both themes are supported, since the card is drawn with Obsidian's own theme var
 
 ### Multiple choice
 
-Same shape, but `answer` is a list. Getting it partly right counts as wrong, and the review lists every
-correct anchor so you can see what you missed:
+Same shape, but `answer` is a list; the anchor rules are the same as for single choice. Getting it partly
+right counts as wrong, and the review lists every correct anchor so you can see what you missed:
 
 ````markdown
 ## 下列哪些属于传输层协议？ ^[[[计算机网络/传输层#传输层协议]]]
@@ -226,7 +230,8 @@ diagnostic card that names the line and the fix:
 | `type: single`/`multi` but no list | Structure mismatch; not answerable |
 | `type: match` but no table, or fewer than 2 columns | Structure mismatch |
 | `type: blank` but no `==…==` | Structure mismatch |
-| Option missing an anchor, or duplicate anchors | Not answerable |
+| Some choice options have no anchor | Those options are hidden; the anchored options stay answerable |
+| Duplicate option anchors | Not answerable |
 | `answer` points at a nonexistent anchor | Not answerable |
 | YAML parse error | Degrade; show the raw error |
 
@@ -395,6 +400,10 @@ rather than positions:
 The minimum TCP header length is ==20== ^b1 bytes.
 ````
 
+Choice-option anchors are optional. With none at all, options are numbered `a`, `b`, `c`… by position; with
+only some, the unanchored options are hidden from the card. Write explicit anchors when a question's options
+may be reordered and its records must stay attached to the same option.
+
 Matching tables do **not** use anchors: a `^id` in a table cell is literal text, and row-level anchors are
 unsupported. Match records are keyed by row-content hash plus row index, so editing a table marks the
 affected records as "stem changed" rather than silently discarding them.
@@ -533,12 +542,27 @@ appears for Markdown question banks; multi-selections and other files are left a
 2. Copy `main.js`, `manifest.json`, and `styles.css` into it.
 3. Reload Obsidian and enable the plugin under **Settings → Community plugins**.
 
+## What's new
+
+### 1.0.9
+
+- **Practise anywhere.** The practice window is no longer tied to the right sidebar: **Open practice window
+  in a new tab** puts it in the main area, and **Open practice window in a new window** opens a popout on
+  desktop. Each location keeps its own round, so a sidebar session and a tab session can run side by side.
+- **A progress banner that stays put.** The banner on the practice page is pinned to the top of the
+  scrolling area, so the score and position stay visible while you work through a long round.
+- **Anchors are optional.** If no choice option has an anchor, options are numbered `a`, `b`, `c`… by
+  position. If only some have anchors, the rest are hidden.
+
+The plugin shows these notes once per version. Older releases are listed in
+[GitHub releases](https://github.com/AnkingLin/EasyQuiz/releases).
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
 | The `quiz` block shows as a plain code block | The note is not detected as a question bank, or the block is not under a stem heading | Add `quiz: true`, check the heading level matches **Stem heading level** |
-| The card appears but **Submit** does nothing | The question degraded (a warning is shown above the data block) | Fix what the warning names — usually `type`, a missing anchor, or a YAML error |
+| The card appears but **Submit** does nothing | The question degraded (a warning is shown above the data block) | Fix what the warning names — usually `type`, a duplicate anchor, or a YAML error |
 | Editing a question leaves the old card on screen | Reading view does not re-render code blocks on its own | The plugin refreshes automatically; otherwise run **Refresh quiz view** |
 | Records stopped accumulating after a rename | The `id` was derived from the old heading text | Give the question an explicit `id`; records are keyed by file path + question id |
 | A `quiz` block is ignored entirely | It sits outside any heading that counts as a question | Move it under a stem heading |
@@ -551,7 +575,7 @@ appears for Markdown question banks; multi-selections and other files are left a
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (336 cases)
+npm test           # bundle and run the test suite (396 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 npm run assets     # regenerate the screenshots and GIFs used by the READMEs
@@ -612,6 +636,8 @@ src/session.ts       practice planning: file summaries, filtering, sampling, pro
 src/runtime.ts       Obsidian adapter: file detection, dependency injection, atomic writes
 src/view.ts          practice card rendering (including the header's knowledge-point link)
 src/practice-view.ts practice window: question-bank list / practice settings / practice
+src/whats-new.ts     update notes by version and the upgrade check (pure logic)
+src/whats-new-modal.ts the one-time What's new dialog
 src/insert.ts        question templates and insertion positioning (pure logic)
 src/insert-modal.ts  insert-question dialog and the editor write
 src/file-menu.ts     the file explorer menu entry that starts practising a bank
@@ -664,7 +690,8 @@ Not yet implemented: batching of multiple write-backs into one file write, and s
   are type-checked against each other), and read it through `t()`. Keep the same `{placeholders}` in both.
 - When you change user-visible behaviour, update `README.md`, `README.zh-CN.md`, **and**
   `skills/easyquiz-authoring/SKILL.md` — the latter's examples are executed by `npm test`. If the change is
-  visible in the interface, run `npm run assets` so the images stay accurate.
+  visible in the interface, run `npm run assets` so the images stay accurate. If users should hear about it
+  after updating, add a What's new entry to both READMEs and `src/whats-new.ts`.
 - Run `npm run build`, `npm test`, and `npm run lint` before opening a pull request; CI runs all three.
 
 Supported languages: **English** (this file) and [**中文**](README.zh-CN.md).
