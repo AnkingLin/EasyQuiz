@@ -1,7 +1,7 @@
 {
 	"id": "easy-quiz",
 	"name": "EasyQuiz",
-	"version": "1.0.9",
+	"version": "1.0.10",
 	"minAppVersion": "1.4.0",
 	"description": "Markdown-native quiz practice: write questions as plain Markdown and practice them in a rendered card UI, with attempt records written back into the note.",
 	"author": "AnkingLin",
