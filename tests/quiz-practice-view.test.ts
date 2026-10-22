@@ -510,6 +510,12 @@ test("刷题设置显示选中文件的可作答数，默认顺序刷全部题",
 	assert(textOf(harness.view).includes("题库/甲.md（可作答 3）"), "应显示选中文件的可作答数");
 	assert(textOf(harness.view).includes("这一轮将刷 3 题"), "顺序模式应计划刷完全部");
 	assertEqual(findAll(harness.view, "button[data-action='set-mode']").length, 3, "应有三个抽题方式");
+	// 数量只对随机模式有意义：顺序模式下留一个灰掉的输入框既占一行又像没填完。
+	assertEqual(
+		findAll(harness.view, "input[data-action='random-count']").length,
+		0,
+		"顺序模式下不应显示数量输入框",
+	);
 });
 
 test("定量随机抽题：数量受候选题上限约束", async () => {
@@ -695,6 +701,17 @@ test("用真实题卡渲染：选项、提交与复盘答案都在窗口里", as
 	assert(textOf(harness.view).includes("回答正确"), "应给出对错反馈");
 	assert(textOf(harness.view).includes("正确答案"), "复盘应给出正确答案");
 	assert(textOf(harness.view).includes("选项一"), "复盘应写出正确选项的文本");
+
+	// 角标是在渲染时按文件记录算的，刚提交这一次还没写回副本可读：必须就地补上，
+	// 否则复盘时「回答正确」旁边还挂着「未作答」。
+	const badge = find(harness.view, ".easy-quiz-card__stats", "缺少统计角标");
+	const badgeText = badge.textContent ?? "";
+	assert(!badgeText.includes("未作答"), `提交后角标应反映这次作答（实际：${badgeText}）`);
+	assert(badgeText.includes("1/1"), `角标应记下一次作答（实际：${badgeText}）`);
+
+	// 提交按钮只是藏起来，整行仍占高度——复盘区和选项之间会多出一段空白。
+	const actions = find(harness.view, ".easy-quiz-card__actions", "缺少提交按钮行");
+	assert(actions.classList.contains("is-hidden"), "提交后整行应被收起");
 });
 
 test("下一题：换题重画并把进度推到第二题", async () => {

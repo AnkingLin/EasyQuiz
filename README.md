@@ -104,6 +104,9 @@ hidden behind a separate answer key:
 
 ![A single-choice card, answered correctly, with the correct option outlined and the explanation below](docs/assets/en/card-single.png)
 
+Stems, options and explanations are all drawn by Obsidian's own renderer, so `**bold**`, `` `code` ``,
+`![[image.png]]` embeds and `$formula$` work on the card and in the practice window.
+
 Both themes are supported, since the card is drawn with Obsidian's own theme variables:
 
 ![The same card on a dark theme](docs/assets/en/card-single-dark.png)
@@ -381,7 +384,7 @@ single heading level per file (default H2).
 | `answer` | type-dependent | `single`: `c`; `multi`: `[a, b]`; `blank` and `match` and `essay`: not used. |
 | `blanks` | no | Per-blank matching rules: `strict` / `ignoreCase` / `regex` / `accept`. Keys are blank anchors. |
 | `shuffle` | no | Shuffle this question's choice options. Default `false`; `match` is always shuffled. |
-| `explanation` | no | Explanation text. May also be written inline as a `> [!note]- 解析` callout. |
+| `explanation` | no | Explanation text, rendered as Markdown (bold, inline code, images, formulas). May also be written inline as a `> [!note]- 解析` callout. |
 | `score` | no | Points, default 1. |
 | `stats` | no | **Written by the plugin**: `attempts` / `correct` / `lastResult` / `lastAt`. |
 | `rev` | no | **Written by the plugin**: stem hash, used to detect edits. |
@@ -544,6 +547,14 @@ appears for Markdown question banks; multi-selections and other files are left a
 
 ## What's new
 
+### 1.0.10
+
+- **Markdown everywhere on the card.** Stems, options, explanations and matching cells are rendered by
+  Obsidian, so bold, italic, inline code, `![[image]]` embeds and `$formula$` all show up on the card and
+  in the practice window.
+- **A tighter practice page on phones.** The progress row no longer repeats the question title, and the
+  header, banner and buttons take less vertical room.
+
 ### 1.0.9
 
 - **Practise anywhere.** The practice window is no longer tied to the right sidebar: **Open practice window
@@ -661,7 +672,8 @@ matching table, and the `==answer==` text are stripped so that nothing is displa
 
 Implemented and covered by tests: the parser, stem preprocessing, grading for all five types, record
 write-back, matching-board logic, question templates with their insertion positioning, the practice card UI
-(choice options rendered as Markdown, click-to-connect multi-column matching with shuffling, inline
+(stems, options, explanations and matching cells rendered as Markdown, click-to-connect multi-column
+matching with shuffling, inline
 click-to-type blanks that grow with their content, short-answer self-assessment, and the clickable
 knowledge-point link), the practice window (question-bank list with per-file data plus search, folder
 folding and per-folder selection; practice settings with type/sampling filters and **Shuffle**; and the

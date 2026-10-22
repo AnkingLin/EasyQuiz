@@ -17,6 +17,10 @@ export interface WhatsNewEntry {
 /** 最新的版本在最前面。 */
 export const WHATS_NEW: readonly WhatsNewEntry[] = [
 	{
+		version: "1.0.10",
+		changes: ["whatsNew.markdownEverywhere", "whatsNew.compactPracticePage"],
+	},
+	{
 		version: "1.0.9",
 		changes: ["whatsNew.practicePlacement", "whatsNew.progressBanner", "whatsNew.optionAnchors"],
 	},

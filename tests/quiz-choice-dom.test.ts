@@ -44,8 +44,7 @@ const TILDE = [
 	"```",
 ].join("\n");
 
-/** 部分选项写了锚点：中间那个没有锚点，因此不会渲染到题面上。 */
-const PARTIAL = [
+/** 部分选项写了锚点：中间那个没有锚点，因此不会渲染到题面上。 */const PARTIAL = [
 	"---",
 	"quiz: true",
 	"---",
@@ -59,6 +58,26 @@ const PARTIAL = [
 	"```quiz",
 	"type: single",
 	"answer: a",
+	"```",
+].join("\n");
+
+/** 解析里带 Markdown 标记：复盘时必须按原文渲染。 */
+const EXPLAINED = [
+	"---",
+	"quiz: true",
+	"---",
+	"",
+	"## 解析渲染",
+	"",
+	"题面。",
+	"",
+	"- 甲 ^a",
+	"- 乙 ^b",
+	"",
+	"```quiz",
+	"type: single",
+	"answer: a",
+	"explanation: \"**粗体** 与 `行内代码`\"",
 	"```",
 ].join("\n");
 
@@ -149,4 +168,23 @@ test("DOM：题面与选项用的是同一个 Component", async () => {
 	for (const call of MarkdownRenderer.calls) {
 		assert(call.component !== null && call.component !== undefined, "Component 不能为空");
 	}
+});
+
+/** 解析正文同样是作者写的 Markdown：复盘区必须把它交给渲染器，而不是当成纯文本。 */
+test("DOM：解析按 Markdown 原文渲染（复盘态）", async () => {
+	MarkdownRenderer.calls.length = 0;
+	const host = await render(parse(EXPLAINED), { reviewOnly: true });
+
+	const call = MarkdownRenderer.calls.find((item) =>
+		item.el.classList.contains("easy-quiz-card__review-text")
+	);
+	const review = must(call, "解析应交给 MarkdownRenderer 渲染");
+	assertEqual(review.source, "**粗体** 与 `行内代码`", "解析应使用作者写的原文");
+
+	// 渲染器替身不生成 DOM：解析必须退回纯文本，不能整段消失。
+	const body = must(
+		host.querySelector<HTMLElement>(".easy-quiz-card__review-text") ?? undefined,
+		"复盘区应有解析正文"
+	);
+	assert((body.textContent ?? "").includes("粗体"), `解析退化为纯文本后仍应可读（实际：${body.textContent}）`);
 });

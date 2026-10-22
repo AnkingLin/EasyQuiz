@@ -82,6 +82,10 @@ export const en = {
 		"The progress banner stays pinned to the top of the practice page while the questions scroll.",
 	"whatsNew.optionAnchors":
 		"Choice-option anchors are optional: with none at all, options are numbered in order; with only some, the unanchored options are hidden.",
+	"whatsNew.markdownEverywhere":
+		"Stems, options, explanations and matching cells all render as Markdown, including bold, inline code, embedded images and formulas.",
+	"whatsNew.compactPracticePage":
+		"The practice page is tighter on phones: the repeated question title is gone from the progress row, and the header, banner and buttons take less room.",
 
 	// -----------------------------------------------------------------------
 	// 诊断卡片（数据块渲染）
@@ -220,6 +224,7 @@ export const en = {
 	"practice.picker.chip": "{path} ({count} answerable)",
 	"practice.picker.remove": "Remove {path}",
 	"practice.picker.modeName": "How to draw questions",
+	"practice.picker.randomCount": "Questions",
 	"practice.picker.typeName": "Question types",
 	"practice.picker.typeDesc":
 		"No type ticked means all types; the number in brackets is how many answerable questions the selected files hold.",

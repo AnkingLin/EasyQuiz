@@ -70,6 +70,8 @@ export const zh: MessageTable = {
 	"whatsNew.practicePlacement": "刷题窗口除了右侧边栏，还能开在主区域的标签页，桌面端还能开独立窗口；每个位置各保留一轮。",
 	"whatsNew.progressBanner": "刷题页滚动时，进度条固定在页面顶部。",
 	"whatsNew.optionAnchors": "选择题选项的锚点可以省略：一个都没写时按顺序自动编号，只写了一部分时没锚点的选项会从题卡隐藏。",
+	"whatsNew.markdownEverywhere": "题面、选项、解析和配对单元格都按 Markdown 渲染，加粗、行内代码、内嵌图片和公式都能正常显示。",
+	"whatsNew.compactPracticePage": "刷题页在手机上更紧凑：进度行不再重复题目标题，页头、进度条和按钮占的地方也更少。",
 
 	// -----------------------------------------------------------------------
 	// 诊断卡片（数据块渲染）
@@ -203,6 +205,7 @@ export const zh: MessageTable = {
 	"practice.picker.chip": "{path}（可作答 {count}）",
 	"practice.picker.remove": "移除 {path}",
 	"practice.picker.modeName": "抽题方式",
+	"practice.picker.randomCount": "题数",
 	"practice.picker.typeName": "题型",
 	"practice.picker.typeDesc": "不勾选任何题型表示不限题型；括号里是当前文件里的可作答题数。",
 	"practice.picker.typeLabel": "{label}（{count}）",

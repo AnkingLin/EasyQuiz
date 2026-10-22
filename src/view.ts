@@ -104,13 +104,8 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 
 	// Obsidian 要求传入承载生命周期的 Component：传 null 会直接抛错，
 	// 并使这一道题后续的渲染（包括题板）全部中断。
-	// 题面与选项都要渲染 Markdown，因此整张卡片共用一个，而不是各建一份。
-	let component = ctx.renderComponent;
-	if (component === undefined) {
-		const child = new MarkdownRenderChild(card);
-		ctx.addRenderChild?.(child);
-		component = child;
-	}
+	// 题面、选项与解析都要渲染 Markdown，因此整张卡片共用一个，而不是各建一份。
+	const component = cardComponent(card, ctx);
 
 	const stem = formatStem(question, ctx.blankMarker);
 	if (stem.trim() !== "") {
@@ -123,15 +118,30 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 			await renderChoice(question, card, ctx, component);
 			break;
 		case "blank":
-			renderBlanks(question, bodyEl, card, ctx);
+			await renderBlanks(question, bodyEl, card, ctx, component);
 			break;
 		case "match":
-			renderMatch(question, card, ctx);
+			renderMatch(question, card, ctx, component);
 			break;
 		case "essay":
-			renderEssay(question, card, ctx);
+			await renderEssay(question, card, ctx, component);
 			break;
 	}
+}
+
+/**
+ * 题卡 Markdown 渲染用的 Component。
+ *
+ * 传入 `ctx.renderComponent` 时直接复用（宿主已经托管了它的生命周期）；否则自建一个
+ * `MarkdownRenderChild` 并通过 `ctx.addRenderChild` 交给宿主。**必须注册**：没有加载的
+ * Component，`MarkdownRenderer` 创建的子组件（图片、嵌入块）不会 `onload`，题面里的
+ * `![[图片]]` 就永远不显示。
+ */
+function cardComponent(card: HTMLElement, ctx: CardContext): Component {
+	if (ctx.renderComponent !== undefined) return ctx.renderComponent;
+	const child = new MarkdownRenderChild(card);
+	ctx.addRenderChild?.(child);
+	return child;
 }
 
 // ---------------------------------------------------------------------------
@@ -332,8 +342,13 @@ async function renderChoice(
 		}
 	}
 
-	renderSubmit(card, ctx, question, t("card.submit"), () =>
-		selected.size === 0 ? null : { kind: "choice", anchors: [...selected] }
+	await renderSubmit(
+		card,
+		ctx,
+		question,
+		t("card.submit"),
+		() => (selected.size === 0 ? null : { kind: "choice", anchors: [...selected] }),
+		component
 	);
 }
 
@@ -341,7 +356,13 @@ async function renderChoice(
 // 填空题：题面里的空位可点击输入
 // ---------------------------------------------------------------------------
 
-function renderBlanks(question: QuizQuestion, bodyEl: HTMLElement, card: HTMLElement, ctx: CardContext): void {
+async function renderBlanks(
+	question: QuizQuestion,
+	bodyEl: HTMLElement,
+	card: HTMLElement,
+	ctx: CardContext,
+	component: Component
+): Promise<void> {
 	const fields = new Map<string, HTMLElement>();
 	// 复盘态：空位里直接写出答案，而不是留一个可编辑的框。
 	const review = ctx.reviewOnly === true;
@@ -373,7 +394,7 @@ function renderBlanks(question: QuizQuestion, bodyEl: HTMLElement, card: HTMLEle
 				row.createSpan({ cls: "easy-quiz-card__blank-answer", text: blank.expected });
 			}
 		}
-		renderSubmit(card, ctx, question, t("card.submit"), () => null);
+		await renderSubmit(card, ctx, question, t("card.submit"), () => null, component);
 		return;
 	}
 
@@ -388,10 +409,10 @@ function renderBlanks(question: QuizQuestion, bodyEl: HTMLElement, card: HTMLEle
 		}
 	}
 
-	renderSubmit(card, ctx, question, t("card.submit"), () => {
+	await renderSubmit(card, ctx, question, t("card.submit"), () => {
 		const values = question.blanks.map((blank) => (fields.get(blank.anchor)?.textContent ?? "").trim());
 		return values.every((value) => value === "") ? null : { kind: "blank", values };
-	});
+	}, component);
 }
 
 /**
@@ -446,6 +467,14 @@ function findTextElement(root: HTMLElement, label: string): HTMLElement | null {
 // ---------------------------------------------------------------------------
 
 /**
+ * 单元格文字是否含有需要 Markdown 处理的标记。
+ *
+ * 配对题节点通常就是纯文本（"TCP"、"80"），没有标记时直接跳过渲染：
+ * 每个节点一次异步渲染没有任何视觉收益，反而拖慢题板出现。
+ */
+const INLINE_MARKDOWN = /[*_`~=[\]<>!$\\]|https?:\/\//;
+
+/**
  * 配对题：多列题板 + 点击创建连线。
  *
  * - 首列是待匹配项，其余每一列都是一组需要配对的答案，各自渲染成一列。
@@ -458,7 +487,12 @@ function findTextElement(root: HTMLElement, label: string): HTMLElement | null {
  * - 交互规则（选中、连线、取消连线、禁止跨列）都在 `match-board.ts` 的状态机里，
  *   这里只负责把状态画出来。
  */
-export function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: CardContext): void {
+export function renderMatch(
+	question: QuizQuestion,
+	card: HTMLElement,
+	ctx: CardContext,
+	renderComponent?: Component
+): void {
 	const columns = question.board;
 	if (columns.length < 2) {
 		card.createDiv({ cls: "easy-quiz-card__hint", text: t("card.match.tooFewColumns") });
@@ -486,8 +520,12 @@ export function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: Card
 		for (const item of shuffle(column.items)) {
 			const el = col.createDiv({
 				cls: `easy-quiz-card__node${column.index === 0 ? " is-left" : ""}`,
-				text: item.text,
 			});
+			// 表格单元格是作者写的 Markdown（`**粗体**`、行内代码…）。节点先放纯文本，
+			// 渲染结果出来后再整体替换：渲染器可能"追加"而不是"清空"，直接渲染进非空
+			// 节点会让文字出现两遍。纯文本单元格（绝大多数）不做一次无意义的渲染。
+			const label = el.createSpan({ cls: "easy-quiz-card__node-text", text: item.text });
+			if (INLINE_MARKDOWN.test(item.text)) void renderNodeText(label, item.text, ctx, renderComponent);
 			nodes.set(item.key, el);
 			if (!review) el.addEventListener("click", () => onNodeClick(item.key));
 		}
@@ -574,10 +612,40 @@ export function renderMatch(question: QuizQuestion, card: HTMLElement, ctx: Card
 	ctx.onCleanup?.(() => observer.disconnect());
 	window.setTimeout(() => paint(), 0);
 
-	renderSubmit(card, ctx, question, t("card.submit"), () => {
-		const pairs = state.pairs();
-		return pairs.length === 0 ? null : { kind: "match", pairs };
-	});
+	void renderSubmit(
+		card,
+		ctx,
+		question,
+		t("card.submit"),
+		() => {
+			const pairs = state.pairs();
+			return pairs.length === 0 ? null : { kind: "match", pairs };
+		},
+		renderComponent ?? cardComponent(card, ctx)
+	);
+}
+
+/** 把题板节点的表格文字按 Markdown 渲染（见调用处的说明）。 */
+async function renderNodeText(
+	target: HTMLElement,
+	markdown: string,
+	ctx: CardContext,
+	renderComponent?: Component
+): Promise<void> {
+	if (markdown.trim() === "") return;
+	const holder = createDiv();
+	try {
+		await MarkdownRenderer.render(
+			ctx.app,
+			markdown,
+			holder,
+			ctx.file.path,
+			renderComponent ?? cardComponent(target, ctx)
+		);
+	} catch {
+		return; // 渲染失败时保留节点里的纯文本。
+	}
+	if (holder.childNodes.length > 0) target.replaceChildren(...Array.from(holder.childNodes));
 }
 
 function createBoardColumn(grid: HTMLElement, name: string): HTMLElement {
@@ -623,10 +691,15 @@ function shuffleOptionOrder(question: QuizQuestion, seed?: number): AnchoredOpti
 // 问答题与提交
 // ---------------------------------------------------------------------------
 
-function renderEssay(question: QuizQuestion, card: HTMLElement, ctx: CardContext): void {
+async function renderEssay(
+	question: QuizQuestion,
+	card: HTMLElement,
+	ctx: CardContext,
+	component: Component
+): Promise<void> {
 	// 复盘态：不再要一次自评，只把"参考答案见题面折叠块"的提示摊开。
 	if (ctx.reviewOnly === true) {
-		renderSubmit(card, ctx, question, t("card.essay.mastered"), () => null);
+		void renderSubmit(card, ctx, question, t("card.essay.mastered"), () => null, component);
 		return;
 	}
 
@@ -651,23 +724,25 @@ function renderEssay(question: QuizQuestion, card: HTMLElement, ctx: CardContext
 		feedback.addClass(outcome.correct ? "is-correct" : "is-wrong");
 		feedback.setText(outcome.correct ? t("card.feedback.recordedMastered") : t("card.feedback.recordedNotMastered"));
 		ctx.onSubmitted?.(outcome);
-		renderReview(card, question);
+		await renderReview(card, question, ctx, component);
 		ctx.onReview?.(outcome);
 	};
 	passed.addEventListener("click", () => void submitEssay("correct"));
 	failed.addEventListener("click", () => void submitEssay("wrong"));
 }
 
-function renderSubmit(
+async function renderSubmit(
 	card: HTMLElement,
 	ctx: CardContext,
 	question: QuizQuestion,
 	label: string,
-	collect: () => UserAnswer | null
-): void {
+	collect: () => UserAnswer | null,
+	component: Component
+): Promise<void> {
 	// 刷题窗口的复盘态：不提供提交入口，直接把答案与解析摊开。
 	if (ctx.reviewOnly === true) {
-		renderReview(card, question);
+		// 解析要异步渲染 Markdown：渲染完再回调，调用方不会在解析还空着时就切走卡片。
+		await renderReview(card, question, ctx, component);
 		ctx.onReview?.(null);
 		return;
 	}
@@ -705,7 +780,7 @@ function renderSubmit(
 		}
 		ctx.onSubmitted?.(result);
 		// 复盘内容由调用方决定：数据块渲染时留在原卡片里，刷题窗口则换成下一题。
-		renderReview(card, question);
+		await renderReview(card, question, ctx, component);
 		ctx.onReview?.(result);
 	}
 }
@@ -716,7 +791,12 @@ function renderSubmit(
  * 只在提交之后调用：选择题列出正确锚点，填空题给出每空原文，
  * 配对题补画正确连线（见 `renderMatch` 的复盘分支），问答/选择题的解析写在最后。
  */
-function renderReview(card: HTMLElement, question: QuizQuestion): void {
+async function renderReview(
+	card: HTMLElement,
+	question: QuizQuestion,
+	ctx: CardContext,
+	component: Component
+): Promise<void> {
 	card.addClass("is-reviewed");
 	const box = card.createDiv({ cls: "easy-quiz-card__review" });
 	box.createDiv({ cls: "easy-quiz-card__review-head", text: t("card.review.head") });
@@ -732,8 +812,15 @@ function renderReview(card: HTMLElement, question: QuizQuestion): void {
 	if (question.explanation !== null && question.explanation.trim() !== "") {
 		const note = box.createDiv({ cls: "easy-quiz-card__review-note" });
 		note.createDiv({ cls: "easy-quiz-card__review-head", text: t("card.review.explanation") });
-		// 解析是 Markdown，但复盘区只承载短文本；按纯文本渲染，避免再引入一次异步渲染。
-		note.createDiv({ text: question.explanation.trim() });
+		// 解析与题面、选项一样是作者写的 Markdown（加粗、斜体、图片、公式…），
+		// 因此走同一个渲染器；渲染失败或渲染器为空实现时退回纯文本，解析不会丢。
+		const body = note.createDiv({ cls: "easy-quiz-card__review-text markdown-rendered" });
+		try {
+			await MarkdownRenderer.render(ctx.app, question.explanation, body, ctx.file.path, component);
+		} catch {
+			body.setText(question.explanation.trim());
+		}
+		if ((body.textContent ?? "").trim() === "") body.setText(question.explanation.trim());
 	}
 }
 

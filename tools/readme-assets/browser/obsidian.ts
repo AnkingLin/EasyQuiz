@@ -111,10 +111,13 @@ export class PluginSettingTab {}
 export class MarkdownView {}
 export class App {}
 
-export class View {
+// 与真实 Obsidian 一致：View 是 Component，题卡渲染时创建的 MarkdownRenderChild
+// 会挂到窗口上（`this.addChild`）。
+export class View extends Component {
 	app: unknown = {};
 	containerEl: HTMLElement;
 	constructor() {
+		super();
 		this.containerEl = document.body.createDiv();
 	}
 }

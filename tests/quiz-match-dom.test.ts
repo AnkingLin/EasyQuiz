@@ -443,6 +443,20 @@ test("DOM：传入 Component 时直接使用它，不再自建", async () => {
 	assert(MarkdownRenderer.calls[0]?.component === component, "应使用传入的 Component");
 });
 
+/** 表格单元格同样是作者写的 Markdown：带标记的单元格要渲染，纯文本不白跑一次渲染。 */
+test("DOM：配对题节点的单元格文字按 Markdown 渲染", async () => {
+	MarkdownRenderer.calls.length = 0;
+	const question = parseTable(["协议", "端口"], ["**TCP** | 80", "UDP | 53"]);
+	await renderFullCard(question);
+
+	const sources = MarkdownRenderer.calls.map((call) => call.source);
+	assert(
+		sources.includes("**TCP**"),
+		`带标记的单元格应交给渲染器（实际：${JSON.stringify(sources)}）`
+	);
+	assert(!sources.includes("80") && !sources.includes("UDP"), "纯文本单元格不应调用渲染器");
+});
+
 // ---------------------------------------------------------------------------
 // 实际报告过的表格：首列有重复行，答案列里混进了“测试”
 // ---------------------------------------------------------------------------

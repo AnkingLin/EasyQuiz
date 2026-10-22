@@ -12,10 +12,10 @@
  * 因此窗口内作答与在笔记里作答写回的是同一份记录。
  */
 
-import { ItemView, Notice, Setting, TFile, WorkspaceLeaf } from "obsidian";
+import { Component, ItemView, Notice, Setting, TFile, WorkspaceLeaf } from "obsidian";
 import { MessageKey, t } from "./i18n";
 import { typeLabel } from "./labels";
-import { QuizService, RuntimeSettings } from "./runtime";
+import { QuizService, formatStats, RuntimeSettings } from "./runtime";
 import {
 	buildSession,
 	DEFAULT_SESSION_CONFIG,
@@ -32,6 +32,7 @@ import {
 	TYPE_ORDER,
 } from "./session";
 import { ParsedQuizFile, QuizQuestion, QuizType } from "./types";
+import type { GradeResult } from "./grade";
 import { CardContext, renderQuizCard } from "./view";
 
 export const PRACTICE_VIEW_TYPE = "easy-quiz-practice";
@@ -127,6 +128,13 @@ export class PracticeView extends ItemView {
 	private sessionSeed = 0;
 	/** 题卡自身的资源回收（例如配对题的尺寸观察者）。 */
 	private cardCleanups: (() => void)[] = [];
+	/**
+	 * 题卡注册给本视图的 Markdown 子组件。
+	 *
+	 * 题面、选项、解析里的图片与嵌入块要靠 `MarkdownRenderChild` 的加载才会挂上内容；
+	 * 卡片被换掉时必须一起卸载，否则换一道题就多留下一份监听。
+	 */
+	private cardComponents: Component[] = [];
 
 	/** 页面骨架。 */
 	private rootEl: HTMLElement | null = null;
@@ -254,6 +262,7 @@ export class PracticeView extends ItemView {
 	/** 释放题卡自己的资源（配对题的观察者会在卡片被换掉后一直看着旧节点）。 */
 	private releaseCard(): void {
 		for (const cleanup of this.cardCleanups.splice(0)) cleanup();
+		for (const child of this.cardComponents.splice(0)) this.removeChild(child);
 	}
 
 	/** 重画整个窗口；页面切换、数据刷新都走这一个入口。 */
@@ -956,12 +965,19 @@ export class PracticeView extends ItemView {
 			});
 		}
 
+		// 数量只在「定量随机抽查」下才有意义：其它模式里留一个灰掉的输入框，既占
+		// 一行地方，又像一张没填完的表；连标签一起收起来，切换模式时再重画。
+		if (this.config.mode !== "random") return;
+
+		const row = setting.controlEl.createDiv({ cls: "easy-quiz-practice__random" });
+		row.createSpan({ cls: "easy-quiz-practice__random-label", text: t("practice.picker.randomCount") });
+
 		setting.addText((text) => {
 			text.inputEl.type = "number";
 			text.inputEl.min = "0";
 			text.inputEl.dataset["action"] = "random-count";
 			text.setValue(String(this.config.randomCount));
-			text.setDisabled(this.config.mode !== "random");
+			row.appendChild(text.inputEl);
 			text.onChange((value) => {
 				const parsed = Number.parseInt(value, 10);
 				this.config.randomCount = Number.isNaN(parsed) || parsed < 0 ? 0 : parsed;
@@ -1091,7 +1107,7 @@ export class PracticeView extends ItemView {
 
 		const head = body.createDiv({ cls: "easy-quiz-practice__head" });
 		head.createEl("h3", { cls: "easy-quiz-practice__title", text: t("practice.title") });
-		const toolbar = head.createDiv({ cls: "easy-quiz-practice__toolbar" });
+		const toolbar = head.createDiv({ cls: "easy-quiz-practice__toolbar is-compact" });
 		const end = this.button(toolbar, "end-session", t("practice.session.end"));
 		end.addEventListener("click", () => {
 			this.finish();
@@ -1121,7 +1137,6 @@ export class PracticeView extends ItemView {
 				total: this.queue.length,
 			}),
 		});
-		head.createSpan({ cls: "easy-quiz-practice__progress-title", text: entry?.title ?? "" });
 		head.createSpan({
 			cls: "easy-quiz-practice__progress-count",
 			text: t("practice.session.progress", {
@@ -1176,11 +1191,16 @@ export class PracticeView extends ItemView {
 			shuffleSeed: this.sessionSeed,
 			// 复盘态由窗口控制：提交后由 renderQuizCard 自己把答案摊在卡片里。
 			reviewOnly: this.reviewing,
+			// 题卡里的 Markdown 子组件（图片、嵌入块）交给本视图托管，窗口关闭或换题时卸载。
+			addRenderChild: (child) => {
+				this.addChild(child);
+				this.cardComponents.push(child);
+			},
 			onSubmitted: (result) => {
 				// 一道题只计一次分：复盘重渲染不会再改分。
 				if (this.results[this.cursor] === null) this.results[this.cursor] = result.correct;
 				this.dirty = true;
-				this.afterSubmit(host);
+				this.afterSubmit(host, result);
 			},
 			onCleanup: (cleanup) => this.cardCleanups.push(cleanup),
 		};
@@ -1206,10 +1226,36 @@ export class PracticeView extends ItemView {
 	}
 
 	/** 提交之后的收尾：停掉提交按钮，把导航换成"下一题"。 */
-	private afterSubmit(host: HTMLElement): void {
+	private afterSubmit(host: HTMLElement, result?: GradeResult): void {
 		for (const button of Array.from(host.querySelectorAll(".easy-quiz-card__actions button"))) {
 			(button as HTMLButtonElement).disabled = true;
 			button.addClass("is-hidden");
+		}
+		/*
+		 * 按钮藏起来之后这一行只剩外边距，会在选项和解析之间留下一段空白。
+		 * 整行一起收掉：复盘区的间距由它自己的 margin-top 决定。
+		 */
+		for (const row of Array.from(host.querySelectorAll(".easy-quiz-card__actions"))) {
+			row.addClass("is-hidden");
+		}
+		/*
+		 * 角标是在渲染时按文件里的记录算出来的，刚提交这一次还没有写回去的副本
+		 * 可读；就地补上，免得复盘时「回答正确」旁边还挂着「未作答」。
+		 * 只认带结果的调用：复盘重画走的是同一个方法，不能再计一次。
+		 */
+		if (result !== undefined) {
+			const entry = this.queue[this.cursor];
+			const question = entry === undefined ? undefined : resolveEntry(this.parsedByPath, entry);
+			if (question !== undefined) {
+				question.stats = {
+					attempts: question.stats.attempts + 1,
+					correct: question.stats.correct + (result.correct ? 1 : 0),
+					lastResult: result.correct ? "correct" : "wrong",
+					lastAt: new Date().toISOString(),
+				};
+				const badge = host.querySelector<HTMLElement>(".easy-quiz-card__stats");
+				if (badge !== null) badge.setText(formatStats(question));
+			}
 		}
 		this.reviewing = true;
 		this.renderProgress();

@@ -31,27 +31,27 @@ test("版本比较：按数字比较，而不是按字符串", () => {
 });
 
 test("更新内容：只给登记过的版本准备说明", () => {
-	const entry = entryFor("1.0.9");
-	assertEqual(entry.version, "1.0.9", "说明的版本");
+	const entry = entryFor("1.0.10");
+	assertEqual(entry.version, "1.0.10", "说明的版本");
 	assert(entry.changes.length > 0, "说明至少有一条文案");
 	assertEqual(whatsNewFor("1.0.8"), null, "没有登记的版本返回 null");
 });
 
 test("更新提示：升级时提示一次，同版和降级不提示", () => {
-	assert(shouldAnnounce(null, "1.0.9"), "没有版本记录时提示一次");
-	assert(shouldAnnounce("1.0.8", "1.0.9"), "升级时提示");
-	assert(!shouldAnnounce("1.0.9", "1.0.9"), "同一版本不重复提示");
-	assert(!shouldAnnounce("1.0.9", "1.0.8"), "降级不提示");
-	assert(!shouldAnnounce("1.0.8", "1.0.10"), "没有更新内容的版本保持安静");
+	assert(shouldAnnounce(null, "1.0.10"), "没有版本记录时提示一次");
+	assert(shouldAnnounce("1.0.9", "1.0.10"), "升级时提示");
+	assert(!shouldAnnounce("1.0.10", "1.0.10"), "同一版本不重复提示");
+	assert(!shouldAnnounce("1.0.10", "1.0.9"), "降级不提示");
+	assert(!shouldAnnounce("1.0.8", "1.0.11"), "没有更新内容的版本保持安静");
 });
 
 test("更新对话框：列出这一版的每一条说明，并能关闭", () => {
-	const entry = entryFor("1.0.9");
+	const entry = entryFor("1.0.10");
 	const modal = new WhatsNewModal({} as never, entry);
 	modal.open();
 
 	const text = modal.contentEl.textContent ?? "";
-	assert(text.includes("1.0.9"), "标题里要有版本号");
+	assert(text.includes("1.0.10"), "标题里要有版本号");
 	for (const key of entry.changes) {
 		assert(text.includes(t(key)), `对话框缺少文案：${key}`);
 	}

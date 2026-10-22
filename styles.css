@@ -212,6 +212,19 @@
 	margin: 0;
 }
 
+/* 配对题节点同理：单元格文字按 Markdown 渲染后也会包一层 <p> */
+.easy-quiz-card__node-text > p {
+	margin: 0;
+}
+
+.easy-quiz-card__node-text > :first-child {
+	margin-top: 0;
+}
+
+.easy-quiz-card__node-text > :last-child {
+	margin-bottom: 0;
+}
+
 /* 选项里一般只有行内内容；万一段落之间写了空行，也别把选项撑得太高。 */
 .easy-quiz-card__option-text > p + p {
 	margin-top: 0.35em;
@@ -1005,6 +1018,29 @@
 	background: var(--interactive-accent);
 }
 
+/*
+ * 随机模式的题数：标签和输入框绑在一起，只在这一种模式下出现。
+ * `margin-left: auto` 把它推到控件行最右侧，和左边的模式按钮拉开距离。
+ */
+.easy-quiz-practice__random {
+	display: flex;
+	align-items: center;
+	gap: var(--eqq-2);
+	flex: none;
+	margin-left: auto;
+}
+
+.easy-quiz-practice__random-label {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	white-space: nowrap;
+}
+
+.easy-quiz-practice__random input {
+	width: 5em;
+	text-align: center;
+}
+
 .easy-quiz-practice__type {
 	display: flex;
 	align-items: center;
@@ -1035,6 +1071,7 @@
 	display: flex;
 	flex-wrap: wrap;
 	align-items: baseline;
+	justify-content: space-between;
 	gap: var(--eqq-1) var(--eqq-2);
 	font-size: var(--font-ui-smaller);
 }
@@ -1043,13 +1080,6 @@
 	flex: none;
 	font-weight: var(--font-semibold, 600);
 	font-variant-numeric: tabular-nums;
-}
-
-.easy-quiz-practice__progress-title {
-	flex: 1 1 10em;
-	min-width: 0;
-	color: var(--text-muted);
-	overflow-wrap: anywhere;
 }
 
 .easy-quiz-practice__progress-count {
@@ -1107,6 +1137,11 @@
 /* 提交后的按钮留在原位但不该再被点到 */
 .easy-quiz-card__actions button.is-hidden {
 	visibility: hidden;
+}
+
+/* 刷题页复盘态：按钮行不再需要占高度，否则会留下一段空白 */
+.easy-quiz-card__actions.is-hidden {
+	display: none;
 }
 
 /* --------------------------------------------------- 复盘与成绩单 */
@@ -1191,6 +1226,23 @@
 	gap: var(--eqq-1);
 }
 
+/* 解析按 Markdown 渲染：首尾段落收掉外边距，别让复盘区凭空多出几行空白 */
+.easy-quiz-card__review-text > :first-child {
+	margin-top: 0;
+}
+
+.easy-quiz-card__review-text > :last-child {
+	margin-bottom: 0;
+}
+
+/* 图片（题面、选项、解析里都可能有）不得撑破卡片 */
+.easy-quiz-card__body img,
+.easy-quiz-card__option-text img,
+.easy-quiz-card__review-text img {
+	max-width: 100%;
+	height: auto;
+}
+
 .easy-quiz-card__review-empty {
 	color: var(--text-muted);
 }
@@ -1262,9 +1314,31 @@
 		padding: var(--eqq-3);
 	}
 
-	/* 页面标题与「结束本轮」分两行，标题不再被按钮挤窄 */
+	/* 页面标题与工具条同处一行；工具条只放一个按钮时不占整行 */
 	.easy-quiz-practice__head {
-		align-items: flex-start;
+		align-items: center;
+	}
+
+	/*
+	 * 刷题页工具条只有「结束本轮」一个按钮，跟着列表页铺满整行会白占一行高度。
+	 * 收成贴着标题右侧的小按钮：`is-compact` 的特异性高于上面的 `width: 100%`。
+	 */
+	.easy-quiz-practice__toolbar.is-compact {
+		flex: 0 0 auto;
+		width: auto;
+		margin-left: auto;
+	}
+
+	.easy-quiz-practice__toolbar.is-compact button {
+		flex: 0 0 auto;
+		min-height: 34px;
+		padding: 4px var(--eqq-3);
+	}
+
+	/* 进度区在窄屏上本来就很矮，上边距再收一格，题面能多看到一行 */
+	.easy-quiz-practice__progress {
+		padding: var(--eqq-1) 0 var(--eqq-2);
+		gap: var(--eqq-1);
 	}
 
 	/*
@@ -1384,6 +1458,8 @@
 
 	.easy-quiz-practice__setting .setting-item-control {
 		justify-content: flex-start;
+		/* 随机模式的「题数」要能整行落到模式按钮下面，所以控件行允许换行 */
+		flex-wrap: wrap;
 		width: 100%;
 	}
 
@@ -1395,6 +1471,23 @@
 
 	.easy-quiz-practice__modes button {
 		flex: 1 1 auto;
+		min-height: 40px;
+	}
+
+	/* 随机模式：模式按钮铺满一行，「题数」标签 + 输入框整行落到下面 */
+	.easy-quiz-practice__modes {
+		flex: 1 1 100%;
+	}
+
+	.easy-quiz-practice__random {
+		flex: 1 1 100%;
+		/* 标签紧挨输入框：拉开到两端会让人以为中间是个没填的空格 */
+		justify-content: flex-start;
+		margin-left: 0;
+	}
+
+	.easy-quiz-practice__random input {
+		flex: 0 0 6em;
 		min-height: 40px;
 	}
 

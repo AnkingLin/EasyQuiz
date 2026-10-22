@@ -163,10 +163,13 @@ export class Workspace {
 	}
 }
 export class WorkspaceLeaf {}
-export class View {
+// Obsidian 的 `View` 继承自 `Component`：窗口是一份生命周期容器，
+// 题卡渲染时创建的 MarkdownRenderChild 会挂在窗口上（`this.addChild`）。
+export class View extends Component {
 	app: unknown = {};
 	containerEl: HTMLElement;
 	constructor() {
+		super();
 		this.containerEl = document.body.createDiv();
 	}
 }

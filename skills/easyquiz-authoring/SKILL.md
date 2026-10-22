@@ -251,14 +251,24 @@ type: essay
 Always give `essay` questions an explicit `id`: they are the type most often reworded, and self-assessed
 records are the ones you least want to lose.
 
-## Choice options are Markdown
+## Stems, options, explanations and matching cells are Markdown
 
-An option's text is rendered as **Markdown**, so `**bold**`, `` `code` ``, `[[links]]`, and literal symbols
-such as `~` or `_` all survive. Write `H~2~O` and the card shows `H~2~O`; the answer anchor still decides
-grading, so option content never affects what counts as correct.
+Everything the author writes is rendered by Obsidian, not escaped:
+
+- the **stem** (the paragraphs under the stem heading, minus the anchor),
+- each **option's** text, so `**bold**`, `` `code` ``, `[[links]]` and literal symbols such as `~` or `_` survive,
+- the **explanation** shown after grading (and behind **查看解析**),
+- each **matching cell**, so `**TCP**` in a table cell is bold on the board.
+
+`![[image.png]]` embeds, `$formula$`, callouts and lists all work in these spots; only the structural parts
+(option anchors, blank markers, the matching table itself) are consumed by the plugin. Write `H~2~O` and
+the card shows `H~2~O`; the answer anchor still decides grading, so option content never affects what counts
+as correct.
 
 Percentage signs, tildes, and underscores are common in real questions (`约 ~5%`, `snake_case`,
 `NH_3`). They are safe: only the anchors are stripped from the option text before rendering.
+Keep a leading backtick out of a **plain** YAML scalar (`explanation: `x` …` is a YAML error) — quote the
+value, or start the text with a normal word.
 
 `shuffle: true` on a question randomises **that question's option order**; the practice window's
 **Shuffle** setting does the same for a whole round. Grading is by anchor, so shuffling never changes which
