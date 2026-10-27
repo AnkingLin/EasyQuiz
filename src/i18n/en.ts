@@ -103,7 +103,7 @@ export const en = {
 	"whatsNew.bankListFix":
 		"The bank picker shows partial selection for folders and picks up file changes when you switch back, without a manual rescan.",
 	"whatsNew.stemTighter":
-		"The nearest block is now the whole stem: for choice questions a paragraph attached above the options is supporting text, and blank lines around tables no longer split the structure, so several tables can back one matching question.",
+		"Stems are gathered upward from each type's target block: the paragraph right above it is included, further up only blank lines hugging tables are skipped, and an ordinary blank line stops. Consecutive tables can back one matching question, and stems render with Obsidian's Markdown rules — blank lines are added around tables so they display the same as in a note.",
 	"whatsNew.distractorReroll":
 		"Distractors are redrawn after every attempt, and the review shows the set you answered with.",
 	"whatsNew.clearRecords":

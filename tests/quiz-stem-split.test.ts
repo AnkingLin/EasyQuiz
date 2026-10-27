@@ -435,3 +435,70 @@ test("选择题：题干里的表格属于题目内容，不能被丢掉", () =>
 	assertEqual(gluedQuestion.stemText, "", "表格直接贴着选项、上方没有题面时，题面为空");
 	assert((gluedQuestion.supplementText ?? "").includes("| HTTP | 80 |"), "附着的表格应作为补充内容保留");
 });
+
+test("填空题：表格上方的普通段也属于题面，遇到普通空行才停下", () => {
+	const source = [
+		"## 表上空行",
+		"",
+		"更远的说明，不属于本题。",
+		"",
+		"根据下表填空。",
+		"",
+		"| 项目 | 值 |",
+		"| --- | --- |",
+		"| 甲 | ==1== |",
+		"",
+		"```quiz",
+		"type: blank",
+		"```",
+	].join("\n");
+	const question = must(parse(source)[0], "应解析出题目");
+	assert(question !== undefined, "应解析出题目");
+	assert(
+		(question.stemText ?? "").includes("根据下表填空。"),
+		"表格上面的普通段应取进题面"
+	);
+	assert((question.stemText ?? "").includes("| 项目 | 值 |"), "表格本身也是题目内容");
+	assert(!(question.stemText ?? "").includes("更远的说明"), "再往上的普通空行应停止取段");
+	assertEqual(question.blanks.length, 1, "表格里的空位应被识别");
+	assert(question.ok, "题目应可作答");
+});
+
+test("补充内容里的表格：渲染前补上表格需要的空行", async () => {
+	// 说明文字和表格贴在一起，又一起贴着选项列表：它们都算补充内容。
+	const source = [
+		"## 表格补充",
+		"",
+		"说明文字。",
+		"| 协议 | 端口 |",
+		"| --- | --- |",
+		"| HTTP | 80 |",
+		"- 80 ^a",
+		"- 443 ^b",
+		"",
+		"```quiz",
+		"type: single",
+		"answer: a",
+		"```",
+	].join("\n");
+	const question = must(parse(source)[0], "应解析出题目");
+	assert(question !== undefined, "应解析出题目");
+	const host = document.createElement("div");
+	document.body.appendChild(host);
+	await renderQuizCard(question, {
+		app: {},
+		service: {},
+		file: { path: "题库/测试.md" },
+		el: host,
+		blankMarker: "highlight",
+	} as unknown as Parameters<typeof renderQuizCard>[1]);
+
+	const supplement = host.querySelector(".easy-quiz-card__supplement");
+	assert(supplement !== null, "应渲染补充内容区域");
+	const rendered = MarkdownRenderer.calls.find((call) => call.el === supplement);
+	if (rendered === undefined) throw new Error("补充内容应走 Markdown 渲染");
+	assert(
+		rendered.source.includes("说明文字。\n\n| 协议 | 端口 |"),
+		`表格前应有空行（实际：${JSON.stringify(rendered.source)}）`
+	);
+});

@@ -382,21 +382,22 @@ becomes a question, at whatever level it is — so a file can mix H2 grouping he
 Auto mode a question runs to the next heading that also owns a `quiz` block; headings in between that own no
 block stay inside the question above as sub-headings.
 
-**What the card shows.** Only the **nearest block above the structure** is displayed (a block is a run of
+**What the card shows.** The stem is gathered upward from each type's **target block** (a block is a run of
 consecutive non-blank lines):
 
-- `single` / `multi`: the nearest block containing the option list. Non-list lines inside it appear as a
-  supplement under the stem; the block above is the stem **only when that nearest block has no accompanying
-  prose** — with prose attached to the options, the farther block stays hidden.
-- `match`: the nearest block containing the table. Blank lines above and below tables do not split the
-  block: prose above the table is the stem, prose below it is the supplement, and several consecutive
-  tables (each with its own header and separator row) are merged into one structure.
-- `blank`: the nearest block containing the `==blank==` markers is the stem, shown whole.
+- Target block: `single` / `multi` use the nearest option list; `match` the nearest table; `blank` the nearest block with `==blank==` markers; `essay` the last block.
+- Walking up: the block right above the target counts as the stem; further up, only blank lines **hugging a table** (the padding table syntax needs) are crossed — an ordinary blank line stops the walk. This is how several consecutive tables (each with its own header and separator row) can back one question.
+- `single` / `multi`: non-list lines inside the target block appear as a supplement under the stem, and no ordinary block above is taken then; tables inside the target belong to the question and stay visible.
+- `match`: prose above the tables is the stem, prose after the last table is the supplement.
+- `blank`: the target block plus any tables/prose picked up by the walk is the stem.
 - `essay`: the last block. A reference callout stays in the shown stem (collapsed), together with the
   instruction paragraph right above it.
 
-Blocks further up are not shown, so a preceding question cannot leak into this one. When the heading must
-stay short but the question needs a full sentence, use the `question` field (see below).
+Stems are rendered with Obsidian's Markdown rules — tables, quotes, and code all display as in a note — and
+blank lines are inserted around tables so the practice page matches the note preview. Only the controls
+(option list, matching table, blank fields) are taken over. Blocks further up are not shown, so a preceding
+question cannot leak into this one. When the heading must stay short but the question needs a full sentence,
+use the `question` field (see below).
 
 ### Metadata fields
 
@@ -580,9 +581,10 @@ appears for Markdown question banks; multi-selections and other files are left a
 
 ### 1.1.1
 
-- **The nearest block is the whole stem.** For choice questions, prose attached above the options is the
-  supplement and the blank-separated block above stays hidden; blank lines around tables no longer split the
-  block, so several consecutive tables can back one matching question.
+- **Stems walk up from the target block.** The block right above is included; above that only blank lines
+  around tables are skipped and an ordinary blank line stops the walk, so consecutive tables can back one
+  matching question. Stems render with Obsidian's Markdown rules, with blank lines added around tables so the
+  practice page and the note preview agree.
 - **Decoys are redrawn every attempt.** Review shows the set you answered with.
 - **Clear records and jump straight in.** New **Clear records** buttons reset one question or a whole bank;
   the command palette gains **Practise this bank**.

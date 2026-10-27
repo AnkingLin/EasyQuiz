@@ -481,12 +481,33 @@ interface BodySplit {
 
 const CALLOUT_LINE_RE = /^\s*>\s*/;
 
+/** 一段连续的非空行。 */
+interface LineBlock {
+	start: number;
+	end: number;
+}
+
+/** 按空行把正文切成若干段（不含前导/尾随空行）。 */
+function splitBlocks(lines: string[]): LineBlock[] {
+	const blocks: LineBlock[] = [];
+	let index = 0;
+	while (index < lines.length) {
+		while (index < lines.length && (lines[index] ?? "").trim() === "") index++;
+		if (index >= lines.length) break;
+		const start = index;
+		while (index < lines.length && (lines[index] ?? "").trim() !== "") index++;
+		blocks.push({ start, end: index });
+	}
+	return blocks;
+}
+
 /**
- * 题面只匹配离数据块最近的那一段：
- * - 选择题：最近一个列表所在段；段内列表以外的文字是补充内容；再上一段是题面。
- * - 配对题：最近一个表格所在段（表格允许和上面的文字隔一个空行）；表格以外的文字是补充内容。
- * - 填空题：最近一个带空位标记的段，整段都是题面。
- * - 问答题：最后一段；如果是参考答案 callout，则它上面紧邻的一段文字是题面。
+ * 题面取段规则（所有题型共用）：
+ * 1. 先找该题型的目标块：选择题=最近一个列表块，配对题=最近一个表格块，
+ *    填空题=最近一个带空位的块，问答题=最后一块。
+ * 2. 从目标块向上逐段探测：紧邻目标块的一段属于题面；再往上，只有空行紧贴
+ *    表格（表格语法的强制空行）时才继续跨过，碰到普通空行就停下。
+ * 3. 停下处到目标块（含目标块）就是这道题的题面范围。
  * 更远的段不纳入题面，避免把上一题的残留内容显示出来。
  */
 function splitBody(
@@ -501,42 +522,20 @@ function splitBody(
 	const lines = splitLines(body);
 	const isListLine = (line: string): boolean => LIST_ITEM_RE.test(line);
 	const isTableLine = (line: string): boolean => parseTableRow(line) !== null;
-
-	// 先按空行切段，再忽略表格上下的空行：表格和它上面的说明文字、以及连续多个
-	// 表格之间无论隔多少空行都算同一段，否则题面只会剩下最后一张表。
-	const blocks: { start: number; end: number }[] = [];
-	let index = 0;
-	while (index < lines.length) {
-		if ((lines[index] ?? "").trim() === "") {
-			index++;
-			continue;
-		}
-		const start = index;
-		while (index < lines.length && (lines[index] ?? "").trim() !== "") index++;
-		const end = index;
-		const previous = blocks[blocks.length - 1];
-		// 选项列表是独立的结构段：表格和选项之间隔着空行时不能并进来，否则表格会被
-		// 当成「附着在选项上的说明」，连带更上面的题干文字一起被挤进补充内容。
-		const hasList = (from: number, to: number): boolean => lines.slice(from, to).some(isListLine);
-		const withList = hasList(start, end) || (previous !== undefined && hasList(previous.start, previous.end));
-		if (previous !== undefined && !withList) {
-			const before = lines[previous.end - 1] ?? "";
-			const after = lines[start] ?? "";
-			if (isTableLine(before) || isTableLine(after)) {
-				previous.end = end;
-				continue;
-			}
-		}
-		blocks.push({ start, end });
-	}
+	const blocks = splitBlocks(lines);
 	if (blocks.length === 0) return fallback;
-	const blockLines = (block: { start: number; end: number }): string[] => lines.slice(block.start, block.end);
+
+	const blockLines = (block: LineBlock): string[] => lines.slice(block.start, block.end);
+	const blockHasTable = (block: LineBlock): boolean => blockLines(block).some(isTableLine);
+	const blockHasList = (block: LineBlock): boolean => blockLines(block).some(isListLine);
+	const blockHasBlanks = (block: LineBlock): boolean =>
+		collectBlanks(blockLines(block).join("\n"), blankMarker).length > 0;
 
 	let anchor = -1;
 	if (type === "single" || type === "multi") {
 		for (let i = blocks.length - 1; i >= 0; i--) {
 			const block = blocks[i];
-			if (block !== undefined && blockLines(block).some(isListLine)) {
+			if (block !== undefined && blockHasList(block)) {
 				anchor = i;
 				break;
 			}
@@ -544,7 +543,7 @@ function splitBody(
 	} else if (type === "match") {
 		for (let i = blocks.length - 1; i >= 0; i--) {
 			const block = blocks[i];
-			if (block !== undefined && blockLines(block).some(isTableLine)) {
+			if (block !== undefined && blockHasTable(block)) {
 				anchor = i;
 				break;
 			}
@@ -552,81 +551,100 @@ function splitBody(
 	} else if (type === "blank") {
 		for (let i = blocks.length - 1; i >= 0; i--) {
 			const block = blocks[i];
-			if (block !== undefined && collectBlanks(blockLines(block).join("\n"), blankMarker).length > 0) {
+			if (block !== undefined && blockHasBlanks(block)) {
 				anchor = i;
 				break;
 			}
 		}
-	} else if (type === "essay") {
+	} else {
 		anchor = blocks.length - 1;
 	}
 	if (anchor < 0) return fallback;
 
+	// 从目标块向上探测：紧邻目标块的一段默认属于题面；再往上只有贴着表格的
+	// 强制空行才继续越过，普通空行即停止。
 	const anchorBlock = blocks[anchor];
 	if (anchorBlock === undefined) return fallback;
 	const anchorLines = blockLines(anchorBlock);
-	const precedingBlock = anchor > 0 ? blocks[anchor - 1] : undefined;
-	const precedingLines = precedingBlock !== undefined ? blockLines(precedingBlock) : [];
-	const structureLine = bodyStartLine + anchorBlock.start;
+	const hasAttachedText =
+		(type === "single" || type === "multi") &&
+		anchorLines.some((line) => line.trim() !== "" && !isListLine(line) && !isTableLine(line));
+	const included: number[] = [anchor];
+	let cursor = anchor;
+	let canIncludeOrdinary = !hasAttachedText;
+	while (cursor > 0) {
+		const upperBlock = blocks[cursor - 1];
+		const lowerBlock = blocks[cursor];
+		if (upperBlock === undefined || lowerBlock === undefined) break;
+		const forced = blockHasTable(upperBlock) || blockHasTable(lowerBlock);
+		if (!forced) {
+			if (!canIncludeOrdinary) break;
+			canIncludeOrdinary = false;
+		}
+		included.unshift(cursor - 1);
+		cursor -= 1;
+		canIncludeOrdinary = false;
+	}
+
+	const firstBlock = blocks[included[0] ?? anchor];
+	if (firstBlock === undefined) return fallback;
+	// 保留块与块之间的原始空行：表格需要空行才能被 Markdown 识别。
+	const spanLines = lines.slice(firstBlock.start, anchorBlock.end);
+	const spanText = spanLines.join("\n");
+	const structureLine = bodyStartLine + firstBlock.start;
+	const textLine = (line: string): boolean => line.trim() !== "" && !isTableLine(line);
 
 	if (type === "blank") {
-		// 空位就在这一段里，整段都是题面；更上面的段不属于这道题。
-		const text = anchorLines.join("\n").trim();
-		return { stem: text, supplement: "", structure: anchorLines.join("\n"), structureLine };
+		// 空位就在目标段里，整段（含被强制空行拉进来的表格）都是题面。
+		const text = spanText.trim();
+		return { stem: text, supplement: "", structure: spanText, structureLine };
 	}
 
 	if (type === "essay") {
 		// 参考答案常写成 callout：它是答案本身，题面是它上面紧邻的一段。
+		const anchorLines = blockLines(anchorBlock);
+		const precedingBlock = blocks[anchor - 1];
+		const precedingLines = precedingBlock !== undefined ? blockLines(precedingBlock) : [];
 		const isCallout = anchorLines.some((line) => CALLOUT_LINE_RE.test(line));
 		const stem = isCallout
 			? [precedingLines.join("\n"), anchorLines.join("\n")]
 					.filter((part) => part.trim() !== "")
 					.join("\n\n")
-			: anchorLines.join("\n");
+			: spanText;
 		return { stem: stem.trim(), supplement: "", structure: "", structureLine };
 	}
 
 	if (type === "match") {
-		// 配对题：表格是结构块。表格上面的文字（同一段或紧邻的一段）是题面，
-		// 表格下面的文字才是补充内容——合并表格上下的空行时两者可能落在同一段里。
-		const tableIndexes = anchorLines
+		// 配对题：表格是结构块（可能有多张）；表格上方是题面，最后一张表下方是补充内容。
+		const tableIndexes = spanLines
 			.map((line, index) => (isTableLine(line) ? index : -1))
 			.filter((index) => index >= 0);
 		const firstTable = tableIndexes[0] ?? -1;
 		const lastTable = tableIndexes[tableIndexes.length - 1] ?? -1;
-		const before = firstTable < 0 ? [] : anchorLines.slice(0, firstTable);
-		const after = lastTable < 0 ? [] : anchorLines.slice(lastTable + 1);
-		const textLine = (line: string): boolean => line.trim() !== "" && !isTableLine(line);
-		const beforeText = before.filter(textLine);
-		// 表格所在的段里已经有文字时，它就是最近的那一段题面；再上面隔着空行的一段
-		// 属于更远的段落，不能一起并进来（否则题干会多出一段分组说明）。
-		const stemLines = beforeText.length > 0 ? beforeText : precedingLines.filter(textLine);
+		const stemLines = firstTable >= 0 ? spanLines.slice(0, firstTable) : spanLines;
+		const afterLines = lastTable >= 0 ? spanLines.slice(lastTable + 1) : [];
 		return {
-			stem: stemLines.join("\n").trim(),
-			supplement: after.filter(textLine).join("\n").trim(),
-			// 结构块保留原始行（含空行）：解析多张表时要靠空行把表格分组。
-			structure: anchorLines.join("\n"),
+			stem: stemLines.filter(textLine).join("\n").trim(),
+			supplement: afterLines.filter(textLine).join("\n").trim(),
+			structure: spanText,
 			structureLine,
 		};
 	}
 
-	// 到这里只剩选择题：列表是结构块，其余行（附着的说明文字、题干里的表格）都要显示。
-	// 表格不能当结构行处理：选择题的结构只有选项列表，题干表格是题目内容的一部分。
-	const supplementLines = anchorLines.filter((line) => line.trim() !== "" && !isListLine(line));
-	// 结构块自带文字（说明）时，它就是离数据块最近的一段题面；再上一段隔着空行，
-	// 属于更远的段落，不纳入题面（否则会把上一段的残留也显示出来）。单纯附着的表格
-	// 不算文字段，不能因此丢掉上面的题面。
-	const attached = supplementLines.some((line) => !isTableLine(line));
-	const stemLines = attached ? [] : precedingLines.filter((line) => !isListLine(line));
+	// 选择题：目标块的列表是唯一结构；列表之外的行（附着文字、题干里的表格）显示出来。
+	// 上面隔着“普通空行”的段不并入，隔着的空行紧贴表格时才继续向上取。
+	const attachedLines = anchorLines.filter((line) => line.trim() !== "" && !isListLine(line));
+	const stemLines = included.length > 1 ? lines.slice(firstBlock.start, anchorBlock.start) : [];
 
 	return {
 		stem: stemLines.join("\n").trim(),
-		supplement: supplementLines.join("\n").trim(),
-		// 选择题的结构只取列表行：表格属于题面内容，交给 supplement 显示。
+		supplement: attachedLines.join("\n").trim(),
+		// 选择题的结构只取列表行：表格属于题面内容，交给题面/补充内容显示。
 		structure: anchorLines.filter(isListLine).join("\n"),
 		structureLine,
 	};
 }
+
 
 function parseQuestion(ctx: QuestionContext): QuizQuestion {
 	const { lines, fenceMap, heading, endLine, questionIndex, deps } = ctx;

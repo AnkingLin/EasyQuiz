@@ -72,7 +72,7 @@ export function formatStem(question: QuizQuestion, mode: BlankMarkerMode = "high
 	if (question.type === "match") {
 		text = dropTables(text);
 	}
-	return text.replace(/\n{3,}/g, "\n\n").trim();
+	return ensureTableSpacing(text).replace(/\n{3,}/g, "\n\n").trim();
 }
 
 /**
@@ -87,7 +87,43 @@ export function formatSupplement(question: QuizQuestion, mode: BlankMarkerMode =
 		text = text.replace(new RegExp(regex.source, "g"), "$1");
 	}
 	text = text.replace(ANCHOR_AT_END, "");
-	return text.replace(/\n{3,}/g, "\n\n").trim();
+	return ensureTableSpacing(text).replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * 表格前后必须有空行，否则 Obsidian 不会把它当成独立的表格段落（答题页会显示成
+ * 一行行竖线）。代码块内的表格不处理。
+ */
+export function ensureTableSpacing(text: string): string {
+	const lines = text.split("\n");
+	const out: string[] = [];
+	let fenceMarker: string | null = null;
+	let index = 0;
+	while (index < lines.length) {
+		const line = lines[index] ?? "";
+		const fence = /^\s*(`{3,}|~{3,})/.exec(line);
+		const markers = fence?.[1];
+		if (markers !== undefined && markers !== "") {
+			const marker = markers.slice(0, 1);
+			if (fenceMarker === null) fenceMarker = marker;
+			else if (fenceMarker === marker) fenceMarker = null;
+			out.push(line);
+			index++;
+			continue;
+		}
+		if (fenceMarker !== null || !line.trim().startsWith("|")) {
+			out.push(line);
+			index++;
+			continue;
+		}
+		if (out.length > 0 && (out[out.length - 1] ?? "").trim() !== "") out.push("");
+		while (index < lines.length && (lines[index] ?? "").trim().startsWith("|")) {
+			out.push(lines[index] ?? "");
+			index++;
+		}
+		if (index < lines.length && (lines[index] ?? "").trim() !== "") out.push("");
+	}
+	return out.join("\n");
 }
 
 /** 去掉顶层列表项（选项已由选项控件渲染）。代码块内的内容不动。 */

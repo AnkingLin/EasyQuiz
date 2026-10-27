@@ -100,21 +100,23 @@ option never misaligns records. Duplicate anchors still make the question unansw
 
 ## What the card shows as the stem
 
-Only the **nearest block above the structure** is shown. A block here means a run of consecutive
+The stem is gathered **upward** from the type's **target block**. A block here means a run of consecutive
 non-blank lines; a blank line starts a new block.
 
-| `type` | Structure block | What the card shows |
+| `type` | Target block | What the card shows |
 |---|---|---|
-| `single` / `multi` | The nearest block that contains the option list | Non-list lines inside the option block are the supplement. The block above the option block is the stem **only when the option block has no such prose**; with prose attached to the options, the farther block stays hidden. |
-| `match` | The nearest block that contains the table | Blank lines above and below tables do not split the block: prose above the table is the stem, prose below it is the supplement. Several consecutive tables (each with its own header and separator row) merge into one structure. |
-| `blank` | The nearest block that contains blank markers | That whole block is the stem. |
+| `single` / `multi` | The nearest block that contains the option list | The block right above is the stem; non-list lines inside the target block are the supplement, and no ordinary block above is taken then. Tables inside the target stay visible. |
+| `match` | The nearest block that contains the table | Prose above the tables is the stem, prose after the last table is the supplement. Blank lines hugging tables are crossed, so several consecutive tables (each with its own header and separator row) merge into one structure. |
+| `blank` | The nearest block that contains blank markers | The target block plus any tables/prose reached by the walk is the stem. |
 | `essay` | The last block; if it is a reference callout, the block right above it | The instruction prose plus the collapsed callout stay in the shown stem, so the reference answer is never lost. |
 
-- Lists and tables inside the stem block are ignored — they may belong to a question further up, and
-  showing them would leak the previous question.
+- Walking up, an ordinary blank line stops the stem; a blank line that touches a table is padding and is
+  crossed, which is how a table keeps the prose above it.
+- Stems render with Obsidian's Markdown rules (tables, quotes, code), and blank lines are inserted around
+  tables so the card matches the note preview.
+- A supplement is rendered directly under the stem, in the same Markdown style.
 - Blocks above the stem are not shown at all, so a group heading's intro paragraph (separated by a blank
   line) never leaks into the first question under it.
-- A supplement is rendered directly under the stem, in the same Markdown style.
 
 ### `question` and `distractors`
 
