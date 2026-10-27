@@ -1373,25 +1373,31 @@ export class PracticeView extends ItemView {
 		}
 	}
 
-	/** 在笔记里打开当前题目：新标签页打开源文件，光标落在题面标题行。 */
+	/**
+	 * 跳到当前题目所在的笔记。
+	 *
+	 * 行为对齐 Obsidian 的链接跳转：笔记已经开着就切到那个标签页（并把光标移到题面
+	 * 标题行），没开着才新开标签页——不会每点一次就多一个重复的标签。
+	 */
 	private async openSource(): Promise<void> {
 		const entry = this.queue[this.cursor];
 		if (entry === undefined) return;
 		const file = this.fileAt.get(entry.path) ?? this.host.service.fileAtPath(entry.path);
 		if (file === null || file === undefined) return;
 		const question = resolveEntry(this.parsedByPath, entry);
+		const line = question?.line ?? 0;
 		try {
-			const leaf = this.app.workspace.getLeaf("tab");
-			await leaf.openFile(file, {
-				eState: question === undefined ? undefined : { line: question.line, ch: 0 },
-			});
-			// 阅读模式没有编辑器；源码 / 实时预览下再把光标移到题面标题，省得自己找。
-			const view = leaf.view as unknown as {
-				editor?: { setCursor: (position: { line: number; ch: number }) => void };
-			};
-			if (question !== undefined && view.editor !== undefined) {
-				view.editor.setCursor({ line: question.line, ch: 0 });
-			}
+			// `getLeavesOfType` 只覆盖主窗口；弹出的独立窗口里已经打开的笔记交给 Obsidian
+			// 自己处理（它不会重复打开同一个文件）。
+			const existing = this.app.workspace
+				.getLeavesOfType("markdown")
+				.find((leaf) => this.leafPath(leaf) === file.path);
+			const leaf = existing ?? this.app.workspace.getLeaf("tab");
+			if (existing === undefined) await leaf.openFile(file);
+			// `revealLeaf` 要 1.7.2，而插件最低支持 1.4.0；普通标签页用 setActiveLeaf
+			// 就能切过去，和点击链接的观感一致。
+			this.app.workspace.setActiveLeaf(leaf, { focus: true });
+			this.revealLine(leaf, line);
 		} catch (error) {
 			new Notice(
 				t("practice.session.openNoteFailed", {
@@ -1399,6 +1405,35 @@ export class PracticeView extends ItemView {
 				})
 			);
 		}
+	}
+
+	/** 某个标签页里打开的笔记路径；不是 Markdown 标签页时返回 null。 */
+	private leafPath(leaf: WorkspaceLeaf): string | null {
+		const view = leaf.view as unknown as { file?: { path?: string } | null };
+		return view.file?.path ?? null;
+	}
+
+	/**
+	 * 把光标/阅读位置移到指定行。源码与实时预览走编辑器；阅读模式没有编辑器，
+	 * 用预览模式的 `applyScroll`。两种情况都用文件内的行号。
+	 */
+	private revealLine(leaf: WorkspaceLeaf, line: number): void {
+		const view = leaf.view as unknown as {
+			editor?: {
+				setCursor: (position: { line: number; ch: number }) => void;
+				scrollIntoView?: (range: { from: { line: number; ch: number }; to: { line: number; ch: number } }, center?: boolean) => void;
+			};
+			previewMode?: { applyScroll?: (line: number) => void };
+			currentMode?: { applyScroll?: (line: number) => void };
+		};
+		const position = { line, ch: 0 };
+		if (view.editor !== undefined) {
+			view.editor.setCursor(position);
+			view.editor.scrollIntoView?.({ from: position, to: position }, true);
+			return;
+		}
+		const mode = view.previewMode ?? view.currentMode;
+		mode?.applyScroll?.(line);
 	}
 
 	/** 切到队列里的某一题。 */

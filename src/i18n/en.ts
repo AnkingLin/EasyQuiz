@@ -98,7 +98,7 @@ export const en = {
 	"whatsNew.distractors":
 		"Choice questions can add distractors: set how many to add and a pool of candidate options in the data block.",
 	"whatsNew.answerReview":
-		"Going back to an answered question shows your own answer, and the stats badge reflects the new attempt. A new Open note button jumps to the question in its bank.",
+		"Going back to an answered question shows your own answer, and the stats badge reflects the new attempt. A new Open note button jumps to the question in its bank, reusing the tab if the note is already open.",
 	"whatsNew.bankListFix":
 		"The bank picker shows partial selection for folders and picks up file changes when you switch back, without a manual rescan.",
 
