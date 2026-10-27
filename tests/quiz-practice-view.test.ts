@@ -1026,7 +1026,7 @@ test("刷题页：题目卡片右上方提供打开原题笔记的编辑按钮",
 	);
 });
 
-test("刷题页：源笔记已经打开时用原生链接跳到标题，而不是再开一个标签页", async () => {
+test("刷题页：源笔记已经打开时切到那个标签页，而不是再开一个", async () => {
 	const harness = buildHarness([{ file: fakeFile("题库/甲.md"), source: BANK_A }], true);
 	await openPicker(harness, "题库/甲.md");
 	await startSession(harness);
@@ -1034,7 +1034,17 @@ test("刷题页：源笔记已经打开时用原生链接跳到标题，而不�
 	const file = harness.service.fileAtPath("题库/甲.md");
 	assert(file !== null, "缺少源文件");
 	const calls: string[] = [];
-	const existingLeaf = { view: { file } };
+	const cursors: number[] = [];
+	const existingLeaf = {
+		view: {
+			file,
+			editor: {
+				setCursor: (position: { line: number }) => {
+					cursors.push(position.line);
+				},
+			},
+		},
+	};
 	(harness.view as unknown as { app: unknown }).app = {
 		workspace: {
 			getLeavesOfType: (type: string) => (type === "markdown" ? [existingLeaf] : []),
@@ -1045,9 +1055,6 @@ test("刷题页：源笔记已经打开时用原生链接跳到标题，而不�
 			setActiveLeaf: async () => {
 				calls.push("activate");
 			},
-			openLinkText: async (link: string, source: string, newLeaf?: boolean) => {
-				calls.push(`link:${link}|${source}|${String(newLeaf)}`);
-			},
 		},
 	};
 
@@ -1057,10 +1064,11 @@ test("刷题页：源笔记已经打开时用原生链接跳到标题，而不�
 	assertEqual(calls.includes("new-leaf"), false, "已打开的笔记不应再开新标签页");
 	assertEqual(calls.includes("open-file"), false, "已打开的笔记不应重新打开");
 	assert(calls.includes("activate"), "应切到已有标签页");
-	assert(calls.includes("link:题库/甲.md#单选题甲|题库/甲.md|false"), "应调用原生链接跳转以定位到标题");
+	// 第一题的 ```quiz 数据块从第 9 行（0 基）开始。
+	assertEqual(cursors[0], 9, "光标应落在题目的数据块上");
 });
 
-test("刷题页：源笔记没打开时才新开标签页，并同样走原生链接", async () => {
+test("刷题页：源笔记没打开时才新开标签页，并定位到题目块", async () => {
 	const harness = buildHarness([{ file: fakeFile("题库/甲.md"), source: BANK_A }], true);
 	await openPicker(harness, "题库/甲.md");
 	await startSession(harness);
@@ -1068,8 +1076,16 @@ test("刷题页：源笔记没打开时才新开标签页，并同样走原生�
 	const file = harness.service.fileAtPath("题库/甲.md");
 	assert(file !== null, "缺少源文件");
 	const calls: string[] = [];
+	const cursors: number[] = [];
 	const openedLeaf = {
-		view: { file },
+		view: {
+			file,
+			editor: {
+				setCursor: (position: { line: number }) => {
+					cursors.push(position.line);
+				},
+			},
+		},
 		openFile: async () => {
 			calls.push("open-file");
 		},
@@ -1084,9 +1100,6 @@ test("刷题页：源笔记没打开时才新开标签页，并同样走原生�
 			setActiveLeaf: async () => {
 				calls.push("activate");
 			},
-			openLinkText: async (link: string) => {
-				calls.push(`link:${link}`);
-			},
 		},
 	};
 
@@ -1095,6 +1108,6 @@ test("刷题页：源笔记没打开时才新开标签页，并同样走原生�
 
 	assertEqual(calls.includes("open-file"), true, "没打开时应打开源笔记");
 	assert(calls.includes("tab"), "应在标签页中打开");
-	assert(calls.includes("link:题库/甲.md#单选题甲"), "打开后应走原生链接定位到标题");
+	assertEqual(cursors[0], 9, "打开后应定位到题目的数据块");
 });
 

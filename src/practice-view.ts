@@ -1465,11 +1465,11 @@ export class PracticeView extends ItemView {
 	}
 
 	/**
-	 * 跳到当前题目所在的笔记。
+	 * 打开当前题目所在的笔记，并定位到题目自己的数据块。
 	 *
-	 * 行为对齐 Obsidian 的内链跳转：笔记已经开着就切到那个标签页，没开着才新开；
-	 * 定位也走原生链接（`path#标题`），标题会像点击内链一样闪一下黄色高亮、光标
-	 * 落在标题行。手写 `setCursor` 不会触发那个高亮，所以只在拿不到标题时兜底。
+	 * 笔记已经开着就切到那个标签页，没开着才新开。定位直接用行号（数据块的
+	 * ```quiz 行），不拼 `path#标题` 链接：标题可能带知识点链接 `^[[[...]]]`
+	 * 之类的尾巴，拼出来的链接解析不到标题时会静默失败，按钮看起来就像没反应。
 	 */
 	private async openSource(): Promise<void> {
 		const entry = this.queue[this.cursor];
@@ -1477,9 +1477,8 @@ export class PracticeView extends ItemView {
 		const file = this.fileAt.get(entry.path) ?? this.host.service.fileAtPath(entry.path);
 		if (file === null || file === undefined) return;
 		const question = resolveEntry(this.parsedByPath, entry);
-		const line = question?.line ?? 0;
-		// 标题来自题面标题行本身（不是 `question` 字段），才能被 Obsidian 解析成链接目标。
-		const heading = (question?.title ?? "").trim();
+		// 定位到数据块（题型、答案、解析都在这里）；取不到块行时退回题目标题行。
+		const line = question?.blockLine ?? question?.line ?? 0;
 		try {
 			// `getLeavesOfType` 只覆盖主窗口；弹出的独立窗口里已经打开的笔记交给 Obsidian
 			// 自己处理（它不会重复打开同一个文件）。
@@ -1491,11 +1490,7 @@ export class PracticeView extends ItemView {
 			// `revealLeaf` 要 1.7.2，而插件最低支持 1.4.0；普通标签页用 setActiveLeaf
 			// 就能切过去，和点击链接的观感一致。
 			this.app.workspace.setActiveLeaf(leaf, { focus: true });
-			if (heading === "") {
-				this.revealLine(leaf, line);
-				return;
-			}
-			await this.app.workspace.openLinkText(`${file.path}#${heading}`, file.path, false);
+			this.revealLine(leaf, line);
 		} catch (error) {
 			new Notice(
 				t("practice.session.openNoteFailed", {
