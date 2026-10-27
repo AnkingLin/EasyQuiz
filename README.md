@@ -619,7 +619,7 @@ appears for Markdown question banks; multi-selections and other files are left a
 | Stem heading matching | Fixed level | **Fixed level**: only the configured heading level counts; **Auto**: every heading that owns a `quiz` block is a question, so levels can be mixed |
 | Question-bank path globs | empty | One per line, e.g. `题库/**` |
 | Write records back | on | Turn off to grade in the UI only, leaving notes untouched |
-| Show the changed-question hint | on | Show a hint on the card when the stem changed after `rev` was recorded; its **Dismiss** link writes the current `rev` back |
+| Show the changed-question hint | on | Show a hint on the card when the stem changed after `rev` was recorded; **Dismiss** on a card turns this setting off |
 | Per-question history cap | 10 | Records live in the note, so the detail list must be capped; `0` keeps only the summary |
 
 ## Installing into a vault
@@ -629,6 +629,13 @@ appears for Markdown question banks; multi-selections and other files are left a
 3. Reload Obsidian and enable the plugin under **Settings → Community plugins**.
 
 ## What's new
+
+### 1.1.1
+
+- **Reference by question id.** Write a question id as inline code in any note and the card renders in place; the old `![[bank#stem]]` embed still works.
+- **A more accurate Edit button.** It opens the question's heading like a backlink: the cursor lands on the heading in edit mode, reading view scrolls there with the native highlight, and an already-open tab is reused.
+- **The hint can be switched off.** The changed-question hint has a setting; **Dismiss** on a card turns that setting off, so the warning colour disappears from every card.
+- **Safer navigation.** Clear this question's records moved to the right-hand nav group, beside the jump box.
 
 ### 1.1.0 — embedded authoring
 
@@ -659,7 +666,7 @@ Each version is announced once. Older releases are on [GitHub Releases](https://
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (425 cases)
+npm test           # bundle and run the test suite (435 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 npm run assets     # regenerate the screenshots and GIFs used by the READMEs
