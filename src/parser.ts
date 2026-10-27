@@ -40,6 +40,13 @@ export interface ParseOptions {
 	blockLanguage?: string;
 	/** 题面标题层级区间，默认 2–4。 */
 	headingLevels?: [number, number];
+	/**
+	 * 哪些标题算作一道题：
+	 * - `level`（默认）：只认 `headingLevels` 区间内的标题；
+	 * - `auto`：在 1–6 级标题里挑「自己这一段里有数据块」的最近标题，
+	 *   分组标题（不含数据块的上级标题）不会变成空题。
+	 */
+	headingMode?: HeadingMode;
 	/** 允许的题库文件路径通配符；调用方先判定命中再传入。 */
 	pathMatched?: boolean;
 	/** Obsidian 汇总的全部标签（含 frontmatter tags 与正文 inline tag）。 */
@@ -49,8 +56,12 @@ export interface ParseOptions {
 	deps: ParseDependencies;
 }
 
+/** 题面标题的匹配方式，见 {@link ParseOptions.headingMode}。 */
+export type HeadingMode = "level" | "auto";
+
 export const DEFAULT_BLOCK_LANGUAGE = "quiz";
 export const DEFAULT_HEADING_LEVELS: [number, number] = [2, 2];
+export const DEFAULT_HEADING_MODE: HeadingMode = "level";
 export const DEFAULT_BLANK_MARKER: BlankMarkerMode = "highlight";
 
 /** 作者可书写的字段；其余字段视为未知并提示。 */
@@ -65,6 +76,8 @@ const KNOWN_META_KEYS = new Set([
 	"stats",
 	"rev",
 	"history",
+	"question",
+	"distractors",
 ]);
 
 const QUIZ_TAG = "#quiz";
@@ -131,6 +144,7 @@ export function parseQuizFile(content: string, path: string, options: ParseOptio
 	const { deps } = options;
 	const blockLanguage = options.blockLanguage ?? DEFAULT_BLOCK_LANGUAGE;
 	const [minLevel, maxLevel] = options.headingLevels ?? DEFAULT_HEADING_LEVELS;
+	const headingMode = options.headingMode ?? DEFAULT_HEADING_MODE;
 
 	const lines = splitLines(content);
 	const warnings: ParseWarning[] = [];
@@ -143,10 +157,12 @@ export function parseQuizFile(content: string, path: string, options: ParseOptio
 	// 一次算出每行的围栏归属，标题扫描与题面解析共用，避免多处各写一份状态机。
 	const fenceMap = buildFenceMap(lines);
 
-	// 标题扫描：找出所有落在题面层级区间内的标题。
-	// 规则：更深一级的标题只在「后面还有更浅的标题」时算子标题（该层级的分组用途），
-	// 否则它本身就是一道题的题面。这样同一层级的标题始终能开新题。
-	const candidates: { line: number; level: number; title: string }[] = [];
+	// 标题扫描：找出所有可能的题面标题。
+	// level 模式：只认 headingLevels 区间内的标题；更深一级的标题只在「后面还有更浅的
+	// 标题」时算子标题（分组用途），否则它本身就是一道题的题面。
+	// auto 模式：在 1–6 级标题里挑「自己这一段里有 quiz 数据块」的标题——数据块归属于
+	// 离它最近的那一个标题，所以 `## 分组` 这种没有自己内容的标题不会变成空题。
+	const allHeadings: { line: number; level: number; title: string }[] = [];
 	for (let i = bodyStartLine; i < lines.length; i++) {
 		const state = fenceMap[i];
 		if (state && (state.kind === "open" || state.kind === "inside")) continue;
@@ -157,9 +173,30 @@ export function parseQuizFile(content: string, path: string, options: ParseOptio
 		const level = match[1]?.length ?? 0;
 		const title = match[2];
 		if (title === undefined) continue;
-		if (level < minLevel || level > maxLevel) continue;
-		candidates.push({ line: i, level, title });
+		if (headingMode === "level" && (level < minLevel || level > maxLevel)) continue;
+		allHeadings.push({ line: i, level, title });
 	}
+
+	// 每个标题「自己那一段」（到下一个任意级别的标题为止）里有没有数据块。
+	const ownsBlock = allHeadings.map((heading, index) => {
+		const stop = allHeadings[index + 1]?.line ?? lines.length;
+		for (let i = heading.line + 1; i < stop; i++) {
+			if (fenceMap[i]?.kind === "open" && fenceMap[i]?.language === blockLanguage) return true;
+		}
+		return false;
+	});
+	// auto 模式只保留拥有数据块的标题：数据块归属于离它最近的标题，所以 `## 分组`
+	// 这种没有自己内容的上级标题不会变成空题，而更深一级、自己带数据块的标题会独立成题。
+	// 整篇都没有数据块时退回 headingLevels 区间，避免把普通笔记的每个标题都当成缺数据块。
+	const autoCandidates =
+		headingMode === "auto" ? allHeadings.filter((heading, index) => ownsBlock[index] === true) : [];
+	const fallback = headingMode === "auto" && autoCandidates.length === 0;
+	const candidates = fallback
+		? allHeadings.filter((heading) => heading.level >= minLevel && heading.level <= maxLevel)
+		: autoCandidates.length > 0
+			? autoCandidates
+			: allHeadings;
+	const autoMode = headingMode === "auto" && !fallback;
 
 	// 更深一级的标题若后面还有更浅的标题，则它是子标题，归入当前题的题面。
 	const minimalLevelAfter: number[] = new Array<number>(candidates.length).fill(Number.MAX_SAFE_INTEGER);
@@ -169,13 +206,18 @@ export function parseQuizFile(content: string, path: string, options: ParseOptio
 			minimalLevelAfter[index + 1] ?? Number.MAX_SAFE_INTEGER
 		);
 	}
-	const headings = candidates.filter((heading, index) => (minimalLevelAfter[index] ?? 0) >= heading.level);
+	const headings = autoMode
+		? candidates
+		: candidates.filter((heading, index) => (minimalLevelAfter[index] ?? 0) >= heading.level);
 
-	// 每道题的结束行：到下一个同级或更高级标题为止。
-	const rangeEnds: number[] = headings.map((heading, index) => {
-		for (let n = index + 1; n < headings.length; n++) {
-			const next = headings[n];
-			if (next && next.level <= heading.level) return next.line;
+	// 每道题的结束行：
+	// - level 模式：到下一个同级或更高级标题为止；
+	// - auto 模式：到下一个拥有数据块的标题为止（中间没有数据块的子标题归入当前题的题面），
+	//   这样父标题只吃自己那一段，不会把子题的数据块吞进来。
+	const rangeEnds: number[] = headings.map((heading) => {
+		for (const next of candidates) {
+			if (next.line <= heading.line) continue;
+			if (autoMode || next.level <= heading.level) return next.line;
 		}
 		return lines.length;
 	});
@@ -425,6 +467,122 @@ interface QuestionContext {
 	warnings: ParseWarning[];
 }
 
+/** 把题面正文拆成「题面、补充内容、结构块」三部分。 */
+interface BodySplit {
+	/** 显示在题卡上的题面正文。 */
+	stem: string;
+	/** 附着在结构（列表/表格）上方、中间没有空行的补充文字。 */
+	supplement: string;
+	/** 供结构解析使用的正文：只含结构块里的选项/表格/空位。 */
+	structure: string;
+	/** 结构块的起始行号（0 基），仅用于提示定位。 */
+	structureLine: number;
+}
+
+const CALLOUT_LINE_RE = /^\s*>\s*/;
+
+/**
+ * 题面只匹配离数据块最近的那一段：
+ * - 选择题：最近一个列表所在段；段内列表以外的文字是补充内容；再上一段是题面。
+ * - 配对题：最近一个表格所在段（表格允许和上面的文字隔一个空行）；表格以外的文字是补充内容。
+ * - 填空题：最近一个带空位标记的段，整段都是题面。
+ * - 问答题：最后一段；如果是参考答案 callout，则它上面紧邻的一段文字是题面。
+ * 更远的段不纳入题面，避免把上一题的残留内容显示出来。
+ */
+function splitBody(
+	body: string,
+	type: QuizType | null,
+	blankMarker: BlankMarkerMode,
+	bodyStartLine: number
+): BodySplit {
+	const fallback: BodySplit = { stem: body, supplement: "", structure: body, structureLine: bodyStartLine };
+	if (type === null) return fallback;
+
+	const lines = splitLines(body);
+	const blocks: { start: number; end: number }[] = [];
+	let index = 0;
+	while (index < lines.length) {
+		if ((lines[index] ?? "").trim() === "") {
+			index++;
+			continue;
+		}
+		const start = index;
+		while (index < lines.length && (lines[index] ?? "").trim() !== "") index++;
+		blocks.push({ start, end: index });
+	}
+	if (blocks.length === 0) return fallback;
+	const blockLines = (block: { start: number; end: number }): string[] => lines.slice(block.start, block.end);
+	const isListLine = (line: string): boolean => LIST_ITEM_RE.test(line);
+	const isTableLine = (line: string): boolean => parseTableRow(line) !== null;
+
+	let anchor = -1;
+	if (type === "single" || type === "multi") {
+		for (let i = blocks.length - 1; i >= 0; i--) {
+			const block = blocks[i];
+			if (block !== undefined && blockLines(block).some(isListLine)) {
+				anchor = i;
+				break;
+			}
+		}
+	} else if (type === "match") {
+		for (let i = blocks.length - 1; i >= 0; i--) {
+			const block = blocks[i];
+			if (block !== undefined && blockLines(block).some(isTableLine)) {
+				anchor = i;
+				break;
+			}
+		}
+	} else if (type === "blank") {
+		for (let i = blocks.length - 1; i >= 0; i--) {
+			const block = blocks[i];
+			if (block !== undefined && collectBlanks(blockLines(block).join("\n"), blankMarker).length > 0) {
+				anchor = i;
+				break;
+			}
+		}
+	} else if (type === "essay") {
+		anchor = blocks.length - 1;
+	}
+	if (anchor < 0) return fallback;
+
+	const anchorBlock = blocks[anchor];
+	if (anchorBlock === undefined) return fallback;
+	const anchorLines = blockLines(anchorBlock);
+	const precedingBlock = anchor > 0 ? blocks[anchor - 1] : undefined;
+	const precedingLines = precedingBlock !== undefined ? blockLines(precedingBlock) : [];
+	const structureLine = bodyStartLine + anchorBlock.start;
+
+	if (type === "blank") {
+		// 空位就在这一段里，整段都是题面；更上面的段不属于这道题。
+		const text = anchorLines.join("\n").trim();
+		return { stem: text, supplement: "", structure: anchorLines.join("\n"), structureLine };
+	}
+
+	if (type === "essay") {
+		// 参考答案常写成 callout：它是答案本身，题面是它上面紧邻的一段。
+		const isCallout = anchorLines.some((line) => CALLOUT_LINE_RE.test(line));
+		const stem = isCallout
+			? [precedingLines.join("\n"), anchorLines.join("\n")]
+					.filter((part) => part.trim() !== "")
+					.join("\n\n")
+			: anchorLines.join("\n");
+		return { stem: stem.trim(), supplement: "", structure: "", structureLine };
+	}
+
+	const isStructureLine = type === "single" || type === "multi" ? isListLine : isTableLine;
+	const structureLines = anchorLines.filter(isStructureLine);
+	const supplementLines = anchorLines.filter((line) => !isStructureLine(line));
+	// 题面取结构块上面那一段；远一点的列表/表格属于更远的题目结构，只保留其中的纯文字。
+	const stemLines = precedingLines.filter((line) => !isListLine(line) && !isTableLine(line));
+
+	return {
+		stem: stemLines.join("\n").trim(),
+		supplement: supplementLines.join("\n").trim(),
+		structure: structureLines.join("\n"),
+		structureLine,
+	};
+}
+
 function parseQuestion(ctx: QuestionContext): QuizQuestion {
 	const { lines, fenceMap, heading, endLine, questionIndex, deps } = ctx;
 
@@ -479,12 +637,27 @@ function parseQuestion(ctx: QuestionContext): QuizQuestion {
 	const body = trimBlankLines(bodyLines).join("\n");
 
 	const meta = parseMetaBlock(blockSource, blockStart, localCtx);
-	const structure = parseBodyStructure(body, heading.line + 1, localCtx);
-
 	const type = resolveType(meta.rawType, blockStart, localCtx);
+	const split = splitBody(body, type, ctx.blankMarker, heading.line + 1);
+	const structure = parseBodyStructure(split.structure, split.structureLine, localCtx);
+
 	const anchorCheck = resolveOptionAnchors(structure.options, type, localCtx);
 	const resolvedAnswer = resolveAnswer(meta.rawAnswer, type, structure.options, localCtx);
 	validateStructure(type, structure, resolvedAnswer, blockStart, localCtx);
+	// 干扰项只影响选择题的呈现；写在别的题型上属于无效字段，提示后忽略。
+	if (
+		type !== null &&
+		type !== "single" &&
+		type !== "multi" &&
+		(meta.distractors.count > 0 || meta.distractors.pool.length > 0)
+	) {
+		localCtx.warnings.push({
+			code: "field-invalid",
+			message: t("parser.distractorsUnsupported"),
+			questionIndex: null,
+			line: blockStart,
+		});
+	}
 
 	// 标题末尾的 `^[[[知识点]]]` 是溯源信息，不算题面文本：既不显示，也不参与派生 id。
 	const headingTitle = splitKnowledgeLink(heading.title);
@@ -510,10 +683,13 @@ function parseQuestion(ctx: QuestionContext): QuizQuestion {
 		id,
 		idDerived: meta.id === null,
 		title: headingTitle.title,
+		displayTitle: meta.question ?? headingTitle.title,
 		knowledgeLink: headingTitle.knowledgeLink,
 		level: heading.level,
 		line: heading.line,
 		body,
+		stemText: split.stem,
+		supplementText: split.supplement,
 		blockLine: blockStart >= 0 ? blockStart : null,
 		blockSource: blockStart >= 0 ? blockSource : null,
 		options: structure.options,
@@ -527,6 +703,8 @@ function parseQuestion(ctx: QuestionContext): QuizQuestion {
 		explanation: meta.explanation,
 		score: meta.score,
 		shuffle: meta.shuffle,
+		distractorCount: meta.distractors.count,
+		distractorPool: meta.distractors.pool,
 		blankRules: meta.blankRules,
 		stats: meta.stats,
 		history: meta.history,
@@ -558,6 +736,9 @@ function structureHashSource(
 		structure.boardPairs.map((pair) => `${pair.left}~${pair.right}`).join("|"),
 		structure.blanks.map((b) => `${b.anchor}:${b.expected}`).join("|"),
 		typeof meta.rawAnswer === "string" ? meta.rawAnswer : JSON.stringify(meta.rawAnswer ?? null),
+		meta.question ?? "",
+		String(meta.distractors.count),
+		meta.distractors.pool.join("|"),
 		JSON.stringify(meta.blankRules),
 	].join("\u0001");
 }
@@ -579,6 +760,10 @@ interface MetaBlock {
 	rawAnswer: unknown;
 	rawRev: unknown;
 	id: string | null;
+	/** `question` 字段：代替标题显示在题卡上；没写时为 null。 */
+	question: string | null;
+	/** 选择题的干扰项配置。 */
+	distractors: DistractorConfig;
 	explanation: string | null;
 	score: number;
 	shuffle: boolean;
@@ -587,12 +772,22 @@ interface MetaBlock {
 	history: HistoryEntry[];
 }
 
+/** 数据块里 `distractors` 的解析结果。 */
+interface DistractorConfig {
+	/** 额外插入的干扰项个数；0 表示不加。 */
+	count: number;
+	/** 候选干扰项文本池。 */
+	pool: string[];
+}
+
 function parseMetaBlock(source: string, blockLine: number, ctx: QuestionContext): MetaBlock {
 	const empty: MetaBlock = {
 		rawType: null,
 		rawAnswer: null,
 		rawRev: null,
 		id: null,
+		question: null,
+		distractors: { count: 0, pool: [] },
 		explanation: null,
 		score: 1,
 		shuffle: false,
@@ -663,6 +858,8 @@ function parseMetaBlock(source: string, blockLine: number, ctx: QuestionContext)
 		rawAnswer: record["answer"],
 		rawRev: record["rev"],
 		id: typeof record["id"] === "string" && record["id"].trim() !== "" ? record["id"].trim() : null,
+		question: readQuestion(record["question"], blockLine, ctx),
+		distractors: readDistractors(record["distractors"], blockLine, ctx),
 		explanation:
 			typeof record["explanation"] === "string" && record["explanation"].trim() !== ""
 				? record["explanation"].trim()
@@ -696,6 +893,76 @@ function readScore(value: unknown, blockLine: number, ctx: QuestionContext): num
 		line: blockLine,
 	});
 	return 1;
+}
+
+function readQuestion(value: unknown, blockLine: number, ctx: QuestionContext): string | null {
+	if (value === undefined) return null;
+	if (typeof value === "string") return value.trim() === "" ? null : value.trim();
+	ctx.warnings.push({
+		code: "field-invalid",
+		message: t("parser.questionInvalid"),
+		questionIndex: null,
+		line: blockLine,
+	});
+	return null;
+}
+
+/** 干扰项配置：既支持简写 `distractors: 2`，也支持 `distractors: { count, pool }`。 */
+function readDistractors(value: unknown, blockLine: number, ctx: QuestionContext): DistractorConfig {
+	const config: DistractorConfig = { count: 0, pool: [] };
+	if (value === undefined || value === null) return config;
+
+	const readCount = (raw: unknown): number | null => {
+		if (raw === undefined) return 0;
+		if (typeof raw === "number" && Number.isInteger(raw) && raw >= 0) return raw;
+		ctx.warnings.push({
+			code: "field-invalid",
+			message: t("parser.distractorsInvalid"),
+			questionIndex: null,
+			line: blockLine,
+		});
+		return null;
+	};
+
+	if (typeof value === "number" || value === undefined) {
+		const count = readCount(value);
+		if (count !== null) config.count = count;
+		return config;
+	}
+	if (typeof value !== "object" || Array.isArray(value)) {
+		ctx.warnings.push({
+			code: "field-invalid",
+			message: t("parser.distractorsInvalid"),
+			questionIndex: null,
+			line: blockLine,
+		});
+		return config;
+	}
+
+	const record = value as Record<string, unknown>;
+	const count = readCount(record["count"]);
+	if (count !== null) config.count = count;
+	const pool = record["pool"];
+	if (pool !== undefined) {
+		if (Array.isArray(pool)) {
+			const seen = new Set<string>();
+			for (const item of pool) {
+				if (typeof item !== "string") continue;
+				const text = item.trim();
+				if (text === "" || seen.has(text)) continue;
+				seen.add(text);
+				config.pool.push(text);
+			}
+		} else {
+			ctx.warnings.push({
+				code: "field-invalid",
+				message: t("parser.distractorsInvalid"),
+				questionIndex: null,
+				line: blockLine,
+			});
+		}
+	}
+	return config;
 }
 
 function readBlankRules(value: unknown, blockLine: number, ctx: QuestionContext): Record<string, BlankRule> {

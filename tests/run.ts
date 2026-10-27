@@ -16,6 +16,7 @@ import "./quiz-insert-modal.test";
 import "./quiz-match-dom.test";
 import "./quiz-choice-dom.test";
 import "./quiz-choice-shuffle.test";
+import "./quiz-stem-split.test";
 import "./quiz-knowledge-link.test";
 import "./quiz-session.test";
 import "./quiz-practice-view.test";

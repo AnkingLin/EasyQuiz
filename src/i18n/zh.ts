@@ -33,6 +33,11 @@ export const zh: MessageTable = {
 	"setting.headingLevel.name": "题面标题层级",
 	"setting.headingLevel.desc": "决定哪些标题被当作一道题。默认只认二级标题。",
 	"setting.headingLevel.h2": "H2（默认）",
+	"setting.headingMode.name": "题面标题匹配方式",
+	"setting.headingMode.desc":
+		"固定层级按上面的标题层级识别题目。自动匹配会取「自己这一段里有数据块」的最近标题，任何层级都能成题，分组标题也不会变成空题。",
+	"setting.headingMode.level": "固定层级（默认）",
+	"setting.headingMode.auto": "自动：最近的带数据块标题",
 	"setting.pathGlobs.name": "题库路径通配符",
 	"setting.pathGlobs.desc": "每行一条，例如 题库/**。命中的文件也会被当作题库。",
 	"setting.writeBack.name": "记录写回",
@@ -72,6 +77,11 @@ export const zh: MessageTable = {
 	"whatsNew.optionAnchors": "选择题选项的锚点可以省略：一个都没写时按顺序自动编号，只写了一部分时没锚点的选项会从题卡隐藏。",
 	"whatsNew.markdownEverywhere": "题面、选项、解析和配对单元格都按 Markdown 渲染，加粗、行内代码、内嵌图片和公式都能正常显示。",
 	"whatsNew.compactPracticePage": "刷题页在手机上更紧凑：进度行不再重复题目标题，页头、进度条和按钮占的地方也更少。",
+	"whatsNew.autoHeading": "题面标题可以自动匹配：在设置里选“自动”，自己这一段里有数据块的最近标题就是一道题，任何层级都行。",
+	"whatsNew.nearestStem": "题卡只把最近的一段文字、列表或表格当作题面；紧贴在选项或表格上方、中间没有空行的文字作为补充内容显示，更远的段不再纳入。",
+	"whatsNew.distractors": "选择题可以在数据块里加干扰项：设置追加几个，以及候选干扰项的候选池。",
+	"whatsNew.answerReview": "切回已答过的题会显示你当时的作答，右上角统计也会跟着更新；新增“打开笔记”按钮，直接跳到题库里的这道题。",
+	"whatsNew.bankListFix": "题库选择页的文件夹会显示半选状态；从其他页面切回来时自动发现文件变化，不用再手动重新扫描。",
 
 	// -----------------------------------------------------------------------
 	// 诊断卡片（数据块渲染）
@@ -106,6 +116,11 @@ export const zh: MessageTable = {
 	"card.review.explanation": "解析",
 	"card.review.blank": "第 {index} 空：{expected}",
 	"card.review.essay": "问答题按自评记录，参考答案见题面中的折叠标注。",
+	"card.review.yourAnswer": "你的作答",
+	"card.review.noAnswer": "这次没有记录到作答内容。",
+	"card.review.blankAnswer": "第 {index} 空：{value}",
+	"card.review.essayMastered": "你标记为：已掌握",
+	"card.review.essayNotMastered": "你标记为：还没掌握",
 
 	// -----------------------------------------------------------------------
 	// 题卡角标
@@ -228,6 +243,8 @@ export const zh: MessageTable = {
 	"practice.session.results": "查看本轮结果",
 	"practice.session.peek": "查看解析",
 	"practice.session.jump": "跳到第几题",
+	"practice.session.openNote": "打开原题笔记",
+	"practice.session.openNoteFailed": "打开原题笔记失败：{error}",
 	"practice.summary.title": "本轮结果",
 	"practice.summary.line": "共 {total} 题 · 已作答 {answered} · 正确 {correct} · 错误 {wrong} · 正确率 {rate}%",
 	"practice.summary.writeBackOff": "当前设置关闭了记录写回，本轮成绩没有写入笔记。",
@@ -252,6 +269,9 @@ export const zh: MessageTable = {
 	"parser.scoreInvalid": "`score` 必须为非负数字，已按 1 处理。",
 	"parser.blanksInvalid": "`blanks` 必须是「锚点: 规则」的映射，已忽略。",
 	"parser.blankRuleInvalid": "`blanks.{anchor}` 必须是规则对象，已忽略该空位的规则。",
+	"parser.questionInvalid": "`question` 必须是非空字符串，已改用标题作为题面标题。",
+	"parser.distractorsInvalid": "`distractors` 必须是数量或 `{ count, pool }`，已忽略。",
+	"parser.distractorsUnsupported": "`distractors` 只对单选题和多选题有效，已忽略。",
 	"parser.typeMissing": "缺少 `type` 字段，无法确定题型。合法取值：{types}。",
 	"parser.typeInvalid": "`type: {value}` 非法。合法取值：{types}。",
 	"parser.columnUnnamed": "第 {index} 列",

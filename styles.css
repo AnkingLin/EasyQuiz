@@ -156,6 +156,20 @@
 	margin-bottom: 0;
 }
 
+/* 补充内容：紧贴选项列表/表格、中间没有空行的那段说明文字。 */
+.easy-quiz-card__supplement {
+	max-width: var(--eqq-measure);
+	margin-top: var(--eqq-2);
+}
+
+.easy-quiz-card__supplement > :first-child {
+	margin-top: 0;
+}
+
+.easy-quiz-card__supplement > :last-child {
+	margin-bottom: 0;
+}
+
 /* ---------------------------------------------------------- 选择题 */
 
 .easy-quiz-card__options {
@@ -250,6 +264,26 @@
 	border-color: var(--interactive-accent);
 	background: var(--interactive-accent);
 	box-shadow: inset 0 0 0 2px var(--background-primary);
+}
+
+/* 复盘时标出用户自己的选择：选对打绿勾，选错打红叉。 */
+.easy-quiz-card__option.is-correct::after,
+.easy-quiz-card__option.is-wrong::after {
+	flex: none;
+	margin-left: auto;
+	padding-left: var(--eqq-2);
+	font-weight: var(--font-bold, 700);
+	line-height: 1.2;
+}
+
+.easy-quiz-card__option.is-correct::after {
+	content: "✓";
+	color: var(--text-success);
+}
+
+.easy-quiz-card__option.is-wrong::after {
+	content: "✕";
+	color: var(--text-error);
 }
 
 .easy-quiz-card__option:focus-visible {
@@ -408,6 +442,13 @@
 .easy-quiz-card__link-hit:hover {
 	stroke: var(--text-error, #e93147);
 	opacity: 0.4;
+}
+
+/* 复盘时用户连出的错误连线：红色虚线，与正确的实线区分开。 */
+.easy-quiz-card__link.is-wrong {
+	stroke: var(--text-error, #e93147);
+	stroke-dasharray: 5 4;
+	opacity: 0.9;
 }
 
 /* ---------------------------------------------------- 提交与结果反馈 */
@@ -1190,6 +1231,32 @@
 	background: var(--background-modifier-hover);
 	background: color-mix(in srgb, var(--text-success) 18%, transparent);
 	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-success) 40%, transparent);
+	color: var(--text-success);
+	font-weight: var(--font-semibold, 600);
+}
+
+/* 复盘时空位比对：用户填错的答案划掉并补上正确答案。 */
+.easy-quiz-card__blank-compare {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 2px;
+	margin: 0 3px;
+}
+
+.easy-quiz-card__blank-compare .easy-quiz-card__blank-answer {
+	margin: 0;
+}
+
+.easy-quiz-card__blank-answer.is-wrong {
+	background: var(--background-modifier-hover);
+	background: color-mix(in srgb, var(--text-error) 16%, transparent);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-error) 45%, transparent);
+	color: var(--text-error);
+	text-decoration: line-through;
+}
+
+.easy-quiz-card__blank-expected {
 	color: var(--text-success);
 	font-weight: var(--font-semibold, 600);
 }

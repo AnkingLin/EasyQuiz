@@ -427,7 +427,14 @@ export default class EasyQuizPlugin extends Plugin {
 			const targetFile = this.app.metadataCache.getFirstLinkpathDest(target.path, post.sourcePath);
 			if (targetFile === null || !this.service.isQuizFile(targetFile)) continue;
 			const headings = this.app.metadataCache.getFileCache(targetFile)?.headings ?? [];
-			if (!matchesQuestionHeading(target.subpath, headings, this.settings.headingLevels)) continue;
+			if (
+				!matchesQuestionHeading(
+					target.subpath,
+					headings,
+					this.settings.headingLevels,
+					this.settings.headingMode
+				)
+			) continue;
 
 			// 同步认领：就地把它改造成题卡容器。Obsidian 的 embed 加载随后找的是
 			// `.internal-embed:not(.is-loaded)`，类名已被摘掉，因此不会再把这
@@ -649,6 +656,22 @@ class EasyQuizSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						const level = Number(value);
 						this.plugin.settings.headingLevels = [level, level];
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName(t("setting.headingMode.name"))
+			.setDesc(t("setting.headingMode.desc"))
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOptions({
+						level: t("setting.headingMode.level"),
+						auto: t("setting.headingMode.auto"),
+					})
+					.setValue(this.plugin.settings.headingMode)
+					.onChange(async (value) => {
+						this.plugin.settings.headingMode = value === "auto" ? "auto" : "level";
 						await this.plugin.saveSettings();
 					})
 			);

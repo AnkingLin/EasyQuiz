@@ -9,7 +9,7 @@
  */
 
 import { App, Component, MarkdownRenderer, MarkdownRenderChild, setIcon, TFile } from "obsidian";
-import { GradeResult, UserAnswer } from "./grade";
+import { GradeResult, matchBlank, UserAnswer } from "./grade";
 import { contentHash } from "./hash";
 import { t } from "./i18n";
 import { typeLabel } from "./labels";
@@ -17,7 +17,7 @@ import { createBoardState, splitConnection } from "./match-board";
 import { plainText } from "./plain-text";
 import { formatStats, QuizService, staleNote } from "./runtime";
 import { seededRandom } from "./session";
-import { BLANK_MARKER_PREFIX, formatStem } from "./stem";
+import { BLANK_MARKER_PREFIX, formatStem, formatSupplement } from "./stem";
 import { BlankMarkerMode, QuizOption, QuizQuestion } from "./types";
 
 export interface CardContext {
@@ -49,8 +49,13 @@ export interface CardContext {
 	renderComponent?: Component;
 	/** 把自建的 MarkdownRenderChild 交给 Obsidian 的渲染上下文托管。 */
 	addRenderChild?: (child: MarkdownRenderChild) => void;
-	/** 提交完成后回调（用于刷新统计角标）。 */
-	onSubmitted?: (result: GradeResult) => void;
+	/** 提交完成后回调（用于刷新统计角标；第二个参数是这次提交的作答内容）。 */
+	onSubmitted?: (result: GradeResult, answer?: UserAnswer) => void;
+	/**
+	 * 上一次的作答内容（刷题窗口切回已答题目时传入）。
+	 * 复盘态用它把"你的选择/填写/连线/自评"标在答案旁边，而不是只给出正确答案。
+	 */
+	lastAnswer?: UserAnswer;
 	/**
 	 * 复盘模式（刷题窗口用）：不挂提交按钮，改为直接显示正确答案与解析。
 	 * 数据块渲染出的题卡不使用这个模式——那里的"看答案"就是重新读一遍源码。
@@ -88,7 +93,8 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 
 	const header = card.createDiv({ cls: "easy-quiz-card__header" });
 	header.createSpan({ cls: "easy-quiz-card__type", text: typeLabel(question.type) });
-	header.createSpan({ cls: "easy-quiz-card__title", text: question.title });
+	// 数据块里写了 `question:` 时用它代替标题作为题面标题（标题仍用于锚定题目边界）。
+	header.createSpan({ cls: "easy-quiz-card__title", text: question.displayTitle ?? question.title });
 	header.createSpan({
 		cls: `easy-quiz-card__stats${question.stale ? " is-stale" : ""}`,
 		text: formatStats(question),
@@ -110,6 +116,14 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 	const stem = formatStem(question, ctx.blankMarker);
 	if (stem.trim() !== "") {
 		await MarkdownRenderer.render(ctx.app, stem, bodyEl, ctx.file.path, component);
+	}
+
+	// 补充内容：题面最近一块结构（列表/表格/段落）之后、与它没有空行间隔的那段文字。
+	// 它不属于题面，但作者写在这里通常正是为了说明选项/表格，因此紧跟题面显示。
+	const supplement = formatSupplement(question, ctx.blankMarker);
+	if (supplement.trim() !== "") {
+		const supplementEl = card.createDiv({ cls: "easy-quiz-card__supplement" });
+		await MarkdownRenderer.render(ctx.app, supplement, supplementEl, ctx.file.path, component);
 	}
 
 	switch (question.type) {
@@ -283,7 +297,15 @@ async function renderChoice(
 	// 会重新洗一遍，用户刚记住的位置就变了，看起来像"答案认错了"。因此用内容哈希
 	// 派生的种子，同一道题永远得到同一套顺序（换一轮由 `shuffleSeed` 变）。
 	const randomize = ctx.shuffleOptions === true || question.shuffle;
-	const options = randomize ? shuffleOptionOrder(question, ctx.shuffleSeed) : anchoredOptions(question);
+	// 干扰项只影响"看到哪些选项"，不参与判分：它们使用 `~d1` 这类作者无法写出的锚点，
+	// 提交的作答里永远不会出现，正确答案的锚点集合也不包含它们。
+	const options = choiceOptions(question, randomize, ctx.shuffleSeed);
+
+	// 复盘态里把用户上次的选择重新标出来（刷题窗口切回已答题目时）。
+	const lastAnswer = ctx.lastAnswer?.kind === "choice" ? ctx.lastAnswer : null;
+	if (lastAnswer !== null) {
+		for (const anchor of lastAnswer.anchors) selected.add(anchor);
+	}
 
 	for (const option of options) {
 		// 用普通按钮而不是 <input type="radio">：避免表单控件在阅读视图里的原生行为
@@ -332,13 +354,21 @@ async function renderChoice(
 		});
 	}
 
-	// 复盘态：标出正确选项、淡化干扰项。
+	// 复盘态：标出正确选项、淡化干扰项，并把用户上次选中/选错的项标出来。
 	// 必须在选项创建之后再做——这段逻辑原本放在循环之前，`buttons` 还是空的，
 	// 结果复盘时选项完全没有高亮。
 	if (review) {
 		const expected = answerAnchors(question);
 		for (const button of buttons) {
-			button.el.addClass(expected.includes(button.anchor) ? "is-answer" : "is-not-answer");
+			const picked = selected.has(button.anchor);
+			const isAnswer = expected.includes(button.anchor);
+			button.el.addClass(isAnswer ? "is-answer" : "is-not-answer");
+			if (picked) {
+				button.el.addClass("is-selected");
+				button.el.setAttribute("aria-checked", "true");
+				// 选对的打绿色勾、选错的打红色叉；没选但正确的选项保持"正确答案"的高亮。
+				button.el.addClass(isAnswer ? "is-correct" : "is-wrong");
+			}
 		}
 	}
 
@@ -369,13 +399,31 @@ async function renderBlanks(
 	/** 复盘时已经写进题面的空位（题面里找不到的走下方列表）。 */
 	const revealed = new Set<string>();
 
+	// 复盘态里把用户上次填的内容也写回空位；填错时用箭头补上正确答案。
+	const userValues = ctx.lastAnswer?.kind === "blank" ? ctx.lastAnswer.values : [];
+
 	// 把题面中的占位标记替换成可点击的空位。
-	for (const blank of question.blanks) {
+	for (const [index, blank] of question.blanks.entries()) {
 		const label = `${BLANK_MARKER_PREFIX}${blank.anchor}`;
 		const placeholder = findTextElement(bodyEl, label);
 		if (placeholder === null) continue;
 		if (review) {
-			placeholder.replaceWith(createSpan({ cls: "easy-quiz-card__blank-answer", text: blank.expected }));
+			const entered = (userValues[index] ?? "").trim();
+			const passed =
+				entered !== "" && matchBlank(entered, blank.expected, question.blankRules[blank.anchor]);
+			const holder = createSpan({ cls: "easy-quiz-card__blank-compare" });
+			if (entered === "") {
+				holder.createSpan({ cls: "easy-quiz-card__blank-answer", text: blank.expected });
+			} else {
+				holder.createSpan({
+					cls: `easy-quiz-card__blank-answer is-user${passed ? " is-correct" : " is-wrong"}`,
+					text: entered,
+				});
+				if (!passed) {
+					holder.createSpan({ cls: "easy-quiz-card__blank-expected", text: ` → ${blank.expected}` });
+				}
+			}
+			placeholder.replaceWith(holder);
 			revealed.add(blank.anchor);
 			continue;
 		}
@@ -391,7 +439,15 @@ async function renderBlanks(
 				if (revealed.has(blank.anchor)) continue;
 				const row = list.createDiv({ cls: "easy-quiz-card__blank" });
 				row.createSpan({ text: t("card.blank.label", { index: index + 1 }) });
-				row.createSpan({ cls: "easy-quiz-card__blank-answer", text: blank.expected });
+				const entered = (userValues[index] ?? "").trim();
+				const passed =
+					entered !== "" && matchBlank(entered, blank.expected, question.blankRules[blank.anchor]);
+				if (entered === "" || passed) {
+					row.createSpan({ cls: "easy-quiz-card__blank-answer", text: blank.expected });
+				} else {
+					row.createSpan({ cls: "easy-quiz-card__blank-answer is-user is-wrong", text: entered });
+					row.createSpan({ cls: "easy-quiz-card__blank-expected", text: ` → ${blank.expected}` });
+				}
 			}
 		}
 		await renderSubmit(card, ctx, question, t("card.submit"), () => null, component);
@@ -533,8 +589,12 @@ export function renderMatch(
 
 	const state = createBoardState(columns.flatMap((column) => column.items));
 	if (review) {
-		// 复用状态机：正确连线 = 依次"点中一端、再点另一端"，画出来的效果与玩家自己连的完全一致。
-		for (const pair of question.boardPairs) {
+		// 复用状态机：正确答案 = 依次"点中一端、再点另一端"，画出来的效果与玩家自己连的完全一致。
+		// 有上次作答时优先回放用户连的线，画线阶段再把连错的那几条标红。
+		const pairs = ctx.lastAnswer?.kind === "match" && ctx.lastAnswer.pairs.length > 0
+			? ctx.lastAnswer.pairs
+			: question.boardPairs;
+		for (const pair of pairs) {
 			state.click(pair.left);
 			state.click(pair.right);
 		}
@@ -587,6 +647,8 @@ export function renderMatch(
 			const x2 = to.left - boardRect.left;
 			const y2 = to.top + to.height / 2 - boardRect.top;
 			const path = createSvg("path", { cls: "easy-quiz-card__link" });
+			// 复盘时用户连错的那几条用红色虚线标出，其余仍按正确答案的样式。
+			if (review && !isExpectedConnection(question, leftId, rightId)) path.addClass("is-wrong");
 			const mid = (x1 + x2) / 2;
 			const d = `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`;
 			path.setAttribute("d", d);
@@ -622,6 +684,13 @@ export function renderMatch(
 			return pairs.length === 0 ? null : { kind: "match", pairs };
 		},
 		renderComponent ?? cardComponent(card, ctx)
+	);
+}
+
+/** 两个节点是否构成一条正确连线（方向无关）。 */
+function isExpectedConnection(question: QuizQuestion, left: string, right: string): boolean {
+	return question.boardPairs.some(
+		(pair) => (pair.left === left && pair.right === right) || (pair.left === right && pair.right === left)
 	);
 }
 
@@ -687,10 +756,50 @@ function shuffleOptionOrder(question: QuizQuestion, seed?: number): AnchoredOpti
 	return shuffle(anchoredOptions(question), seededRandom(derived));
 }
 
+/**
+ * 选择题最终呈现的选项：作者选项（可选打乱）+ 数据块 `distractors` 追加的干扰项。
+ *
+ * 干扰项只影响呈现，不进入判分：锚点固定为 `~d1`、`~d2`…，字符 `~` 不在解析器允许的
+ * 锚点字符集里，因此作者选项与干扰项永远不会撞锚点，正确答案集合也不会包含它们。
+ * 选取与插入位置都用同一颗种子派生，复盘重画、切题来回看到的是同一组选项。
+ */
+function choiceOptions(
+	question: QuizQuestion,
+	randomize: boolean,
+	seed?: number
+): AnchoredOption[] {
+	const base = randomize ? shuffleOptionOrder(question, seed) : anchoredOptions(question);
+	const requested = Math.max(0, Math.floor(question.distractorCount ?? 0));
+	const pool = question.distractorPool ?? [];
+	if (requested === 0 || pool.length === 0) return base;
+
+	// 与作者选项重复的候选直接跳过，避免同一行出现两个一样的选择。
+	const seen = new Set(
+		question.options.map((option) => plainText(option.markdown).trim().toLowerCase())
+	);
+	const candidates: string[] = [];
+	for (const candidate of pool) {
+		const text = candidate.trim();
+		if (text === "") continue;
+		const key = plainText(text).trim().toLowerCase();
+		if (seen.has(key)) continue;
+		seen.add(key);
+		candidates.push(text);
+	}
+	if (candidates.length === 0) return base;
+
+	const random = seededRandom(
+		Number.parseInt(contentHash(`${seed ?? 0}\u0000${question.id}\u0000distractors`), 16) >>> 0
+	);
+	const extras: AnchoredOption[] = shuffle(candidates, random)
+		.slice(0, requested)
+		.map((text, index) => ({ anchor: `~d${index + 1}`, text, markdown: text }));
+	return shuffle([...base, ...extras], random);
+}
+
 // ---------------------------------------------------------------------------
 // 问答题与提交
 // ---------------------------------------------------------------------------
-
 async function renderEssay(
 	question: QuizQuestion,
 	card: HTMLElement,
@@ -723,8 +832,9 @@ async function renderEssay(
 		}
 		feedback.addClass(outcome.correct ? "is-correct" : "is-wrong");
 		feedback.setText(outcome.correct ? t("card.feedback.recordedMastered") : t("card.feedback.recordedNotMastered"));
-		ctx.onSubmitted?.(outcome);
-		await renderReview(card, question, ctx, component);
+		const answer: UserAnswer = { kind: "essay", result };
+		ctx.onSubmitted?.(outcome, answer);
+		await renderReview(card, question, ctx, component, answer);
 		ctx.onReview?.(outcome);
 	};
 	passed.addEventListener("click", () => void submitEssay("correct"));
@@ -778,9 +888,9 @@ async function renderSubmit(
 		for (const detail of result.details) {
 			if (detail.note) feedback.createDiv({ cls: "easy-quiz-card__note", text: detail.note });
 		}
-		ctx.onSubmitted?.(result);
+		ctx.onSubmitted?.(result, answer);
 		// 复盘内容由调用方决定：数据块渲染时留在原卡片里，刷题窗口则换成下一题。
-		await renderReview(card, question, ctx, component);
+		await renderReview(card, question, ctx, component, answer);
 		ctx.onReview?.(result);
 	}
 }
@@ -795,10 +905,16 @@ async function renderReview(
 	card: HTMLElement,
 	question: QuizQuestion,
 	ctx: CardContext,
-	component: Component
+	component: Component,
+	lastAnswer?: UserAnswer
 ): Promise<void> {
 	card.addClass("is-reviewed");
 	const box = card.createDiv({ cls: "easy-quiz-card__review" });
+
+	// 先摊"你的作答"，再给正确答案：用户点回来最想确认的是自己刚才填了什么。
+	const shown = lastAnswer ?? ctx.lastAnswer;
+	if (shown !== undefined) renderUserAnswer(box, question, shown);
+
 	box.createDiv({ cls: "easy-quiz-card__review-head", text: t("card.review.head") });
 
 	const answers = reviewAnswers(question);
@@ -821,6 +937,77 @@ async function renderReview(
 			body.setText(question.explanation.trim());
 		}
 		if ((body.textContent ?? "").trim() === "") body.setText(question.explanation.trim());
+	}
+}
+
+/** 复盘里"你的作答"区域：逐条列出用户当时的答案，并用 ✓/✗ 标出对错。 */
+function renderUserAnswer(box: HTMLElement, question: QuizQuestion, answer: UserAnswer): void {
+	const lines = userAnswerLines(question, answer);
+	const section = box.createDiv({ cls: "easy-quiz-card__review-answer" });
+	section.createDiv({ cls: "easy-quiz-card__review-head", text: t("card.review.yourAnswer") });
+	if (lines.length === 0) {
+		section.createDiv({ cls: "easy-quiz-card__review-empty", text: t("card.review.noAnswer") });
+		return;
+	}
+	const list = section.createEl("ul", { cls: "easy-quiz-card__review-answer-list" });
+	for (const line of lines) {
+		const item = list.createEl("li", { text: `${line.correct ? "✓" : "✗"} ${line.text}` });
+		item.addClass(line.correct ? "is-correct" : "is-wrong");
+	}
+}
+
+interface UserAnswerLine {
+	text: string;
+	correct: boolean;
+}
+
+/** 把作答内容拆成可读的行；对错按题型分别复算（与判分同一套规则）。 */
+function userAnswerLines(question: QuizQuestion, answer: UserAnswer): UserAnswerLine[] {
+	switch (answer.kind) {
+		case "choice": {
+			const expected = answerAnchors(question);
+			return answer.anchors.map((anchor) => {
+				const option = question.options.find((item) => item.anchor === anchor);
+				const text = option ? plainText(option.markdown) : anchor;
+				return { text: t("grade.anchorLabel", { anchor, text }), correct: expected.includes(anchor) };
+			});
+		}
+		case "blank": {
+			const lines: UserAnswerLine[] = [];
+			for (const [index, blank] of question.blanks.entries()) {
+				const value = (answer.values[index] ?? "").trim();
+				if (value === "") continue;
+				lines.push({
+					text: t("card.review.blankAnswer", { index: index + 1, value }),
+					correct: matchBlank(value, blank.expected, question.blankRules[blank.anchor]),
+				});
+			}
+			if (lines.length === 0) lines.push({ text: t("card.review.noAnswer"), correct: false });
+			return lines;
+		}
+		case "match": {
+			const text = new Map<string, string>();
+			for (const column of question.board) {
+				for (const item of column.items) text.set(item.key, item.text);
+			}
+			return answer.pairs.map((pair) => ({
+				text: `${text.get(pair.left) ?? pair.left} — ${text.get(pair.right) ?? pair.right}`,
+				correct: question.boardPairs.some(
+					(expected) =>
+						(expected.left === pair.left && expected.right === pair.right) ||
+						(expected.left === pair.right && expected.right === pair.left)
+				),
+			}));
+		}
+		case "essay":
+			return [
+				{
+					text: t(answer.result === "correct" ? "card.review.essayMastered" : "card.review.essayNotMastered"),
+					correct: answer.result === "correct",
+				},
+			];
+		default:
+			return [];
 	}
 }
 

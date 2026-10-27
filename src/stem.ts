@@ -37,7 +37,8 @@ function activeMarker(mode: BlankMarkerMode): { regex: RegExp; group: number }[]
  * @param mode 空位标记样式；与解析设置保持一致，否则题面与空位会对不上。
  */
 export function formatStem(question: QuizQuestion, mode: BlankMarkerMode = "highlight"): string {
-	let text = question.body;
+	// 解析器已经按"最近的一段"裁好题面；手动构造的对象没有 stemText 时回退到整段正文。
+	let text = question.stemText ?? question.body;
 
 	if (question.type === "blank") {
 		// 按解析出的空位顺序替换，保证占位标记与 blankRules 里的锚点一一对应
@@ -71,6 +72,21 @@ export function formatStem(question: QuizQuestion, mode: BlankMarkerMode = "high
 	if (question.type === "match") {
 		text = dropTables(text);
 	}
+	return text.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * 生成补充内容的 Markdown：和题面一样是普通文字，只是去掉了装饰标记与尾部锚点。
+ * 没有补充内容时返回空串。
+ */
+export function formatSupplement(question: QuizQuestion, mode: BlankMarkerMode = "highlight"): string {
+	const source = question.supplementText?.trim() ?? "";
+	if (source === "") return "";
+	let text = source;
+	for (const { regex } of activeMarker(mode)) {
+		text = text.replace(new RegExp(regex.source, "g"), "$1");
+	}
+	text = text.replace(ANCHOR_AT_END, "");
 	return text.replace(/\n{3,}/g, "\n\n").trim();
 }
 

@@ -147,6 +147,7 @@ function buildHarness(files: { file: FakeFile; source: string }[], realCard = fa
 			language: "auto",
 			blockLanguage: "quiz",
 			headingLevels: [2, 2],
+			headingMode: "level",
 			blankMarker: "highlight",
 			pathGlobs: [],
 			historyLimit: 10,
@@ -180,7 +181,7 @@ function root(view: PracticeView): HTMLElement {
 	return view.contentEl;
 }
 
-function find(view: PracticeView, selector: string, message: string): HTMLElement {
+function find(view: PracticeView, selector: string, message = `未找到 ${selector}`): HTMLElement {
 	return must(root(view).querySelector<HTMLElement>(selector) ?? undefined, message);
 }
 
@@ -918,4 +919,107 @@ test("openPickerFor：文件不存在时设置页给出空状态而不是报错"
 	assert(textOf(harness.view).includes("符合当前条件 0 题"), "找不到文件时按 0 题处理");
 	const start = find(harness.view, "button[data-action='start-session']", "缺少开始按钮") as HTMLButtonElement;
 	assert(start.disabled, "没有候选题时开始按钮应禁用");
+});
+
+// ---------------------------------------------------------------------------
+// 本次新增：文件夹半选、缓存指纹、切回已答题目
+// ---------------------------------------------------------------------------
+
+test("题库列表：同一文件夹里的部分文件被选中时，文件夹勾选框显示半选", async () => {
+	const harness = buildHarness([
+		{ file: fakeFile("题库/甲.md"), source: BANK_A },
+		{ file: fakeFile("题库/丙.md"), source: BANK_A },
+		{ file: fakeFile("题库/子目录/乙.md"), source: BANK_B },
+	]);
+	await harness.view.activate();
+
+	// 路径排序会把 `题库/子目录/乙.md` 插在 `题库/甲.md` 与 `题库/丙.md` 之间：
+	// 分组必须按文件夹收拢，否则同一个「题库」会被拆成两个分组。
+	const group = must(
+		root(harness.view).querySelector<HTMLElement>(".easy-quiz-practice__group[data-folder='题库']") ??
+			undefined,
+		"应有一个「题库」分组"
+	);
+	assertEqual(
+		group.querySelectorAll("input[data-action='pick-file']").length,
+		2,
+		"「题库」分组应包含两个直接位于该文件夹的题库"
+	);
+	const check = must(
+		group.querySelector<HTMLInputElement>("input[data-action='pick-folder']") ?? undefined,
+		"文件夹标题上应有勾选框"
+	);
+
+	click(find(harness.view, "input[data-action='pick-file'][data-path='题库/甲.md']"));
+	await flush();
+	assertEqual(check.checked, false, "只选中一份时不应整组勾选");
+	assertEqual(check.indeterminate, true, "部分选中时应显示半选");
+
+	click(find(harness.view, "input[data-action='pick-file'][data-path='题库/丙.md']"));
+	await flush();
+	assertEqual(check.checked, true, "整组都选中时应勾选");
+	assertEqual(check.indeterminate, false, "整组选中后不应再有半选状态");
+});
+
+test("题库列表：文件集合或修改时间变化后，扫描会自己重新解析", async () => {
+	const harness = standardHarness();
+	await harness.view.activate();
+
+	// `scan()` 是私有方法：这里直接调用它验证缓存指纹，不必绕一整圈 UI。
+	const scan = (): Promise<unknown[]> =>
+		(harness.view as unknown as { scan: () => Promise<unknown[]> }).scan();
+	assertEqual((await scan()).length, 2, "初始应扫描到两份文件");
+
+	// 新增一份文件并让解析器认得它：指纹变化后必须重新扫描，而不是沿用旧缓存。
+	const extra = fakeFile("题库/新增.md", 1_700_000_200_000);
+	harness.service.listQuizFiles = () => [
+		fakeFile("题库/甲.md", 1),
+		fakeFile("题库/子目录/乙.md", 2),
+		extra,
+	];
+	harness.service.parseFile = async (file) => parseQuizFile(BANK_B, file.path, options);
+	assertEqual((await scan()).length, 3, "文件集合变化后应重新扫描到三份");
+});
+
+test("刷题页：切回已答题目时显示上次的选择，并刷新统计角标", async () => {
+	const harness = buildHarness([{ file: fakeFile("题库/甲.md"), source: BANK_A }], true);
+	await openPicker(harness, "题库/甲.md");
+	await startSession(harness);
+
+	// 第一题选第二项（错误项 b）并提交。
+	const rows = findAll(harness.view, ".easy-quiz-card__option");
+	assert(rows.length >= 2, "第一题应有可点的选项");
+	click(must(rows[1], "缺少第二个选项"));
+	const submit = must(
+		root(harness.view).querySelector<HTMLElement>(".easy-quiz-card__actions button") ?? undefined,
+		"缺少提交按钮"
+	);
+	click(submit);
+	await flush();
+
+	// 前进一题再回来：复盘态应该同时给出「你的作答」和更新后的统计。
+	click(find(harness.view, "button[data-action='next-question']"));
+	await flush();
+	click(find(harness.view, "button[data-action='prev-question']"));
+	await flush();
+
+	const picked = root(harness.view).querySelector<HTMLElement>(".easy-quiz-card__option.is-selected");
+	assert(picked !== null, "切回后应标出上次选中的选项");
+	assert(picked?.classList.contains("is-wrong") === true, "选错的项应标成错误");
+	assert(
+		root(harness.view).querySelector(".easy-quiz-card__review-answer-list") !== null,
+		"复盘应列出「你的作答」"
+	);
+	// 替身服务按题目 id 判分（a1 判对），这里验证的是角标跟着写回更新，而不是判分规则。
+	assertEqual(textOf(harness.view).includes("1/1"), true, "统计角标应更新为 1/1");
+});
+
+test("刷题页：导航栏提供跳转到源题库题目的按钮", async () => {
+	const harness = buildHarness([{ file: fakeFile("题库/甲.md"), source: BANK_A }], true);
+	await openPicker(harness, "题库/甲.md");
+	await startSession(harness);
+	assert(
+		findAll(harness.view, "button[data-action='open-source']").length === 1,
+		"每题都应有一个「打开题目所在笔记」按钮"
+	);
 });

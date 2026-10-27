@@ -38,6 +38,11 @@ export const en = {
 	"setting.headingLevel.name": "Stem heading level",
 	"setting.headingLevel.desc": "Which headings count as a question. Only H2 by default.",
 	"setting.headingLevel.h2": "H2 (default)",
+	"setting.headingMode.name": "Stem heading matching",
+	"setting.headingMode.desc":
+		"Fixed level uses the heading level above. Auto uses the closest heading that owns a data block, so group headings never become empty questions and any level can be a question.",
+	"setting.headingMode.level": "Fixed level (default)",
+	"setting.headingMode.auto": "Auto: nearest heading with a data block",
 	"setting.pathGlobs.name": "Question-bank path globs",
 	"setting.pathGlobs.desc":
 		"One per line, e.g. banks/**. Matching notes are treated as question banks as well.",
@@ -86,6 +91,16 @@ export const en = {
 		"Stems, options, explanations and matching cells all render as Markdown, including bold, inline code, embedded images and formulas.",
 	"whatsNew.compactPracticePage":
 		"The practice page is tighter on phones: the repeated question title is gone from the progress row, and the header, banner and buttons take less room.",
+	"whatsNew.autoHeading":
+		"Stem headings can be matched automatically: choose Auto in settings and the closest heading that owns a data block becomes a question, at any heading level.",
+	"whatsNew.nearestStem":
+		"A card now shows only the nearest paragraph, list or table as its stem; a paragraph attached above the options or table is shown as supporting text, and farther blocks are ignored.",
+	"whatsNew.distractors":
+		"Choice questions can add distractors: set how many to add and a pool of candidate options in the data block.",
+	"whatsNew.answerReview":
+		"Going back to an answered question shows your own answer, and the stats badge reflects the new attempt. A new Open note button jumps to the question in its bank.",
+	"whatsNew.bankListFix":
+		"The bank picker shows partial selection for folders and picks up file changes when you switch back, without a manual rescan.",
 
 	// -----------------------------------------------------------------------
 	// 诊断卡片（数据块渲染）
@@ -122,6 +137,11 @@ export const en = {
 	"card.review.explanation": "Explanation",
 	"card.review.blank": "Blank {index}: {expected}",
 	"card.review.essay": "Short answers are recorded by self-assessment; the reference answer is in the collapsed callout in the stem.",
+	"card.review.yourAnswer": "Your answer",
+	"card.review.noAnswer": "No answer was recorded for this attempt.",
+	"card.review.blankAnswer": "Blank {index}: {value}",
+	"card.review.essayMastered": "You marked this as mastered.",
+	"card.review.essayNotMastered": "You marked this as not mastered yet.",
 
 	// -----------------------------------------------------------------------
 	// 题卡角标
@@ -250,6 +270,8 @@ export const en = {
 	"practice.session.results": "View results",
 	"practice.session.peek": "Peek",
 	"practice.session.jump": "Jump to question",
+	"practice.session.openNote": "Open source note",
+	"practice.session.openNoteFailed": "Could not open the source note: {error}",
 	"practice.summary.title": "Round results",
 	"practice.summary.line":
 		"{total} in this round · {answered} answered · {correct} correct · {wrong} wrong · {rate}% accuracy",
@@ -276,6 +298,9 @@ export const en = {
 	"parser.scoreInvalid": "`score` must be a non-negative number; it was treated as 1.",
 	"parser.blanksInvalid": "`blanks` must be a mapping of \"anchor: rule\"; it was ignored.",
 	"parser.blankRuleInvalid": "`blanks.{anchor}` must be a rule object; that blank's rule was ignored.",
+	"parser.questionInvalid": "`question` must be a non-empty string; the stem heading is shown instead.",
+	"parser.distractorsInvalid": "`distractors` must be a count or `{ count, pool }`; it was ignored.",
+	"parser.distractorsUnsupported": "`distractors` only applies to `single` and `multi` questions; it was ignored.",
 	"parser.typeMissing": "The `type` field is missing, so the question type cannot be determined. Valid values: {types}.",
 	"parser.typeInvalid": "`type: {value}` is not valid. Valid values: {types}.",
 	"parser.columnUnnamed": "Column {index}",

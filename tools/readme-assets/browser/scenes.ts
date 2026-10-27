@@ -101,6 +101,7 @@ function parseFixture(fixture: { source: string; path: string }): ParsedQuizFile
 	return parseQuizFile(fixture.source, fixture.path, {
 		blockLanguage: "quiz",
 		headingLevels: [2, 2],
+		headingMode: "level",
 		blankMarker: "highlight",
 		deps: DEPS,
 	});
@@ -369,6 +370,7 @@ function buildHost(set: FixtureSet): EasyQuizHost {
 			language: set.language,
 			blockLanguage: "quiz",
 			headingLevels: [2, 2],
+			headingMode: "level",
 			blankMarker: "highlight",
 			pathGlobs: [],
 			historyLimit: 10,

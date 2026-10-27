@@ -144,6 +144,11 @@ export interface QuizQuestion {
 	idDerived: boolean;
 	/** 题面标题文本（不含末尾的知识点链接）。 */
 	title: string;
+	/**
+	 * 卡片上显示的标题。默认就是 `title`；数据块里写了 `question` 时用它代替，
+	 * 这样标题只承担"题目在哪一段"的定位作用，显示文案可以另写。
+	 */
+	displayTitle?: string;
 	/** 题面标题末尾 `^[[[知识点]]]` 里的链接目标；没写时为 null。 */
 	knowledgeLink: string | null;
 	/** 题面标题层级（1–6）。 */
@@ -152,6 +157,16 @@ export interface QuizQuestion {
 	line: number;
 	/** 题面正文（不含标题行、不含数据块）。 */
 	body: string;
+	/**
+	 * 实际显示在题卡上的题面正文（只取题目结构所在的那一个连续块）。
+	 * 缺省时回退到 `body`，因此手动构造的对象（测试、嵌入）仍然可用。
+	 */
+	stemText?: string;
+	/**
+	 * 附着在结构（选项列表 / 配对表格）上方、中间没有空行的补充文字。
+	 * 显示在题面下方，和题面一样支持 Markdown。
+	 */
+	supplementText?: string;
 	/** 数据块所在行号（0 基），仅起始围栏行。 */
 	blockLine: number | null;
 	/** 数据块原始源码。 */
@@ -171,6 +186,10 @@ export interface QuizQuestion {
 	explanation: string | null;
 	score: number;
 	shuffle: boolean;
+	/** 选择题额外插入的干扰项数量（0 表示不加）。 */
+	distractorCount?: number;
+	/** 干扰项候选文本；每次按种子随机抽取所需数量，复盘重画时保持同一组。 */
+	distractorPool?: string[];
 	/** 每个空位的匹配规则，键为空位锚点。缺省的空位按 strict 处理。 */
 	blankRules: Record<string, BlankRule>;
 

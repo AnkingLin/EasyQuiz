@@ -130,7 +130,7 @@ function gradeBlank(question: QuizQuestion, answer: { kind: "blank"; values: str
 }
 
 /** 按规则比较一次填空输入。默认精确匹配（去首尾空白）。 */
-export function matchBlank(value: string, expected: string, rule: BlankRule): boolean {
+export function matchBlank(value: string, expected: string, rule: BlankRule = {}): boolean {
 	const candidates = rule.accept && rule.accept.length > 0 ? rule.accept : [expected];
 	const normalize = (text: string): string => {
 		const trimmed = text.trim();

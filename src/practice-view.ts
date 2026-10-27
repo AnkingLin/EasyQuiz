@@ -32,7 +32,7 @@ import {
 	TYPE_ORDER,
 } from "./session";
 import { ParsedQuizFile, QuizQuestion, QuizType } from "./types";
-import type { GradeResult } from "./grade";
+import type { GradeResult, UserAnswer } from "./grade";
 import { CardContext, renderQuizCard } from "./view";
 
 export const PRACTICE_VIEW_TYPE = "easy-quiz-practice";
@@ -112,12 +112,16 @@ export class PracticeView extends ItemView {
 	private fileAt = new Map<string, TFile>();
 	/** 数据可能已变化（文件被编辑或本窗口写过记录）：下次渲染前重新解析。 */
 	private stale = false;
+	/** 上次扫描时的文件指纹（路径 + 修改时间）；用来判断列表缓存是否还能直接用。 */
+	private scanSignature: string | null = null;
 
 	/** 刷题会话。 */
 	private queue: QueueEntry[] = [];
 	private cursor = 0;
 	/** 逐题结果；null 表示还没作答。长度与 `queue` 对齐。 */
 	private results: (boolean | null)[] = [];
+	/** 逐题的作答内容；切回已答题目时用它回放"你选了什么/填了什么"。 */
+	private answers: (UserAnswer | null)[] = [];
 	/** 已提交、正在复盘。 */
 	private reviewing = false;
 	/** 本轮已结算。 */
@@ -232,7 +236,33 @@ export class PracticeView extends ItemView {
 	}
 
 	async onOpen(): Promise<void> {
+		// 从别的标签页切回来时文件可能已经被改过。列表页先核对一次缓存指纹，
+		// 过期就自己重扫，而不是让用户再点一次「重新扫描」才能看到正常的列表。
+		this.registerEvent(
+			this.app.workspace.on("active-leaf-change", (leaf) => {
+				if (leaf !== this.leaf) return;
+				void this.refreshOnActivate();
+			})
+		);
 		await this.render();
+	}
+
+	/** 本视图重新成为活动标签页时调用：只在列表页核对缓存，刷题页不打扰当前进度。 */
+	private async refreshOnActivate(): Promise<void> {
+		if (this.page !== 0) return;
+		if (this.entries === null || this.stale || this.currentSignature() !== this.scanSignature) {
+			this.stale = true;
+			this.entries = null;
+			await this.render();
+		}
+	}
+
+	/** 当前题库文件集合的指纹：路径 + 修改时间。文件增删或编辑都会让它变化。 */
+	private currentSignature(): string {
+		return this.host.service
+			.listQuizFiles()
+			.map((file) => `${file.path}\u0000${file.stat.mtime}`)
+			.join("\n");
 	}
 
 	async onClose(): Promise<void> {
@@ -368,17 +398,26 @@ export class PracticeView extends ItemView {
 							entry.file.basename.toLowerCase().includes(needle)
 					);
 
-		const groups: FolderGroup[] = [];
+		// 按文件夹收拢，而不是只合并"相邻"的同名文件夹：路径排序会把
+		// `题库/a.md`、`题库/a/b.md`、`题库/c.md` 排成 题库 → 题库/a → 题库，
+		// 若只看相邻项，同一个文件夹会被拆成两个分组：组标题上的勾选框只能反映
+		// 其中一半文件，部分选中时也画不出半选状态。用 Map 收拢后组内仍保持路径顺序。
+		const byFolder = new Map<string, FileEntry[]>();
 		for (const entry of matched) {
 			const folder = entry.summary.folder;
-			const last = groups[groups.length - 1];
-			// `visible()` 的输入已按路径排序，同一个文件夹的文件必然相邻。
-			if (last === undefined || last.folder !== folder) {
-				groups.push({ folder, entries: [entry] });
-			} else {
-				last.entries.push(entry);
-			}
+			const bucket = byFolder.get(folder);
+			if (bucket === undefined) byFolder.set(folder, [entry]);
+			else bucket.push(entry);
 		}
+		const groups: FolderGroup[] = [...byFolder.entries()]
+			// vault 根排在最前，其余按文件夹路径排序，分组顺序因此稳定。
+			.sort(([first], [second]) => {
+				if (first === second) return 0;
+				if (first === "") return -1;
+				if (second === "") return 1;
+				return first.localeCompare(second);
+			})
+			.map(([folder, bucket]) => ({ folder, entries: bucket }));
 		return { matched, groups };
 	}
 
@@ -389,10 +428,14 @@ export class PracticeView extends ItemView {
 
 	/** 扫描 vault 里的题库文件并逐份解析；结果缓存在 `entries` 里。 */
 	private async scan(): Promise<FileEntry[]> {
-		if (this.entries !== null && !this.stale) return this.entries;
+		const files = this.host.service.listQuizFiles();
+		const signature = files.map((file) => `${file.path}\u0000${file.stat.mtime}`).join("\n");
+		// 缓存仍然有效需要同时满足：没被标记过期，且文件集合与修改时间都没变。
+		// 只凭 `stale` 判断会漏掉「窗口在后台时文件被别人改了」的情形。
+		if (this.entries !== null && !this.stale && signature === this.scanSignature) return this.entries;
 
 		const entries: FileEntry[] = [];
-		for (const file of this.host.service.listQuizFiles()) {
+		for (const file of files) {
 			try {
 				const parsed = await this.host.service.parseFile(file);
 				entries.push({
@@ -415,6 +458,7 @@ export class PracticeView extends ItemView {
 		entries.sort((first, second) => first.file.path.localeCompare(second.file.path));
 		this.entries = entries;
 		this.stale = false;
+		this.scanSignature = signature;
 		return entries;
 	}
 
@@ -592,6 +636,8 @@ export class PracticeView extends ItemView {
 		const isFolded = this.folded.has(group.folder);
 		const wrapper = list.createDiv({ cls: "easy-quiz-practice__group" });
 		if (isFolded) wrapper.addClass("is-folded");
+		// 记下这个分组属于哪个文件夹：之后同步整组勾选框时按键查找，而不是靠 DOM 顺序。
+		wrapper.dataset["folder"] = group.folder;
 
 		const head = wrapper.createDiv({ cls: "easy-quiz-practice__folder" });
 		head.dataset["action"] = "toggle-folder";
@@ -786,26 +832,30 @@ export class PracticeView extends ItemView {
 		this.syncFolderChecks();
 	}
 
-	/**
+	/*
 	 * 让每个文件夹标题上的勾选框反映组内状态。
 	 *
 	 * 单个文件被勾上/取消时要一起更新：整组全选、全不选、部分选中（半勾）是三种不同的样子，
 	 * 漏掉这一步就会出现"组里明明全勾了，标题上还是半勾"的错觉。
 	 *
-	 * 按渲染顺序一一对应，而不是用选择器按文件夹名去找：文件夹名可能带引号或反斜杠，
-	 * 拼进选择器就要额外转义，不如让分组自己带着勾选框。
+	 * 按分组自己记下的文件夹名查找，而不是靠"第几个分组对应第几个 DOM 节点"：
+	 * 分组顺序一旦因为排序/过滤变化，按序号对应就会把勾选框更新到别的文件夹上。
 	 */
 	private syncFolderChecks(): void {
-		const checks = this.bodyEl?.querySelectorAll(".easy-quiz-practice__group") ?? [];
-		this.visible().groups.forEach((group, index) => {
-			const wrapper = checks[index];
-			const check = wrapper?.querySelector<HTMLInputElement>("input[data-action='pick-folder']") ?? null;
-			if (check === null || check === undefined) return;
+		const wrappers = this.bodyEl?.querySelectorAll<HTMLElement>(".easy-quiz-practice__group") ?? null;
+		if (wrappers === null) return;
+		const byFolder = new Map(this.visible().groups.map((group) => [group.folder, group]));
+		for (const wrapper of Array.from(wrappers)) {
+			const folder = wrapper.dataset["folder"];
+			const group = folder === undefined ? undefined : byFolder.get(folder);
+			if (group === undefined) continue;
+			const check = wrapper.querySelector<HTMLInputElement>("input[data-action='pick-folder']");
+			if (check === null) continue;
 			const usable = group.entries.filter((entry) => entry.summary.answerable > 0);
 			const selected = usable.filter((entry) => this.picked.includes(entry.file.path)).length;
 			check.checked = usable.length > 0 && selected === usable.length;
 			check.indeterminate = selected > 0 && selected < usable.length;
-		});
+		}
 	}
 
 	private gotoPicker(): void {
@@ -1078,6 +1128,7 @@ export class PracticeView extends ItemView {
 		this.queue = queue;
 		this.cursor = 0;
 		this.results = this.queue.map(() => null);
+		this.answers = this.queue.map(() => null);
 		this.reviewing = false;
 		this.finished = false;
 		this.dirty = false;
@@ -1191,14 +1242,18 @@ export class PracticeView extends ItemView {
 			shuffleSeed: this.sessionSeed,
 			// 复盘态由窗口控制：提交后由 renderQuizCard 自己把答案摊在卡片里。
 			reviewOnly: this.reviewing,
+			// 已答过的题切回来时，把当时的作答一起交回题卡，复盘区才能显示「你的答案」。
+			lastAnswer: this.answers[this.cursor] ?? undefined,
 			// 题卡里的 Markdown 子组件（图片、嵌入块）交给本视图托管，窗口关闭或换题时卸载。
 			addRenderChild: (child) => {
 				this.addChild(child);
 				this.cardComponents.push(child);
 			},
-			onSubmitted: (result) => {
+			onSubmitted: (result, answer) => {
 				// 一道题只计一次分：复盘重渲染不会再改分。
 				if (this.results[this.cursor] === null) this.results[this.cursor] = result.correct;
+				// 作答内容每次都记：复盘重渲染交回的是同一份内容，覆盖没有副作用。
+				if (answer !== undefined) this.answers[this.cursor] = answer;
 				this.dirty = true;
 				this.afterSubmit(host, result);
 			},
@@ -1289,6 +1344,10 @@ export class PracticeView extends ItemView {
 			void this.goTo(this.cursor + 1);
 		});
 
+		// 跳到题库里的这道题：在新标签页打开源文件，并把光标放到题面标题行。
+		const open = this.button(nav, "open-source", t("practice.session.openNote"));
+		open.addEventListener("click", () => void this.openSource());
+
 		// 作答前也能直接看答案：看过的题按"未作答"处理，不计入正确率。
 		if (!this.reviewing) {
 			const peek = this.button(nav, "peek", t("practice.session.peek"));
@@ -1311,6 +1370,34 @@ export class PracticeView extends ItemView {
 				if (Number.isNaN(target)) return;
 				void this.goTo(Math.min(Math.max(target - 1, 0), this.queue.length - 1));
 			});
+		}
+	}
+
+	/** 在笔记里打开当前题目：新标签页打开源文件，光标落在题面标题行。 */
+	private async openSource(): Promise<void> {
+		const entry = this.queue[this.cursor];
+		if (entry === undefined) return;
+		const file = this.fileAt.get(entry.path) ?? this.host.service.fileAtPath(entry.path);
+		if (file === null || file === undefined) return;
+		const question = resolveEntry(this.parsedByPath, entry);
+		try {
+			const leaf = this.app.workspace.getLeaf("tab");
+			await leaf.openFile(file, {
+				eState: question === undefined ? undefined : { line: question.line, ch: 0 },
+			});
+			// 阅读模式没有编辑器；源码 / 实时预览下再把光标移到题面标题，省得自己找。
+			const view = leaf.view as unknown as {
+				editor?: { setCursor: (position: { line: number; ch: number }) => void };
+			};
+			if (question !== undefined && view.editor !== undefined) {
+				view.editor.setCursor({ line: question.line, ch: 0 });
+			}
+		} catch (error) {
+			new Notice(
+				t("practice.session.openNoteFailed", {
+					error: error instanceof Error ? error.message : String(error),
+				})
+			);
 		}
 	}
 
@@ -1378,6 +1465,7 @@ export class PracticeView extends ItemView {
 			this.queue = wrongEntries;
 			this.cursor = 0;
 			this.results = this.queue.map(() => null);
+			this.answers = this.queue.map(() => null);
 			this.reviewing = false;
 			this.finished = false;
 			// 新一轮：换一颗种子，选项重新洗一遍。
@@ -1395,6 +1483,7 @@ export class PracticeView extends ItemView {
 	private async restart(): Promise<void> {
 		this.cursor = 0;
 		this.results = this.queue.map(() => null);
+		this.answers = this.queue.map(() => null);
 		this.reviewing = false;
 		this.finished = false;
 		// 新一轮：换一颗种子，选项重新洗一遍。

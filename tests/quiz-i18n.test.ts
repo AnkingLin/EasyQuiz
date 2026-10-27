@@ -403,6 +403,7 @@ function buildView(): PracticeView {
 			language: "en",
 			blockLanguage: "quiz",
 			headingLevels: [2, 2],
+			headingMode: "level",
 			blankMarker: "highlight",
 			pathGlobs: [],
 			historyLimit: 10,

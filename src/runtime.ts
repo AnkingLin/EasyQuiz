@@ -10,6 +10,8 @@ import {
 	DEFAULT_BLANK_MARKER,
 	DEFAULT_BLOCK_LANGUAGE,
 	DEFAULT_HEADING_LEVELS,
+	DEFAULT_HEADING_MODE,
+	HeadingMode,
 	parseQuizFile,
 	ParseDependencies,
 } from "./parser";
@@ -31,6 +33,8 @@ export interface RuntimeSettings {
 	language: LanguagePreference;
 	blockLanguage: string;
 	headingLevels: [number, number];
+	/** 题面标题的匹配方式：固定层级，或自动取「自己这一段里有数据块」的最近标题。 */
+	headingMode: HeadingMode;
 	/** 空位标记样式：`==高亮==` / `**加粗**` / 两者都识别。 */
 	blankMarker: BlankMarkerMode;
 	pathGlobs: string[];
@@ -42,6 +46,7 @@ export const DEFAULT_SETTINGS: RuntimeSettings = {
 	language: "auto",
 	blockLanguage: DEFAULT_BLOCK_LANGUAGE,
 	headingLevels: DEFAULT_HEADING_LEVELS,
+	headingMode: DEFAULT_HEADING_MODE,
 	blankMarker: DEFAULT_BLANK_MARKER,
 	pathGlobs: [],
 	historyLimit: DEFAULT_HISTORY_LIMIT,
@@ -99,6 +104,7 @@ export class QuizService {
 		return {
 			blockLanguage: this.settings.blockLanguage,
 			headingLevels: this.settings.headingLevels,
+			headingMode: this.settings.headingMode,
 			blankMarker: this.settings.blankMarker,
 			pathMatched: this.pathMatched(file),
 			tags,
@@ -179,6 +185,7 @@ export class QuizService {
 			const parsed = parseQuizFile(data, file.path, {
 				blockLanguage: this.settings.blockLanguage,
 				headingLevels: this.settings.headingLevels,
+				headingMode: this.settings.headingMode,
 				blankMarker: this.settings.blankMarker,
 				deps: parserDeps,
 			});
@@ -201,6 +208,7 @@ export class QuizService {
 				{
 					blockLanguage: this.settings.blockLanguage,
 					headingLevels: this.settings.headingLevels,
+					headingMode: this.settings.headingMode,
 					deps: parserDeps,
 				},
 				this.settings.historyLimit

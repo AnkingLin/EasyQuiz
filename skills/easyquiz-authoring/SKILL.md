@@ -65,6 +65,15 @@ The body starts at the first heading that matches the configured **stem heading 
 level per file). A question runs from its stem heading to the next heading of the same or higher level.
 A deeper heading is absorbed as a sub-heading **only if** a shallower heading appears later in the file.
 
+The **Stem heading matching** setting offers two modes:
+
+- **Fixed level** (default): exactly the headings at the configured level are questions. Best for one
+  clean level per file.
+- **Auto**: every heading that owns a `quiz` data block is a question, at whatever level it is. This lets
+  a file mix an H2 grouping/suggestion heading with H3 questions. A question then runs to the next
+  heading that also owns a `quiz` block, of any level; headings in between that own no block stay inside
+  the question above as sub-headings.
+
 ## The five question types
 
 The `type` field is the **only** thing that decides the type — never infer it from the shape of the text.
@@ -88,6 +97,41 @@ anchors at all, options are numbered `a`, `b`, `c`… by position; with only som
 hidden from the card and only the anchored ones can be chosen. Anchors are what bind answer records to
 options, so write them when options may be reordered — inserting, deleting, or reordering an anchored
 option never misaligns records. Duplicate anchors still make the question unanswerable.
+
+## What the card shows as the stem
+
+Only the **nearest block above the structure** is shown. A block here means a run of consecutive
+non-blank lines; a blank line starts a new block.
+
+| `type` | Structure block | What the card shows |
+|---|---|---|
+| `single` / `multi` | The nearest block that contains the option list | The block above the option block is the stem. Non-list lines inside the option block are shown as a supplement under the stem. |
+| `match` | The nearest block that contains the table | The block above the table is the stem; prose inside the table block (with no blank line above the table) is a supplement. |
+| `blank` | The nearest block that contains blank markers | That whole block is the stem. |
+| `essay` | The last block; if it is a reference callout, the block right above it | The instruction prose plus the collapsed callout stay in the shown stem, so the reference answer is never lost. |
+
+- Lists and tables inside the stem block are ignored — they may belong to a question further up, and
+  showing them would leak the previous question.
+- Blocks above the stem are not shown at all, so a group heading's intro paragraph (separated by a blank
+  line) never leaks into the first question under it.
+- A supplement is rendered directly under the stem, in the same Markdown style.
+
+### `question` and `distractors`
+
+Two optional data-block fields change only how a card looks:
+
+- `question: <text>` replaces the heading text on the card, while the heading still supplies the `id` and
+  the knowledge link. Use it when the heading must stay a short name but the question itself needs a full
+  sentence (for example a data-heavy multi-part prompt).
+- `distractors: <count>` or `distractors: { count: 2, pool: ["TCP", "UDP"] }` adds that many decoy
+  options to a `single` / `multi` card. Decoys are never correct answers: `answer` still names only the
+  author's anchors, and a decoy ticked by the learner counts as wrong. If the pool has fewer usable
+  candidates than `count`, fewer decoys are added.
+
+Write `question` and `distractors` **only when inserting a single question into an existing note** (for
+example with the Insert question command or an embedded question). When generating a whole question bank
+file, do not use them unless the user explicitly asks for them: banks are expected to keep the stem in
+the heading and to be plain text.
 
 <!-- example:start -->
 ````markdown
@@ -255,7 +299,7 @@ records are the ones you least want to lose.
 
 Everything the author writes is rendered by Obsidian, not escaped:
 
-- the **stem** (the paragraphs under the stem heading, minus the anchor),
+- the **stem** (the nearest block above the structure, minus the anchor) and its supplement,
 - each **option's** text, so `**bold**`, `` `code` ``, `[[links]]` and literal symbols such as `~` or `_` survive,
 - the **explanation** shown after grading (and behind **查看解析**),
 - each **matching cell**, so `**TCP**` in a table cell is bold on the board.
@@ -295,7 +339,8 @@ Any note can render one question as a live, answerable card by referencing its h
 `stats` and `rev` (and `history`) are maintained by the plugin. Writing them yourself corrupts the
 statistics or makes the question look edited; `history` carries `at`, `result`, `answer`, `ms`.
 
-Author-writable fields: `type` (required), `id`, `answer`, `blanks`, `shuffle`, `explanation`, `score`.
+Author-writable fields: `type` (required), `id`, `answer`, `blanks`, `shuffle`, `explanation`, `score`,
+and — only for inline single-question inserts — `question` and `distractors`.
 
 **Write `id` whenever the question may be reworded.** Without it the id is derived from the stem heading
 text, so renaming the heading orphans the accumulated records. Give every question that matters a short
@@ -317,6 +362,9 @@ The type is never inferred. A question degrades to a plain code block with a hig
 | Some choice options without anchors | Those options are hidden; the anchored ones stay answerable |
 | Duplicate option anchors | Not answerable |
 | `answer` pointing at a nonexistent anchor | Not answerable |
+| `question` not a non-empty string | Degrade; the heading text is used instead |
+| `distractors` has a negative/non-integer `count` or a non-string pool entry | Degrade; the value is ignored |
+| `distractors` on `blank` / `match` / `essay` | Warning only; ignored |
 | YAML parse error | Degrade; shows the raw error |
 | `quiz` block outside any stem heading | File-level warning; not recognised |
 
@@ -326,10 +374,15 @@ A degraded question never exposes a guessed answer.
 
 1. Every stem heading ends with `^[[[]]]`, and the target note exists.
 2. Every stem heading is a short **name**; the option list, matching table, blank prose, and reference
-   callout all live on the lines below it. No `==answer==` marker is left on a heading line.
+   callout all live on the lines below it. No `==answer==` marker is left on a heading line. Remember the
+   card reads only the nearest block above the structure — keep intro prose and the question in the same
+   block when both should show.
 3. Choice-option anchors, when present, are unique (or omitted entirely so the options are auto-numbered);
    `answer` names existing anchors.
 4. Stable questions have an explicit `id`; no `stats` / `rev` / `history` written by hand.
-5. One heading level per file, matching the configured stem heading level.
-6. Run **校验当前题库文件** in Obsidian — it reports `共 N 道题：可作答 X，需修正 Y`.
-7. Reading view renders each card and submits once, to confirm the block is inside a stem heading.
+5. One heading level per file, matching the configured stem heading level — or switch **Heading
+   detection** to **Auto** when the file needs mixed heading levels.
+6. Do not add `question` or `distractors` when generating a whole bank unless the user asked for them;
+   they are for one-off inline inserts.
+7. Run **校验当前题库文件** in Obsidian — it reports `共 N 道题：可作答 X，需修正 Y`.
+8. Reading view renders each card and submits once, to confirm the block is inside a stem heading.

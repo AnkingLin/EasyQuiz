@@ -371,9 +371,25 @@ tags:
 - The `quiz` block is **required**: the question type comes from its `type` field.
 - Put the data block at the end of the question, or right after the heading — both are equivalent.
 
-**Stem heading levels.** A deeper heading is treated as a sub-heading of the current question **only if a
-shallower heading appears later** in the file; otherwise it is itself a question stem. In practice: use a
-single heading level per file (default H2).
+**Stem heading levels.** By default, only headings at the configured level are questions (**Fixed level**,
+one level per file). Switch **Stem heading matching** to **Auto** and every heading that owns a `quiz` block
+becomes a question, at whatever level it is — so a file can mix H2 grouping headings with H3 questions. In
+Auto mode a question runs to the next heading that also owns a `quiz` block; headings in between that own no
+block stay inside the question above as sub-headings.
+
+**What the card shows.** Only the **nearest block above the structure** is displayed (a block is a run of
+consecutive non-blank lines):
+
+- `single` / `multi`: the nearest block containing the option list. Non-list lines inside it appear as a
+  supplement under the stem; the block above it is the stem.
+- `match`: the nearest block containing the table (a blank line above the table is allowed). Prose in the
+  same block is the supplement; the block above it is the stem.
+- `blank`: the nearest block containing the `==blank==` markers is the stem, shown whole.
+- `essay`: the last block. A reference callout stays in the shown stem (collapsed), together with the
+  instruction paragraph right above it.
+
+Blocks further up are not shown, so a preceding question cannot leak into this one. When the heading must
+stay short but the question needs a full sentence, use the `question` field (see below).
 
 ### Metadata fields
 
@@ -388,8 +404,14 @@ single heading level per file (default H2).
 | `score` | no | Points, default 1. |
 | `stats` | no | **Written by the plugin**: `attempts` / `correct` / `lastResult` / `lastAt`. |
 | `rev` | no | **Written by the plugin**: stem hash, used to detect edits. |
+| `question` | no | Replaces the heading text on the card; the heading still supplies the `id` and the knowledge link. |
+| `distractors` | no | Choice questions only: `distractors: 2` adds 2 decoys, or `distractors: { count: 2, pool: [ ... ] }` names the candidate pool. |
 
 `stats` and `rev` are maintained automatically — **authors never write them**.
+
+Write `question` and `distractors` only when **inserting a single question into an existing note**. When
+generating a whole bank file, leave them out unless explicitly asked: banks keep the stem on the heading and
+stay plain and easy to review.
 
 ### Anchors
 
@@ -534,7 +556,8 @@ appears for Markdown question banks; multi-selections and other files are left a
 | Interface language | Follow Obsidian | `Follow Obsidian`, `English`, or `中文` |
 | Block language | `quiz` | Change if it clashes; reload Obsidian afterwards |
 | Blank marker | `==` | Which Markdown marker defines a blank: `==answer==`, `**answer**`, or both |
-| Stem heading level | H2 | Decides which headings are questions |
+| Stem heading level | H2 | In **Fixed level** mode, decides which headings are questions |
+| Stem heading matching | Fixed level | **Fixed level**: only the configured heading level counts; **Auto**: every heading that owns a `quiz` block is a question, so levels can be mixed |
 | Question-bank path globs | empty | One per line, e.g. `题库/**` |
 | Write records back | on | Turn off to grade in the UI only, leaving notes untouched |
 | Per-question history cap | 10 | Records live in the note, so the detail list must be capped; `0` keeps only the summary |
@@ -546,6 +569,15 @@ appears for Markdown question banks; multi-selections and other files are left a
 3. Reload Obsidian and enable the plugin under **Settings → Community plugins**.
 
 ## What's new
+
+### 1.1.0
+
+- **Only the nearest block is the stem.** Each card shows the block closest to its option list, matching table, or blank markers; prose separated by a blank line no longer leaks in, and text attached to the structure (no blank line) appears as a supplement under the stem.
+- **Automatic heading detection.** The new **Stem heading matching** setting can treat every heading that owns a `quiz` block as a question, so a file may mix heading levels.
+- **Author-controlled stem and decoys.** The `question` field replaces the heading text on the card; `distractors` adds decoy options to choice questions, with a configurable count and candidate pool.
+- **See your previous attempt.** Switching back to an answered question now restores your choice, blanks, lines, and self-assessment with correctness marked, and the attempt badge updates in place.
+- **Jump to the source note.** The practice window has an **Open source note** button that opens the bank note at the question's heading.
+- **A steadier picker.** Folder checkboxes show the partial state correctly, and the file list stays current when you come back from another view without a manual rescan.
 
 ### 1.0.10
 

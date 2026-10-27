@@ -26,7 +26,7 @@
  * DOM 替换与渲染留在 `main.ts`。
  */
 
-import { stripKnowledgeLink } from "./parser";
+import { HeadingMode, stripKnowledgeLink } from "./parser";
 import { ParsedQuizFile, QuizQuestion } from "./types";
 
 /** 一个 embed 的目标：文件路径 + 子路径（`#` 之后的部分，不含 `#`）。 */
@@ -105,18 +105,20 @@ export function looksLikeQuestionRef(subpath: string): boolean {
  *     更长的标题不会被误认成 `三次握手`。
  *
  * 还要求标题层级落在题面层级区间内：题面里更深一级的子标题（默认配置下的 H3）不是
- * 题目，不能因为它存在就把 embed 吃掉。
+ * 题目，不能因为它存在就把 embed 吃掉。设置里开启了「自动匹配最近标题」时不再限制
+ * 层级，因为此时任何一级标题都可能是一道题。
  */
 export function matchesQuestionHeading(
 	subpath: string,
 	headings: readonly HeadingRef[],
-	levels: readonly [number, number]
+	levels: readonly [number, number],
+	mode: HeadingMode = "level"
 ): boolean {
 	const wanted = normalizeHeadingKey(subpath);
 	if (wanted === "") return false;
 	const [min, max] = levels;
 	return headings.some((heading) => {
-		if (heading.level < min || heading.level > max) return false;
+		if (mode === "level" && (heading.level < min || heading.level > max)) return false;
 		const got = normalizeHeadingKey(heading.heading);
 		return got === wanted || got.startsWith(`${wanted} `);
 	});
