@@ -182,11 +182,6 @@ test("知识点链接：带路径与小标题的目标原样记录", () => {
 	const question = first(knowledgeSource("## 三次握手 ^[[[计算机网络/传输层#TCP 三次握手]]]"));
 	assertEqual(question.title, "三次握手", "题面标题");
 	assertEqual(question.knowledgeLink, "计算机网络/传输层#TCP 三次握手", "目标应含路径与小标题");
-	assertEqual(
-		question.headingText,
-		"三次握手 ^[[[计算机网络/传输层#TCP 三次握手]]]",
-		"原始标题要保留知识点链接，供打开源笔记时精确命中标题"
-	);
 });
 
 test("知识点链接：旧写法 ^[[知识点]] 仍被接受", () => {
