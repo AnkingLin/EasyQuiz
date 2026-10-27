@@ -78,6 +78,16 @@ export class TFile {
 	extension = "md";
 	stat = { mtime: 0 };
 }
+/** 标题/块引用解析：测试只需要标题这一支，按缓存里的标题原文精确匹配。 */
+export function resolveSubpath(
+	cache: { headings?: { heading: string }[] },
+	subpath: string
+): { heading: string } | null {
+	const name = subpath.startsWith("#") ? subpath.slice(1) : subpath;
+	const heading = cache.headings?.find((item) => item.heading === name);
+	return heading === undefined ? null : heading;
+}
+
 export class Plugin {}
 export class PluginSettingTab {}
 export class Notice {}

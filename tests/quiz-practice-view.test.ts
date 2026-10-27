@@ -1026,7 +1026,7 @@ test("刷题页：题目卡片右上方提供打开原题笔记的编辑按钮",
 	);
 });
 
-test("刷题页：阅读视图下用原生标题跳转，带知识点链接的标题也命中", async () => {
+test("刷题页：阅读视图用 setEphemeralState 定位到题目标题（含知识点链接）", async () => {
 	const source = [
 		"---",
 		"quiz: true",
@@ -1044,16 +1044,22 @@ test("刷题页：阅读视图下用原生标题跳转，带知识点链接的�
 		"```",
 		"",
 	];
-	const harness = buildHarness([{ file: fakeFile("题库/甲.md"), source: source.join("\n") }], true);
+	const harness = buildHarness([{ file: fakeFile("题库/甲.md"), source: source.join(String.fromCharCode(10)) }], true);
 	await openPicker(harness, "题库/甲.md");
 	await startSession(harness);
 
 	const file = harness.service.fileAtPath("题库/甲.md");
 	assert(file !== null, "缺少源文件");
-	const links: string[] = [];
+	const states: unknown[] = [];
+	const opened: unknown[] = [];
 	const leaf = {
-		view: { file, getMode: () => "preview" },
-		openFile: async () => undefined,
+		view: { file },
+		openFile: async (_file: unknown, viewState?: unknown) => {
+			opened.push(viewState);
+		},
+		setEphemeralState: (state: unknown) => {
+			states.push(state);
+		},
 	};
 	(harness.view as unknown as { app: unknown }).app = {
 		metadataCache: {
@@ -1070,23 +1076,22 @@ test("刷题页：阅读视图下用原生标题跳转，带知识点链接的�
 			getLeavesOfType: () => [],
 			getLeaf: () => leaf,
 			setActiveLeaf: async () => undefined,
-			openLinkText: async (link: string) => {
-				links.push(link);
-			},
 		},
 	};
 
 	click(find(harness.view, "button.easy-quiz-card__edit"));
 	await flush();
 
+	const expected = { subpath: "#单选题甲 ^[[[计算机网络/传输层]]]" };
 	assertEqual(
-		links[0],
-		"题库/甲.md#单选题甲 ^[[[计算机网络/传输层]]]",
-		"应使用元数据缓存里的标题原文，才能命中 Obsidian 的标题索引和高亮"
+		JSON.stringify((opened[0] as { eState?: unknown } | undefined)?.eState),
+		JSON.stringify(expected),
+		"新标签页应在打开时就带上标题位置"
 	);
+	assertEqual(JSON.stringify(states[0]), JSON.stringify(expected), "阅读视图应走原生标题定位");
 });
 
-test("刷题页：源笔记已经打开时切到那个标签页，再用标题跳转", async () => {
+test("刷题页：源笔记已经打开时切到那个标签页，并把光标放到标题行", async () => {
 	const harness = buildHarness([{ file: fakeFile("题库/甲.md"), source: BANK_A }], true);
 	await openPicker(harness, "题库/甲.md");
 	await startSession(harness);
@@ -1094,7 +1099,6 @@ test("刷题页：源笔记已经打开时切到那个标签页，再用标题�
 	const file = harness.service.fileAtPath("题库/甲.md");
 	assert(file !== null, "缺少源文件");
 	const calls: string[] = [];
-	const links: string[] = [];
 	const cursors: number[] = [];
 	const existingLeaf = {
 		view: {
@@ -1121,9 +1125,6 @@ test("刷题页：源笔记已经打开时切到那个标签页，再用标题�
 			setActiveLeaf: async () => {
 				calls.push("activate");
 			},
-			openLinkText: async (link: string) => {
-				links.push(link);
-			},
 		},
 	};
 
@@ -1133,11 +1134,10 @@ test("刷题页：源笔记已经打开时切到那个标签页，再用标题�
 	assertEqual(calls.includes("new-leaf"), false, "已打开的笔记不应再开新标签页");
 	assertEqual(calls.includes("open-file"), false, "已打开的笔记不应重新打开");
 	assert(calls.includes("activate"), "应切到已有标签页");
-	assertEqual(links[0], "题库/甲.md#单选题甲", "应跳到题目标题");
-	assertEqual(cursors.length, 0, "标题跳转由 Obsidian 自己处理，不应再手动放光标");
+	assertEqual(cursors[0], 4, "编辑视图应把光标放到题目标题行");
 });
 
-test("刷题页：源笔记没打开时才新开标签页，再用标题跳转", async () => {
+test("刷题页：源笔记没打开时才新开标签页并带标题位置", async () => {
 	const harness = buildHarness([{ file: fakeFile("题库/甲.md"), source: BANK_A }], true);
 	await openPicker(harness, "题库/甲.md");
 	await startSession(harness);
@@ -1145,12 +1145,14 @@ test("刷题页：源笔记没打开时才新开标签页，再用标题跳转",
 	const file = harness.service.fileAtPath("题库/甲.md");
 	assert(file !== null, "缺少源文件");
 	const calls: string[] = [];
-	const links: string[] = [];
+	const opened: unknown[] = [];
 	const openedLeaf = {
 		view: { file },
-		openFile: async () => {
+		openFile: async (_file: unknown, viewState?: unknown) => {
 			calls.push("open-file");
+			opened.push(viewState);
 		},
+		setEphemeralState: () => undefined,
 	};
 	(harness.view as unknown as { app: unknown }).app = {
 		metadataCache: {
@@ -1167,9 +1169,6 @@ test("刷题页：源笔记没打开时才新开标签页，再用标题跳转",
 			setActiveLeaf: async () => {
 				calls.push("activate");
 			},
-			openLinkText: async (link: string) => {
-				links.push(link);
-			},
 		},
 	};
 
@@ -1178,5 +1177,9 @@ test("刷题页：源笔记没打开时才新开标签页，再用标题跳转",
 
 	assertEqual(calls.includes("open-file"), true, "没打开时应打开源笔记");
 	assert(calls.includes("tab"), "应在标签页中打开");
-	assertEqual(links[0], "题库/甲.md#单选题甲", "打开后应跳到题目标题");
+	assertEqual(
+		JSON.stringify((opened[0] as { eState?: unknown } | undefined)?.eState),
+		JSON.stringify({ subpath: "#单选题甲" }),
+		"新标签页应在打开时定位到题目标题"
+	);
 });

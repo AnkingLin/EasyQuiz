@@ -12,7 +12,7 @@
  * 因此窗口内作答与在笔记里作答写回的是同一份记录。
  */
 
-import { Component, ItemView, Notice, Setting, TFile, WorkspaceLeaf } from "obsidian";
+import { Component, ItemView, Notice, resolveSubpath, Setting, TFile, WorkspaceLeaf } from "obsidian";
 import { MessageKey, t } from "./i18n";
 import { typeLabel } from "./labels";
 import { QuizService, formatStats, RuntimeSettings } from "./runtime";
@@ -1467,10 +1467,11 @@ export class PracticeView extends ItemView {
 	/**
 	 * 打开当前题目所在的笔记，像点反向链接一样跳到题目标题。
 	 *
-	 * 笔记已经开着就切到那个标签页，没开着才新开；然后调用
-	 * `openLinkText("path#标题")`，滚动和高亮都交给 Obsidian 的原生逻辑，
-	 * 编辑视图和阅读视图表现一致。标题取元数据缓存里该标题行的原文，避免
-	 * 自己拼 `^[[[...]]]` 时和缓存对不上导致静默失败。
+	 * 笔记已经开着就切到那个标签页，没开着才新开。阅读视图没有编辑器，
+	 * 用 `setEphemeralState({ subpath: "#标题" })` 触发 Obsidian 自己的
+	 * 标题定位（滚动 + 高亮），这正是笔记内点标题链接走的路径；编辑视图
+	 * 则直接把光标放到标题行。标题取元数据缓存里该标题行的原文，避免
+	 * 自己拼 `^[[[...]]]` 时和缓存对不上。
 	 */
 	private async openSource(): Promise<void> {
 		const entry = this.queue[this.cursor];
@@ -1478,6 +1479,10 @@ export class PracticeView extends ItemView {
 		const file = this.fileAt.get(entry.path) ?? this.host.service.fileAtPath(entry.path);
 		if (file === null || file === undefined) return;
 		const question = resolveEntry(this.parsedByPath, entry);
+		const heading = this.headingFor(file, question);
+		const line = question?.line ?? 0;
+		const eState =
+			heading === null ? { line, ch: 0 } : { subpath: `#${heading}` };
 		try {
 			// `getLeavesOfType` 只覆盖主窗口；弹出的独立窗口里已经打开的笔记交给 Obsidian
 			// 自己处理（它不会重复打开同一个文件）。
@@ -1485,17 +1490,20 @@ export class PracticeView extends ItemView {
 				.getLeavesOfType("markdown")
 				.find((leaf) => this.leafPath(leaf) === file.path);
 			const leaf = existing ?? this.app.workspace.getLeaf("tab");
-			if (existing === undefined) await leaf.openFile(file);
-			// `revealLeaf` 要 1.7.2，而插件最低支持 1.4.0；普通标签页用 setActiveLeaf
-			// 就能切过去，和点击链接的观感一致。
-			this.app.workspace.setActiveLeaf(leaf, { focus: true });
-			const heading = this.headingFor(file, question);
-			if (heading === null) {
-				// 连标题都取不到（比如文件刚创建、还没进缓存）：退回按行号定位。
-				this.revealLine(leaf, question?.line ?? 0);
-				return;
+			if (existing === undefined) {
+				// 新标签页：打开时就把标题位置一起交给 MarkdownView，避免先停在顶部。
+				await leaf.openFile(file, { eState });
+				this.app.workspace.setActiveLeaf(leaf, { focus: true });
+			} else {
+				// `revealLeaf` 要 1.7.2，而插件最低支持 1.4.0；setActiveLeaf 足够。
+				this.app.workspace.setActiveLeaf(leaf, { focus: true });
 			}
-			await this.app.workspace.openLinkText(`${file.path}#${heading}`, file.path, false);
+			// 阅读视图没有光标，只有标题定位；编辑视图直接把光标放到标题行。
+			if (this.hasEditor(leaf)) {
+				this.revealLine(leaf, line);
+			} else {
+				(leaf as unknown as { setEphemeralState: (state: unknown) => void }).setEphemeralState(eState);
+			}
 		} catch (error) {
 			new Notice(
 				t("practice.session.openNoteFailed", {
@@ -1505,15 +1513,37 @@ export class PracticeView extends ItemView {
 		}
 	}
 
-	/** 题目标题在元数据缓存里的原文；没有标题时返回 null。 */
+	/** 这个标签页里是不是有编辑器（编辑 / 实时预览）。 */
+	private hasEditor(leaf: WorkspaceLeaf): boolean {
+		const view = leaf.view as unknown as { editor?: unknown };
+		return view.editor !== undefined && view.editor !== null;
+	}
+
+	/**
+	 * 题目标题在元数据缓存里的原文；没有标题时返回 null。
+	 *
+	 * 带知识点链接的标题在缓存里是 `标题 ^[[[知识点]]]`，而 `question.title`
+	 * 已经剥掉了尾巴。用 `resolveSubpath` 逐个验证，优先选 Obsidian 认得的那个。
+	 */
 	private headingFor(file: TFile, question: QuizQuestion | undefined): string | null {
 		if (question === undefined) return null;
-		const cached = this.app.metadataCache
-			?.getFileCache?.(file)
-			?.headings?.find((item) => item.position.start.line === question.line)?.heading;
-		if (cached !== undefined && cached !== null && cached.trim() !== "") return cached.trim();
-		const fallback = question.title.trim();
-		return fallback === "" ? null : fallback;
+		const cache = this.app.metadataCache?.getFileCache?.(file);
+		const cached = cache?.headings?.find(
+			(item) => item.position.start.line === question.line
+		)?.heading;
+		const candidates: string[] = [];
+		if (cached !== undefined && cached !== null && cached.trim() !== "") {
+			candidates.push(cached.trim());
+		}
+		const title = question.title.trim();
+		if (title !== "" && title !== candidates[0]) candidates.push(title);
+		if (candidates.length === 0) return null;
+		if (cache !== undefined && cache !== null && typeof resolveSubpath === "function") {
+			for (const candidate of candidates) {
+				if (resolveSubpath(cache, `#${candidate}`) !== null) return candidate;
+			}
+		}
+		return candidates[0] ?? null;
 	}
 
 	/** 某个标签页里打开的笔记路径；不是 Markdown 标签页时返回 null。 */
@@ -1523,8 +1553,8 @@ export class PracticeView extends ItemView {
 	}
 
 	/**
-	 * 把光标移到指定行。只在拿不到标题（无法走标题跳转）时作为兜底；
-	 * 阅读视图没有编辑器时什么也不做（`applyScroll` 收的是像素量，不能传行号）。
+	 * 把光标移到指定行，并滚到视野中间。阅读视图不走这里：
+	 * `previewMode.applyScroll()` 收的是像素量，不能把行号直接传进去。
 	 */
 	private revealLine(leaf: WorkspaceLeaf, line: number): void {
 		const view = leaf.view as unknown as {
