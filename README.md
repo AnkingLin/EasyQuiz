@@ -6,14 +6,14 @@
 
 **Write questions inside your notes, practise them as cards, and let an AI follow the same authoring spec.**
 
-Questions are plain Markdown. EasyQuiz renders each `quiz` block as an interactive card in reading view and writes the attempt record back into the note itself — so your progress lives with the questions, inside your vault. This release is about embedded authoring: write in the note, practise in the note, and let the bundled AI skill author alongside you. Finished questions can also be embedded in other notes with `![[bank#stem]]` and answered right there.
+Questions are plain Markdown. EasyQuiz renders each `quiz` block as an interactive card in reading view and writes the attempt record back into the note itself — so your progress lives with the questions, inside your vault. Write in the note, practise in the note, and let the bundled AI skill author alongside you; any other note can reference a question by its id and render it as an answerable card.
 
 | Highlight | What it gives you |
 |---|---|
 | **AI skill** | Ships [`skills/easyquiz-authoring/SKILL.md`](skills/easyquiz-authoring/SKILL.md): skeletons for all five question types, anchor and degrade rules, the knowledge-link convention. AI agents use it to add, fix, or insert questions; every skeleton in the spec is parsed and graded by the test suite. |
 | **Five question types** | Single choice, multiple choice, matching, fill in the blank, short answer. The `type` field alone decides the type — the plugin never guesses from the shape of the content. |
 | **Stem detection** | Fixed heading level or automatic nearest-heading matching; the stem is only the nearest block, forced blank lines around tables do not break it, and Markdown renders the Obsidian way. |
-| **Records and review** | Attempts are written back into the question's own `quiz` block; revisiting an answered question shows what you picked and updates the header stats, and the header's edit button jumps back to the source note. |
+| **Records and review** | Attempts are written back into the question's own `quiz` block; revisiting an answered question shows what you picked and updates the header stats, and the card's title and edit button jump back to the source note. |
 
 ![One single-choice question: the Markdown in the note on the left, the rendered card on the right](docs/assets/en/card-anatomy.png)
 
@@ -40,12 +40,12 @@ The repository ships an authoring spec for AI agents: [`skills/easyquiz-authorin
 
 - Fill a note with questions: let the AI read the knowledge note and write single-choice, blank, or matching questions into a new bank.
 - Repair an old bank: check for unanswerable questions or records that no longer line up, and fix them one by one.
-- Insert a question into a handout or revision page: ask for a full stem via the `question` field, then embed it with `![[bank#stem]]`.
+- Insert a question into a handout or revision page: ask for a full stem via the `question` field and have the agent write it in place; the note must count as a question bank (`quiz: true`, a `#quiz` tag, or a matching path glob) for the card to render.
 
 **How to use it**
 
 1. Put `skills/easyquiz-authoring/` where the agent can read it (for example `.agents/skills/` inside the vault, or point the agent at this path in the repository).
-2. Have the agent read `SKILL.md` before writing, and state the scope: one embedded question or a whole bank, and whether existing content may be changed.
+2. Have the agent read `SKILL.md` before writing, and state the scope: one question inserted into a note or a whole bank, and whether existing content may be changed.
 3. After writing, run **Validate current quiz file**, or check that the card is answerable; when in doubt run `npm test`, which executes the skeletons from the spec.
 
 **Two hard rules for the AI** (the same ones the spec states)
@@ -622,7 +622,7 @@ appears for Markdown question banks; multi-selections and other files are left a
 
 ### 1.1.1
 
-- **Reference by question id.** Write a question id as inline code in any note and the card renders in place; the old `![[bank#stem]]` embed still works.
+- **Reference by question id.** Write a question id as inline code in any note and the card renders in place.
 - **A more accurate Edit button.** It opens the question's heading like a backlink: the cursor lands on the heading in edit mode, reading view scrolls there with the native highlight, and an already-open tab is reused.
 - **The hint can be switched off.** The changed-question hint has a setting; **Dismiss** on a card turns that setting off, so the warning colour disappears from every card.
 - **Safer navigation.** Clear this question's records moved to the right-hand nav group, beside the jump box.
@@ -656,7 +656,7 @@ Each version is announced once. Older releases are on [GitHub Releases](https://
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (435 cases)
+npm test           # bundle and run the test suite (422 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 npm run assets     # regenerate the screenshots and GIFs used by the READMEs
@@ -664,7 +664,7 @@ npm run assets     # regenerate the screenshots and GIFs used by the READMEs
 
 The suite has two layers:
 
-- **Pure logic** (`parser`, `stem`, `grade`, `writeback`, `match-board`, `insert`, `session`): plain node, no DOM.
+- **Pure logic** (`parser`, `stem`, `reference`, `grade`, `writeback`, `match-board`, `insert`, `session`): plain node, no DOM.
 - **DOM** (`tests/quiz-match-dom.test.ts`, `tests/quiz-insert-modal.test.ts`, `tests/quiz-practice-view.test.ts`,
   `tests/quiz-knowledge-link.test.ts`, `tests/quiz-file-menu.test.ts`, `tests/quiz-i18n.test.ts`):
   renders the real card and board through `renderQuizCard` under jsdom and clicks its nodes, so click handling,
@@ -707,7 +707,7 @@ src/main.ts          plugin entry: code-block processor, commands, view registra
 src/parser.ts        question-bank parser (pure logic, no obsidian import)
 src/types.ts         question model and parse-result types
 src/stem.ts          stem preprocessing: strips what the interactive controls render (pure logic)
-src/embed.ts         `![[bank#question]]` embed matching: src parsing, heading keys, question lookup (pure logic)
+src/reference.ts     question-id references: inline-code id parsing, bank index, unique-match rules (pure logic)
 src/plain-text.ts    display-only plain text for option/answer text in review notes (pure logic)
 src/grade.ts         grading for the five question types (pure logic)
 src/writeback.ts     record write-back: only stats/history/rev, validated before writing
@@ -729,11 +729,11 @@ tests/               parser / stem / grading / write-back / insert / session tes
 tools/readme-assets/ README screenshot & GIF generator (see above)
 ```
 
-`parser` / `stem` / `grade` / `writeback` / `hash` / `insert` / `session` / `labels` / `i18n` deliberately
-do **not** import `obsidian`, so they run under plain Node; every Obsidian API dependency is confined to
-`runtime.ts`, `view.ts`, `practice-view.ts`, `insert-modal.ts`, and `file-menu.ts`. That includes the
-message tables: they are plain objects, so the parser can produce a localized warning without touching the
-Obsidian API.
+`parser` / `stem` / `reference` / `plain-text` / `grade` / `writeback` / `hash` / `match-board` / `insert` /
+`session` / `labels` / `i18n` deliberately do **not** import `obsidian`, so they run under plain Node;
+every Obsidian API dependency is confined to `runtime.ts`, `view.ts`, `practice-view.ts`,
+`insert-modal.ts`, and `file-menu.ts`. That includes the message tables: they are plain objects, so the
+parser can produce a localized warning without touching the Obsidian API.
 
 The stem is rendered **without** the parts that get their own interactive control — the option list, the
 matching table, and the `==answer==` text are stripped so that nothing is displayed twice.
@@ -743,14 +743,14 @@ matching table, and the `==answer==` text are stripped so that nothing is displa
 Implemented and covered by tests: the parser, stem preprocessing, grading for all five types, record
 write-back, matching-board logic, question templates with their insertion positioning, the practice card UI
 (stems, options, explanations and matching cells rendered as Markdown, click-to-connect multi-column
-matching with shuffling, inline
-click-to-type blanks that grow with their content, short-answer self-assessment, and the clickable
-knowledge-point link), the practice window (question-bank list with per-file data plus search, folder
-folding and per-folder selection; practice settings with type/sampling filters and **Shuffle**; and the
-one-question-at-a-time round with in-place answer reveal and a final report), the `![[bank#question]]`
-embed that renders an answerable card inside another note, the file-explorer menu entry that jumps straight
-to a bank's practice settings, and the English/Chinese interface with its language setting. Question-bank
-edits trigger a debounced reading-view refresh and invalidate the window's cached parsing.
+matching with shuffling, inline click-to-type blanks that grow with their content, short-answer
+self-assessment, and the clickable knowledge-point link), the practice window (question-bank list with
+per-file data plus search, folder folding and per-folder selection; practice settings with type/sampling
+filters and **Shuffle**; and the one-question-at-a-time round with in-place answer reveal and a final
+report), inline-code question-id references that render an answerable card inside another note (its title
+and pencil open the bank note at the question), the file-explorer menu entry that jumps straight to a
+bank's practice settings, and the English/Chinese interface with its language setting. Question-bank edits
+trigger a debounced reading-view refresh and invalidate the window's cached parsing.
 
 Not yet implemented: batching of multiple write-backs into one file write, and statistics that span rounds
 (a mistake book, charts) beyond what the window computes for a single round.
@@ -766,7 +766,7 @@ Not yet implemented: batching of multiple write-backs into one file write, and s
 ## Contributing
 
 - Keep `main.ts` to plugin lifecycle only; feature logic belongs in its own module under `src/`.
-- `parser` / `stem` / `embed` / `plain-text` / `grade` / `writeback` / `hash` / `insert` / `session` must not import `obsidian`, so
+- `parser` / `stem` / `reference` / `plain-text` / `grade` / `writeback` / `hash` / `match-board` / `insert` / `session` / `labels` / `i18n` must not import `obsidian`, so
   they stay testable under plain Node.
 - Never hard-code interface text: add a key to `src/i18n/en.ts`, fill it in `src/i18n/zh.ts` (both tables
   are type-checked against each other), and read it through `t()`. Keep the same `{placeholders}` in both.

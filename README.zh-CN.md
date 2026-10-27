@@ -6,14 +6,14 @@
 
 **在笔记里写题，在卡片里刷题，让 AI 按同一份规范帮你出题。**
 
-题目就是普通 Markdown。EasyQuiz 把 `quiz` 数据块渲染成阅读视图里的可交互题卡，判分后把作答记录写回笔记本身——进度跟着题目走，留在你的 vault 里。这一版的主题是「嵌入式编写」：题目在笔记里写，题卡在笔记里出现，AI 也读着同一份作者规范帮你补题；写完的题还能在别的笔记里 `![[题库#题面]]` 就地作答。
+题目就是普通 Markdown。EasyQuiz 把 `quiz` 数据块渲染成阅读视图里的可交互题卡，判分后把作答记录写回笔记本身——进度跟着题目走，留在你的 vault 里。题目在笔记里写，题卡在笔记里出现，AI 也读着同一份作者规范帮你补题；任何其他笔记都能用「题目 id」引用一道题，就地渲染成可作答的题卡。
 
 | 亮点 | 说明 |
 |---|---|
 | **AI Skill** | 自带 [`skills/easyquiz-authoring/SKILL.md`](skills/easyquiz-authoring/SKILL.md)：五种题型的骨架、锚点与降级规则、知识点链接约定。AI 照着它补题、修题、在讲义里插题；规范里的示例由测试真正解析并判分。 |
 | **五种题型** | 单选、多选、配对、填空、问答。题型只由 `type` 决定，绝不根据内容形态去猜。 |
 | **题面识别** | 固定层级或自动匹配最近的标题；题面只取最近的一段，表格上下的强制空行不打断段落；Markdown 按 Obsidian 规则渲染。 |
-| **记录与复盘** | 作答写回题目自己的 `quiz` 数据块；切回已答的题能看到当时的作答与统计，题卡右上角可跳回源笔记的题目位置。 |
+| **记录与复盘** | 作答写回题目自己的 `quiz` 数据块；切回已答的题能看到当时的作答与统计，题卡标题或右上角按钮可跳回源笔记的题目位置。 |
 
 ![同一道单选题：左边是笔记里的 Markdown，右边是渲染出的题卡](docs/assets/zh/card-anatomy.png)
 
@@ -40,7 +40,7 @@
 
 - 给一篇笔记批量补题：让 AI 读知识点笔记，按题型出题并写进新文件。
 - 修一份旧题库：按 SKILL 检查不可作答、记录错位的题，给出逐条修法。
-- 在讲义、复习页里插入单题：告诉 AI 用 `question` 字段写完整题干，再用 `![[题库#题面]]` 嵌入。
+- 在讲义、复习页里插入单题：告诉 AI 用 `question` 字段写完整题干，直接把题写进那篇笔记；该笔记要算作题库（`quiz: true`、`#quiz` 标签或命中路径通配符）才会渲染成题卡。
 
 **怎么用**
 
@@ -50,7 +50,7 @@
 
 **给 AI 的两条硬规则**（与 SKILL 一致）
 
-- **嵌入式插入单题**时，鼓励用 `question` 覆盖显示的题面、用 `distractors` 追加干扰项；**批量生成题库文件**时，除非用户明确要求，否则不要写这两个字段。
+- **向已有笔记插入单题**时，鼓励用 `question` 覆盖显示的题面、用 `distractors` 追加干扰项；**批量生成题库文件**时，除非用户明确要求，否则不要写这两个字段。
 - 题面正文只写当前题型需要的那一段：选择题的选项列表、配对题的数据表、填空题带空位的句子、问答题的正文。更远的段不会显示，紧贴选项或表格的说明会作为「补充内容」出现。
 
 ![左边是给 AI 的提示，右边是它按规范写出的题卡：用 question 写完整题干，用 distractors 追加两个干扰端口](docs/assets/zh/ai-authoring.png)
@@ -539,7 +539,7 @@ history:
 
 ### 1.1.1
 
-- **用题目 id 引用**：在任意笔记里用内联代码写题目 id，题卡就地渲染，不必再写 `![[题库#题面]]`；旧写法继续兼容。
+- **用题目 id 引用**：在任意笔记里用内联代码写题目 id，题卡就地渲染。
 - **编辑按钮跳转更准**：像反向链接一样跳到题目标题——编辑模式光标落在标题行，阅读视图滚动到标题并带原生高亮，已打开的标签页会复用。
 - **提示可关**：「题面已变更」提示可以在设置里关闭；在题卡上点「关闭提示」会直接关掉这个设置，所有题卡的警告色一起恢复。
 - **导航防误触**：「清除本题记录」移到导航右侧、与跳题输入框同一组。
@@ -573,7 +573,7 @@ history:
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (435 cases)
+npm test           # bundle and run the test suite (422 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 npm run assets     # 重新生成两份 README 用到的截图与 GIF
@@ -581,7 +581,7 @@ npm run assets     # 重新生成两份 README 用到的截图与 GIF
 
 测试套件分两层：
 
-- **纯逻辑**（`parser`、`stem`、`grade`、`writeback`、`match-board`、`insert`、`session`）：纯 node，无 DOM。
+- **纯逻辑**（`parser`、`stem`、`reference`、`grade`、`writeback`、`match-board`、`insert`、`session`）：纯 node，无 DOM。
 - **DOM**（`tests/quiz-match-dom.test.ts`、`tests/quiz-insert-modal.test.ts`、`tests/quiz-practice-view.test.ts`、`tests/quiz-knowledge-link.test.ts`、`tests/quiz-file-menu.test.ts`、`tests/quiz-i18n.test.ts`）：
   在 jsdom 下通过 `renderQuizCard` 渲染真实的题卡与连线板并点击其节点，因此点击处理、连线目标、各列之间的隔离、`MarkdownRenderer` 契约以及知识点链接都是被验证过的，而不是假设的；插入对话框通过 `InsertQuestionModal` 打开并驱动其控件；刷题窗口通过 `PracticeView` 打开并走完它的全部三个页面——包括列表页的搜索、文件夹折叠与整组勾选；文件浏览器菜单也由它自己的真实事件处理函数驱动。`tests/dom.ts` 安装 Obsidian 风格的 DOM 辅助函数（`createDiv`、`addClass`、…），`tests/obsidian-stub.ts` 则代替只有类型定义的 `obsidian` 包。
 
@@ -606,7 +606,7 @@ src/main.ts          plugin entry: code-block processor, commands, view registra
 src/parser.ts        question-bank parser (pure logic, no obsidian import)
 src/types.ts         question model and parse-result types
 src/stem.ts          stem preprocessing: strips what the interactive controls render (pure logic)
-src/embed.ts         `![[bank#question]]` embed matching: src parsing, heading keys, question lookup (pure logic)
+src/reference.ts     题目 id 引用：内联代码 id 解析、题库索引、唯一匹配规则（纯逻辑）
 src/plain-text.ts    display-only plain text for option/answer text in review notes (pure logic)
 src/grade.ts         grading for the five question types (pure logic)
 src/writeback.ts     record write-back: only stats/history/rev, validated before writing
@@ -628,13 +628,13 @@ tests/               parser / stem / grading / write-back / insert / session tes
 tools/readme-assets/ README 截图与 GIF 生成器（见上一节）
 ```
 
-`parser` / `stem` / `grade` / `writeback` / `hash` / `insert` / `session` / `labels` / `i18n` 刻意**不**导入 `obsidian`，因此它们可以在纯 Node 下运行；所有对 Obsidian API 的依赖都限制在 `runtime.ts`、`view.ts`、`practice-view.ts`、`insert-modal.ts` 和 `file-menu.ts` 里。文案表也是如此：它们是普通对象，所以解析器不必接触 Obsidian API 就能产生本地化的提示。
+`parser` / `stem` / `reference` / `plain-text` / `grade` / `writeback` / `hash` / `match-board` / `insert` / `session` / `labels` / `i18n` 刻意**不**导入 `obsidian`，因此它们可以在纯 Node 下运行；所有对 Obsidian API 的依赖都限制在 `runtime.ts`、`view.ts`、`practice-view.ts`、`insert-modal.ts` 和 `file-menu.ts` 里。文案表也是如此：它们是普通对象，所以解析器不必接触 Obsidian API 就能产生本地化的提示。
 
 题干渲染时会**去掉**那些有自己交互控件的部分——选项列表、配对表格以及 `==answer==` 文本都会被剥离，以免同一内容显示两遍。
 
 ## 状态
 
-已实现并有测试覆盖：解析器、题干预处理、五种题型的判分、记录写回、连线板逻辑、题目模板及其插入定位、题卡界面（题面、选项、解析与配对单元格都按 Markdown 渲染、可点击连线的多列配对及打乱、内嵌的点击输入式空位及其随内容变宽、问答题自评，以及可点击的知识点链接）、刷题窗口（带逐文件数据的题库列表，外加搜索、文件夹折叠与整组勾选；带题型/抽题筛选与「打乱顺序」的刷题设置；以及一次一道题、在原处揭示答案并给出最终报告的一轮）、`![[题库#题目]]` 题目嵌入（在别的笔记里就地渲染成可作答的题卡），从文件浏览器菜单直接跳到某个题库刷题设置的入口，还有带语言设置的英文/中文界面。题库文件被修改会触发防抖的阅读视图刷新，并使窗口缓存的解析结果失效。
+已实现并有测试覆盖：解析器、题干预处理、五种题型的判分、记录写回、连线板逻辑、题目模板及其插入定位、题卡界面（题面、选项、解析与配对单元格都按 Markdown 渲染、可点击连线的多列配对及打乱、内嵌的点击输入式空位及其随内容变宽、问答题自评，以及可点击的知识点链接）、刷题窗口（带逐文件数据的题库列表，外加搜索、文件夹折叠与整组勾选；带题型/抽题筛选与「打乱顺序」的刷题设置；以及一次一道题、在原处揭示答案并给出最终报告的一轮）、「题目 id」引用（在别的笔记里就地渲染成可作答的题卡，题卡标题与铅笔可回到题库笔记），从文件浏览器菜单直接跳到某个题库刷题设置的入口，还有带语言设置的英文/中文界面。题库文件被修改会触发防抖的阅读视图刷新，并使窗口缓存的解析结果失效。
 
 尚未实现：把多次写回合并成一次文件写入，以及跨轮次的统计（错题本、图表）——目前只有窗口为单轮计算出的那些数据。
 
@@ -643,7 +643,7 @@ tools/readme-assets/ README 截图与 GIF 生成器（见上一节）
 ## 参与贡献
 
 - `main.ts` 只保留插件生命周期；功能逻辑放在 `src/` 下各自独立的模块里。
-- `parser` / `stem` / `embed` / `plain-text` / `grade` / `writeback` / `hash` / `insert` / `session` 不得导入 `obsidian`，这样它们才能在纯 Node 下保持可测试。
+- `parser` / `stem` / `reference` / `plain-text` / `grade` / `writeback` / `hash` / `match-board` / `insert` / `session` / `labels` / `i18n` 不得导入 `obsidian`，这样它们才能在纯 Node 下保持可测试。
 - 绝不要硬编码界面文案：在 `src/i18n/en.ts` 里加键，在 `src/i18n/zh.ts` 里填写（两张表会互相做类型检查），然后通过 `t()` 读取。两张表里的 `{placeholders}` 要保持一致。
 - 改变用户可见的行为时，要同时更新 `README.md`、`README.zh-CN.md` **和** `skills/easyquiz-authoring/SKILL.md`——后者的示例会被 `npm test` 执行。如果改动在界面上看得见，还要运行 `npm run assets`，让图片保持准确；如果希望用户更新后看到提示，还要在两份 README 和 `src/whats-new.ts` 里加上对应的更新条目。
 - 提交 PR 之前先运行 `npm run build`、`npm test` 和 `npm run lint`；CI 会跑这三项。

@@ -133,7 +133,7 @@ Two optional data-block fields change only how a card looks:
   `count`, fewer decoys are added.
 
 Write `question` and `distractors` **only when inserting a single question into an existing note** (for
-example with the Insert question command or an embedded question). When generating a whole question bank
+example with the Insert question command). When generating a whole question bank
 file, do not use them unless the user explicitly asks for them: banks are expected to keep the stem in
 the heading and to be plain text.
 
