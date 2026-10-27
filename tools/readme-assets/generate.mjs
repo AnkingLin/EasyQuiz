@@ -180,6 +180,29 @@ if (onlyScene) {
 
 console.log(`共 ${scenes.length} 个场景。`);
 
+// ------------------------------------------------- 动画组统一高度
+
+/*
+ * GIF 的每一帧必须同尺寸，否则 ffmpeg 的 concat 与 palettegen 会直接失败。
+ * 动画帧的内容会变化（空位越填越长），所以先量出组内最大高度，整组按它截图。
+ */
+const groupHeights = new Map();
+for (const scene of scenes) {
+	if (scene.group === null) continue;
+	const key = `${scene.group}-${scene.dir}`;
+	if (groupHeights.has(key)) continue;
+	const members = scenes.filter((item) => item.group === scene.group && item.dir === scene.dir);
+	let tallest = 0;
+	for (const frame of members) {
+		const measured = measure(
+			`${indexUrl}?scene=${frame.name}&dir=${frame.dir}&index=${frame.index}`,
+			frame.width
+		);
+		tallest = Math.max(tallest, measured.height);
+	}
+	groupHeights.set(key, tallest);
+}
+
 // ------------------------------------------------------------ 逐场景截图
 
 /** group → dir → 帧列表。 */
@@ -201,8 +224,9 @@ for (const scene of scenes) {
 	const frameQuery = scene.group === null ? "" : `&index=${scene.index}`;
 	const frameUrl = `${base}${frameQuery}`;
 	const measured = measure(frameUrl, scene.width);
-	// 上下留一点余量，防止抗锯齿边缘被切掉。
-	const height = Math.ceil(measured.height) + 4;
+	// 上下留一点余量，防止抗锯齿边缘被切掉。动画帧统一取组内最大高度。
+	const fixedHeight = scene.group === null ? undefined : groupHeights.get(`${scene.group}-${scene.dir}`);
+	const height = Math.ceil(fixedHeight ?? measured.height) + 4;
 
 	// 内容比场景宽度还宽 = 会被切掉。这是素材生成里最容易悄悄出错的地方
 	// （长解析、长路径都会触发），所以直接报错而不是产出一张残缺的图。

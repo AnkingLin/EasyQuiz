@@ -2,7 +2,7 @@
 
 [![Node.js build](https://github.com/AnkingLin/EasyQuiz/actions/workflows/lint.yml/badge.svg)](https://github.com/AnkingLin/EasyQuiz/actions/workflows/lint.yml)
 
-**中文** · [English](README.md)
+[中文](README.zh-CN.md) · **English**
 
 **Write questions inside your notes, practise them as cards, and let an AI follow the same authoring spec.**
 
@@ -52,6 +52,8 @@ The repository ships an authoring spec for AI agents: [`skills/easyquiz-authorin
 
 - When **inserting one question into a note**, prefer `question` to override the displayed stem and `distractors` to add decoys; when **generating a whole bank**, do not write either field unless the user explicitly asks.
 - The stem body holds only the block the type needs: the option list for choice questions, the data table for matching, the sentence with blanks for fill-in-the-blank, and the prose for short answers. Farther blocks are not shown, and prose attached to the options or table is displayed as "supplement".
+
+![A prompt to an AI agent on the left and the card it writes on the right, using the question field and two decoy ports](docs/assets/en/ai-authoring.png)
 
 ## Quick start
 
@@ -129,7 +131,7 @@ explanation: 三次握手用于同步双方的初始序列号。
 After submitting, the correct option is outlined and the explanation appears underneath — nothing is
 hidden behind a separate answer key:
 
-![A single-choice card, answered correctly, with the correct option outlined and the explanation below](docs/assets/en/card-single.png)
+![A single-choice card in review: your answer, the correct option outlined, and the explanation below](docs/assets/en/card-single.png)
 
 Stems, options and explanations are all drawn by Obsidian's own renderer, so `**bold**`, `` `code` ``,
 `![[image.png]]` embeds and `$formula$` work on the card and in the practice window.
@@ -137,6 +139,10 @@ Stems, options and explanations are all drawn by Obsidian's own renderer, so `**
 Both themes are supported, since the card is drawn with Obsidian's own theme variables:
 
 ![The same card on a dark theme](docs/assets/en/card-single-dark.png)
+
+Choice questions can carry `distractors` — a count plus a candidate pool of decoys — and `question` overrides the displayed stem. The card below uses both; decoys are drawn fresh on every attempt and never collide with the options you wrote:
+
+![A single-choice card using question and distractors: a full stem and two extra decoy ports](docs/assets/en/card-distractors.png)
 
 ### Multiple choice
 

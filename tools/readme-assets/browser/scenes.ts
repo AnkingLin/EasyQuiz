@@ -25,7 +25,7 @@ import { contentHash } from "../../../src/hash";
 import { setLanguage } from "../../../src/i18n";
 import { parseQuizFile } from "../../../src/parser";
 import { EasyQuizHost, PracticeView } from "../../../src/practice-view";
-import { GradeResult } from "../../../src/grade";
+import { GradeResult, UserAnswer } from "../../../src/grade";
 import { ParsedQuizFile, QuizQuestion } from "../../../src/types";
 import { CardContext, renderQuizCard } from "../../../src/view";
 import { InsertQuestionModal } from "../../../src/insert-modal";
@@ -114,6 +114,13 @@ function pickByType(parsed: ParsedQuizFile, type: QuizQuestion["type"]): QuizQue
 	return found;
 }
 
+/** 按标题取一道题（用于演示 question / distractors 这类新字段）。 */
+function pickByTitle(parsed: ParsedQuizFile, title: string): QuizQuestion {
+	const found = parsed.questions.find((item) => item.ok && item.title === title);
+	if (found === undefined) throw new Error(`夹具里没有标题为「${title}」的题`);
+	return found;
+}
+
 /** 一道"结构确实有问题"的题：用来说明降级提示。 */
 function brokenQuestion(parsed: ParsedQuizFile): QuizQuestion {
 	const found = parsed.questions.find((item) => !item.ok);
@@ -156,6 +163,8 @@ interface CardOptions {
 	correct?: boolean;
 	/** 只做复盘渲染，不模拟提交。 */
 	reviewOnly?: boolean;
+	/** 复盘时要回放的"上一次作答"。 */
+	lastAnswer?: UserAnswer;
 }
 
 /** 提交用的假服务：判分不落盘，只回一个结果。 */
@@ -211,6 +220,7 @@ async function buildCard(question: QuizQuestion, file: MemoryFile, options: Card
 			el: host,
 			blankMarker: "highlight",
 			reviewOnly: options.reviewOnly === true,
+			lastAnswer: options.lastAnswer,
 			onSubmitted: () => undefined,
 		});
 		await settle();
@@ -319,6 +329,33 @@ function sourceAndCard(source: string, card: HTMLElement, language: "en" | "zh")
 	pre.className = "eq-split__code";
 	const code = document.createElement("code");
 	code.textContent = source;
+	pre.appendChild(code);
+	left.append(leftLabel, pre);
+
+	const right = div("eq-split__pane");
+	const rightLabel = div("eq-split__label");
+	rightLabel.textContent = labels.right;
+	right.append(rightLabel, card);
+
+	wrap.append(left, right);
+	return wrap;
+}
+
+/** 左"给 AI 的提示"右"AI 写出的题卡"，用同一套 split 外壳。 */
+function promptAndCard(prompt: string, card: HTMLElement, language: "en" | "zh"): HTMLElement {
+	const wrap = div("eq-split");
+	const labels =
+		language === "zh"
+			? { left: "给 AI 的提示", right: "AI 写出的题卡" }
+			: { left: "Prompt to your AI", right: "The card it writes" };
+
+	const left = div("eq-split__pane");
+	const leftLabel = div("eq-split__label");
+	leftLabel.textContent = labels.left;
+	const pre = document.createElement("pre");
+	pre.className = "eq-split__code";
+	const code = document.createElement("code");
+	code.textContent = prompt;
 	pre.appendChild(code);
 	left.append(leftLabel, pre);
 
@@ -528,21 +565,89 @@ function staticScenes(set: FixtureSet): SceneSpec[] {
 			const parsed = parseFixture(set.cards);
 			const question = pickByType(parsed, "single");
 			const built = await buildCard(question, memoryFile(set.cards), {
-				select: ["c"],
-				submit: true,
-				correct: true,
+				reviewOnly: true,
+				lastAnswer: { kind: "choice", anchors: ["c"] },
 			});
 			return sourceAndCard(sourceOf(set.cards, question), built, set.language);
 		},
 	});
 
-	card("card-single", "single", { select: ["c"], submit: true, correct: true });
-	card("card-single-dark", "single", { select: ["c"], submit: true, correct: true }, "dark");
-	card("card-multi", "multi", { select: ["a"], submit: true, correct: false });
+	card("card-single", "single", { reviewOnly: true, lastAnswer: { kind: "choice", anchors: ["c"] } });
+	card(
+		"card-single-dark",
+		"single",
+		{ reviewOnly: true, lastAnswer: { kind: "choice", anchors: ["c"] } },
+		"dark"
+	);
+	card("card-multi", "multi", { reviewOnly: true, lastAnswer: { kind: "choice", anchors: ["a"] } });
 	card("card-match", "match", { reviewOnly: true });
 	card("card-blank", "blank", { reviewOnly: true });
 	card("card-essay", "essay", {});
 	card("card-diagnostic", "broken", {});
+
+	// 新增字段：question 覆盖题面 + distractors 追加干扰项。
+	specs.push({
+		name: "card-distractors",
+		dir: tag,
+		width: CARD_WIDTH,
+		theme: "light",
+		group: null,
+		index: null,
+		delayMs: null,
+		build: async () => {
+			setLanguage(set.language);
+			const parsed = parseFixture(set.cards);
+			const question = pickByTitle(
+				parsed,
+				set.language === "zh" ? "HTTPS 的默认端口是多少？" : "What is the default port for HTTPS?"
+			);
+			const built = await buildCard(question, memoryFile(set.cards), {});
+			return noteFrame(built, set.cards.path);
+		},
+	});
+
+	// AI Skill：左边是给 AI 的提示，右边是它按 SKILL.md 写出的题卡。
+	specs.push({
+		name: "ai-authoring",
+		dir: tag,
+		width: 1160,
+		theme: "light",
+		group: null,
+		index: null,
+		delayMs: null,
+		build: async () => {
+			setLanguage(set.language);
+			const parsed = parseFixture(set.cards);
+			const question = pickByTitle(
+				parsed,
+				set.language === "zh" ? "HTTPS 的默认端口是多少？" : "What is the default port for HTTPS?"
+			);
+			const built = await buildCard(question, memoryFile(set.cards), {});
+			const prompt =
+				set.language === "zh"
+					? [
+						"按 skills/easyquiz-authoring/SKILL.md 给下面的笔记补一道单选题：",
+						"",
+						"文件：题库/计算机网络/第 5 章.md",
+						"题干：浏览器打开 https://example.com 时默认连哪个端口",
+						"选项：80 / 443 / 22",
+						"用 question 字段写完整题干",
+						"用 distractors 追加 2 个干扰端口（候选 8080、3000、8443）",
+						"答案 443，解析一句话；不要写 stats/history",
+					].join("\n")
+					: [
+						"Add one single-choice question to the note below, following skills/easyquiz-authoring/SKILL.md:",
+						"",
+						"file: Computer Networks/Chapter 5.md",
+						"stem: which port does https://example.com use by default?",
+						"options: 80 / 443 / 22",
+						"put the full stem in the question field",
+						"add 2 decoy ports with distractors (candidates 8080, 3000, 8443)",
+						"answer 443, one-sentence explanation, no stats/history",
+					].join("\n");
+			return promptAndCard(prompt, built, set.language);
+		},
+	});
 
 	// 刷题窗口的三个页面。
 	const pick = set.vault.slice(0, 2).map((fixture) => fixture.path);

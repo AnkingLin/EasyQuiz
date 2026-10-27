@@ -73,8 +73,13 @@ async function main(): Promise<void> {
 		}
 
 		const root = document.documentElement;
-		// 高度：脚本据此决定第二遍截图的视口。
-		root.setAttribute("data-scene-height", String(root.scrollHeight));
+		// 高度：脚本据此决定第二遍截图的视口。必须量 #stage 的实际内容高度：
+		// documentElement.scrollHeight 至少等于视口高，窗口里若有浏览器 UI，
+		// 短场景会被垫到视口高度，截图底部就多出一大片空白。
+		const stageEl = document.getElementById("stage");
+		const contentHeight =
+			stageEl === null ? root.scrollHeight : Math.ceil(stageEl.getBoundingClientRect().height);
+		root.setAttribute("data-scene-height", String(contentHeight));
 		// 宽度：内容横向溢出时截图右侧会被切掉，脚本据此报警。
 		root.setAttribute("data-scene-width", String(root.scrollWidth));
 
