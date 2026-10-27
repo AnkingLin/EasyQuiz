@@ -95,11 +95,11 @@ export const en = {
 	"whatsNew.autoHeading":
 		"Stem headings can be matched automatically: choose Auto in settings and the closest heading that owns a data block becomes a question, at any heading level.",
 	"whatsNew.nearestStem":
-		"A card now shows only the nearest paragraph, list or table as its stem; a paragraph attached above the options or table is shown as supporting text, and farther blocks are ignored.",
+		"A card shows only the nearest paragraph, list or table as its stem: it is gathered upward from the type's target block, the adjacent block belongs to the stem, and farther blocks are crossed only when a blank line hugs a table. Prose attached to the options becomes supporting text, matching uses the nearest table, and an essay callout stays with the block above it.",
 	"whatsNew.distractors":
-		"Choice questions can add distractors: set how many to add and a pool of candidate options in the data block.",
+		"Choice questions can add distractors: set how many to add and a pool of candidate options in the data block. A new question field can override the displayed stem.",
 	"whatsNew.answerReview":
-		"Going back to an answered question shows your own answer, and the stats badge reflects the new attempt. A new Open note button jumps to the question in its bank, reusing the tab if the note is already open.",
+		"Going back to an answered question shows your own answer, and the stats badge reflects the new attempt. The header's edit button follows a native internal link to the question in its source note, reusing the tab if the note is already open.",
 	"whatsNew.bankListFix":
 		"The bank picker shows partial selection for folders and picks up file changes when you switch back, without a manual rescan.",
 	"whatsNew.stemTighter":
@@ -108,6 +108,8 @@ export const en = {
 		"Distractors are redrawn after every attempt, and the review shows the set you answered with.",
 	"whatsNew.clearRecords":
 		"New Clear records buttons on the question and the bank reset attempts and history. The command palette can also start a round for the current bank.",
+	"whatsNew.aiSkill":
+		"An authoring spec for AI agents ships in skills/easyquiz-authoring/SKILL.md: skeletons for the five question types, anchors, degrade rules and the knowledge-link convention. AI agents use it to add questions, repair banks and insert single questions into handouts; its examples are parsed and graded by the test suite.",
 
 	// -----------------------------------------------------------------------
 	// 诊断卡片（数据块渲染）

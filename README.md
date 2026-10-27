@@ -2,31 +2,56 @@
 
 [![Node.js build](https://github.com/AnkingLin/EasyQuiz/actions/workflows/lint.yml/badge.svg)](https://github.com/AnkingLin/EasyQuiz/actions/workflows/lint.yml)
 
-**English** · [中文](README.zh-CN.md)
+**中文** · [English](README.md)
 
-Questions are **plain Markdown**. EasyQuiz renders them as interactive cards in Obsidian's reading view,
-grades your answers, and writes the attempt record **back into the note** — so your progress lives with
-the questions, in your vault, under your own version control.
+**Write questions inside your notes, practise them as cards, and let an AI follow the same authoring spec.**
 
-![The same single-choice question: Markdown on the left, the rendered card on the right](docs/assets/en/card-anatomy.png)
+Questions are plain Markdown. EasyQuiz renders each `quiz` block as an interactive card in reading view and writes the attempt record back into the note itself — so your progress lives with the questions, inside your vault. This release is about embedded authoring: write in the note, practise in the note, and let the bundled AI skill author alongside you. Finished questions can also be embedded in other notes with `![[bank#stem]]` and answered right there.
 
----
-
-## What do you want to do?
-
-| If you are wondering… | Read |
+| Highlight | What it gives you |
 |---|---|
-| How do I get one question working? | [Quick start](#quick-start) |
-| What kinds of questions can I ask? | [The five question types](#what-kinds-of-questions-can-i-ask) |
-| What exactly goes in the note? | [How exactly do I write a question?](#how-exactly-do-i-write-a-question) |
-| How do I practise a whole question bank? | [How do I practise a whole question bank?](#how-do-i-practise-a-whole-question-bank) |
-| How do I tie a question back to my notes? | [How do I tie a question to my notes?](#how-do-i-tie-a-question-to-my-notes) |
-| How do I practise one question inside another note? | [How do I embed a question in another note?](#how-do-i-embed-a-question-in-another-note) |
-| Where do my answers and scores end up? | [Where do my answers go?](#where-do-my-answers-go) |
-| Can I use it in English or Chinese? | [Can I use the interface in my language?](#can-i-use-the-interface-in-my-language) |
-| What changed in the latest version? | [What's new](#whats-new) |
-| Something looks wrong — what now? | [Troubleshooting](#troubleshooting) |
-| How do I build or contribute? | [Development](#development) |
+| **AI skill** | Ships [`skills/easyquiz-authoring/SKILL.md`](skills/easyquiz-authoring/SKILL.md): skeletons for all five question types, anchor and degrade rules, the knowledge-link convention. AI agents use it to add, fix, or insert questions; every skeleton in the spec is parsed and graded by the test suite. |
+| **Five question types** | Single choice, multiple choice, matching, fill in the blank, short answer. The `type` field alone decides the type — the plugin never guesses from the shape of the content. |
+| **Stem detection** | Fixed heading level or automatic nearest-heading matching; the stem is only the nearest block, forced blank lines around tables do not break it, and Markdown renders the Obsidian way. |
+| **Records and review** | Attempts are written back into the question's own `quiz` block; revisiting an answered question shows what you picked and updates the header stats, and the header's edit button jumps back to the source note. |
+
+![One single-choice question: the Markdown in the note on the left, the rendered card on the right](docs/assets/en/card-anatomy.png)
+
+## Where do I start?
+
+| What you want to do | Read this |
+|---|---|
+| Have an AI write, fix, or insert questions | [AI skill](#ai-skill) |
+| Get one question working first | [Quick start](#quick-start) |
+| Pick a type and copy a skeleton | [The five question types](#the-five-question-types) |
+| Look up fields, anchors, blank rules, degrade behaviour | [How exactly do I write a question?](#how-exactly-do-i-write-a-question) |
+| Answer one question inside another note | [How do I embed a question in another note?](#how-do-i-embed-a-question-in-another-note) |
+| Tie a question back to a knowledge note | [How do I tie a question to my notes?](#how-do-i-tie-a-question-to-my-notes) |
+| Practise a whole question bank | [How do I practise a whole question bank?](#how-do-i-practise-a-whole-question-bank) |
+| See where answers are stored | [Where do my answers go?](#where-do-my-answers-go) |
+| Find commands and settings | [What else can the plugin do for me?](#what-else-can-the-plugin-do-for-me), [Settings](#settings) |
+| See what changed | [What's new](#whats-new) |
+
+## AI skill
+
+The repository ships an authoring spec for AI agents: [`skills/easyquiz-authoring/SKILL.md`](skills/easyquiz-authoring/SKILL.md). It is not a prompt template; it is the plugin's author handbook — the heading and knowledge-link convention, skeletons for the five question types, anchor and blank rules, fields written by the plugin, degrade behaviour, and when to use `question` / `distractors`. Every skeleton in the spec is parsed and graded by `npm test`, so a question written from it is guaranteed to be answerable.
+
+**When to use it**
+
+- Fill a note with questions: let the AI read the knowledge note and write single-choice, blank, or matching questions into a new bank.
+- Repair an old bank: check for unanswerable questions or records that no longer line up, and fix them one by one.
+- Insert a question into a handout or revision page: ask for a full stem via the `question` field, then embed it with `![[bank#stem]]`.
+
+**How to use it**
+
+1. Put `skills/easyquiz-authoring/` where the agent can read it (for example `.agents/skills/` inside the vault, or point the agent at this path in the repository).
+2. Have the agent read `SKILL.md` before writing, and state the scope: one embedded question or a whole bank, and whether existing content may be changed.
+3. After writing, run **Validate current quiz file**, or check that the card is answerable; when in doubt run `npm test`, which executes the skeletons from the spec.
+
+**Two hard rules for the AI** (the same ones the spec states)
+
+- When **inserting one question into a note**, prefer `question` to override the displayed stem and `distractors` to add decoys; when **generating a whole bank**, do not write either field unless the user explicitly asks.
+- The stem body holds only the block the type needs: the option list for choice questions, the data table for matching, the sentence with blanks for fill-in-the-blank, and the prose for short answers. Farther blocks are not shown, and prose attached to the options or table is displayed as "supplement".
 
 ## Quick start
 
@@ -62,7 +87,9 @@ the questions, in your vault, under your own version control.
 
 That is the whole loop. Everything below answers one question at a time; read only what you need.
 
-## What kinds of questions can I ask?
+## The five question types
+
+> Shortest path: pick `type` → write the stem body (list / table / `==blank==` / prose) → put a `quiz` block at the end of the question → end the heading with `^[[[knowledge note]]]`. Every type below has a copyable skeleton; fields, anchors, and degrade rules are in [How exactly do I write a question?](#how-exactly-do-i-write-a-question).
 
 Five types, and the type always comes from the `type` field — it is **never guessed from the shape of the
 content**. Pick one:
@@ -238,115 +265,6 @@ diagnostic card that names the line and the fix:
 | `answer` points at a nonexistent anchor | Not answerable |
 | YAML parse error | Degrade; show the raw error |
 
-## How do I practise a whole question bank?
-
-**Open practice window** (or the ribbon icon) opens the window in the right sidebar, with three pages, so a
-whole session never leaves it. The same window can also be opened in a main-area tab or in its own window —
-see **Open practice window in a new tab** / **Open practice window in a new window** in the command palette.
-Each location keeps one window of its own, so a sidebar session and a tab session can run side by side.
-
-### 1. Question-bank list
-
-Every question-bank file in the vault, grouped by folder, each with its data on the same row: total
-questions, answerable, how many need fixing, per-type counts, attempts, accuracy, and the date of the last
-attempt. A file that fails to parse reports its own error without breaking the list.
-
-With a large library, this page gives you three ways to narrow it down:
-
-- **Search** — filters by file name or path as you type, and reports **how many files matched**. Searching
-  never touches the files you have already ticked.
-- **Fold folders** — click a folder header to collapse or expand that group; **Collapse all** / **Expand
-  all** do every group at once. The folded state is saved with the workspace.
-- **Tick a whole folder** — every folder header carries a checkbox that selects or clears the group, and
-  shows a half-tick when only part of it is selected.
-
-Tick one or more files — or **Select all answerable** (which applies to the current search results) — to
-practise them together:
-
-![The question-bank list, with per-file data and two files ticked](docs/assets/en/window-list.png)
-
-### 2. Practice settings
-
-Decide how to draw this round, and see **how many questions it will actually ask before you start**:
-
-- **In order** — every candidate, in file order.
-- **Random sample** — shuffle and take N (0 or empty = everything).
-- **Only wrong answers** — keep questions whose last attempt was wrong.
-- **Question types** — any subset; nothing ticked means all types.
-- **Shuffle** — randomise question order and choice-option order. Option order is derived from the round's
-  seed, so it stays put while you review an answer or step between questions, and only re-shuffles when a
-  new round starts. Grading is by anchor, so a shuffled option never changes what counts as correct.
-
-![Practice settings: how to draw, which types, and shuffle, with the planned count above the start button](docs/assets/en/window-picker.png)
-
-Degraded questions never enter a session, so a broken question can't quietly eat a slot.
-
-### 3. Practice
-
-One question at a time, rendered by the same card UI as in the note, with a sticky progress bar, a
-correct/wrong tally, and previous/next (plus a jump box on longer rounds). Submitting grades through the
-same service, so records are written back exactly as in reading view:
-
-![The practice page: progress bar, a multiple-choice question, and navigation](docs/assets/en/window-practice.png)
-
-- **Peek** reveals the answer without scoring it.
-- **Open note** in the card header jumps to the question in its bank and puts the cursor on its heading;
-  when the note is already open, that tab is reused.
-- **Clear question records** on the practice page resets only the current question's attempts and history;
-  **Clear records** on each row of the bank list resets a whole bank. Both ask for a second click.
-- The last page summarises the round, lists what you got wrong, and offers **Retry wrong only**.
-
-Because answers are keyed to file path + question id, a round survives editing a file: the window re-parses
-a bank when it changes, and again after each write-back. The command palette also has **Practise this
-bank**, which starts a round for the bank currently open (or selected in the file explorer).
-
-## How do I tie a question to my notes?
-
-End the stem heading with `^[[[]]]` — `^[`, an Obsidian wikilink, `]`:
-
-```markdown
-## TCP 建立连接需要几次握手？ ^[[[计算机网络/传输层#TCP 三次握手]]]
-```
-
-- The `^[ … ]` wrapper marks the link as an annotation of the stem rather than ordinary question text. The
-  `[[…]]` inside is a real wikilink: it renders as a link, and the question-bank note appears in the
-  target's backlinks panel — visible as the **Knowledge point** row on the card.
-- The parser **strips it from the displayed title and from the derived id**, so retargeting a link never
-  disconnects accumulated `stats` / `history`. The target is available as `QuizQuestion.knowledgeLink`.
-- `rev` (the stem hash) is computed from the stem body, not the heading, so **relinking a question does
-  not mark its records as "stem changed"**.
-- Only a trailing `^[[[]]]` counts. The older two-bracket form `^[[…]]` is still recognised. Write a plain
-  `[[]]` inside the stem body when you want an inline link in the question text; only the heading link is
-  stripped.
-- Links are optional — a question without one simply has `knowledgeLink: null`.
-
-The full authoring convention, including the five question types and the review checklist, lives in
-[`skills/easyquiz-authoring/SKILL.md`](skills/easyquiz-authoring/SKILL.md). It is written for AI agents
-authoring or reviewing a bank, and its examples are executed by the test suite, so the documented
-skeletons are guaranteed to parse.
-
-## How do I embed a question in another note?
-
-Reference a question by its stem heading and it renders as a **real, answerable card** right there:
-
-```markdown
-![[计算机网络/第三章#TCP 建立连接需要几次握手？]]
-```
-
-- The subpath is the **stem heading text, with the trailing `^[[[]]]` knowledge link left out**.
-- Records still belong to the bank: answering in an embedded copy writes back to the bank note, exactly as
-  in reading view there. The **Knowledge point** link on the card still points at the knowledge note.
-- Use it to build a review note, a lecture handout, or a mock exam out of questions you already wrote —
-  without copying the question text (and therefore without letting the copies drift apart).
-- A subpath that does not name a stem heading is left completely alone, so ordinary embeds such as
-  `![[Some note#Some section]]` keep behaving exactly as Obsidian renders them.
-- Block references (`![[bank#^block-id]]`) and footnote references are not questions and are also left alone.
-
-This is deliberately **not** Obsidian's built-in heading embed. Two reasons: a plain embed would show the
-option list and the raw `quiz` data block instead of a card, and Obsidian's heading lookup normalises
-punctuation — which the trailing `^[[[knowledge link]]]` derails, making it silently fall back to rendering
-the **entire** bank file. EasyQuiz recognises the embed itself and replaces it with a card.
-
 ## How exactly do I write a question?
 
 ### Question bank file
@@ -487,6 +405,115 @@ affected records as "stem changed" rather than silently discarding them.
 - Anchors you don't write are numbered `b1`, `b2`, … by position; mixing explicit and automatic anchors in
   one question is fine.
 
+## How do I tie a question to my notes?
+
+End the stem heading with `^[[[]]]` — `^[`, an Obsidian wikilink, `]`:
+
+```markdown
+## TCP 建立连接需要几次握手？ ^[[[计算机网络/传输层#TCP 三次握手]]]
+```
+
+- The `^[ … ]` wrapper marks the link as an annotation of the stem rather than ordinary question text. The
+  `[[…]]` inside is a real wikilink: it renders as a link, and the question-bank note appears in the
+  target's backlinks panel — visible as the **Knowledge point** row on the card.
+- The parser **strips it from the displayed title and from the derived id**, so retargeting a link never
+  disconnects accumulated `stats` / `history`. The target is available as `QuizQuestion.knowledgeLink`.
+- `rev` (the stem hash) is computed from the stem body, not the heading, so **relinking a question does
+  not mark its records as "stem changed"**.
+- Only a trailing `^[[[]]]` counts. The older two-bracket form `^[[…]]` is still recognised. Write a plain
+  `[[]]` inside the stem body when you want an inline link in the question text; only the heading link is
+  stripped.
+- Links are optional — a question without one simply has `knowledgeLink: null`.
+
+The full authoring convention, including the five question types and the review checklist, lives in
+[`skills/easyquiz-authoring/SKILL.md`](skills/easyquiz-authoring/SKILL.md). It is written for AI agents
+authoring or reviewing a bank, and its examples are executed by the test suite, so the documented
+skeletons are guaranteed to parse.
+
+## How do I embed a question in another note?
+
+Reference a question by its stem heading and it renders as a **real, answerable card** right there:
+
+```markdown
+![[计算机网络/第三章#TCP 建立连接需要几次握手？]]
+```
+
+- The subpath is the **stem heading text, with the trailing `^[[[]]]` knowledge link left out**.
+- Records still belong to the bank: answering in an embedded copy writes back to the bank note, exactly as
+  in reading view there. The **Knowledge point** link on the card still points at the knowledge note.
+- Use it to build a review note, a lecture handout, or a mock exam out of questions you already wrote —
+  without copying the question text (and therefore without letting the copies drift apart).
+- A subpath that does not name a stem heading is left completely alone, so ordinary embeds such as
+  `![[Some note#Some section]]` keep behaving exactly as Obsidian renders them.
+- Block references (`![[bank#^block-id]]`) and footnote references are not questions and are also left alone.
+
+This is deliberately **not** Obsidian's built-in heading embed. Two reasons: a plain embed would show the
+option list and the raw `quiz` data block instead of a card, and Obsidian's heading lookup normalises
+punctuation — which the trailing `^[[[knowledge link]]]` derails, making it silently fall back to rendering
+the **entire** bank file. EasyQuiz recognises the embed itself and replaces it with a card.
+
+## How do I practise a whole question bank?
+
+**Open practice window** (or the ribbon icon) opens the window in the right sidebar, with three pages, so a
+whole session never leaves it. The same window can also be opened in a main-area tab or in its own window —
+see **Open practice window in a new tab** / **Open practice window in a new window** in the command palette.
+Each location keeps one window of its own, so a sidebar session and a tab session can run side by side.
+
+### 1. Question-bank list
+
+Every question-bank file in the vault, grouped by folder, each with its data on the same row: total
+questions, answerable, how many need fixing, per-type counts, attempts, accuracy, and the date of the last
+attempt. A file that fails to parse reports its own error without breaking the list.
+
+With a large library, this page gives you three ways to narrow it down:
+
+- **Search** — filters by file name or path as you type, and reports **how many files matched**. Searching
+  never touches the files you have already ticked.
+- **Fold folders** — click a folder header to collapse or expand that group; **Collapse all** / **Expand
+  all** do every group at once. The folded state is saved with the workspace.
+- **Tick a whole folder** — every folder header carries a checkbox that selects or clears the group, and
+  shows a half-tick when only part of it is selected.
+
+Tick one or more files — or **Select all answerable** (which applies to the current search results) — to
+practise them together:
+
+![The question-bank list, with per-file data and two files ticked](docs/assets/en/window-list.png)
+
+### 2. Practice settings
+
+Decide how to draw this round, and see **how many questions it will actually ask before you start**:
+
+- **In order** — every candidate, in file order.
+- **Random sample** — shuffle and take N (0 or empty = everything).
+- **Only wrong answers** — keep questions whose last attempt was wrong.
+- **Question types** — any subset; nothing ticked means all types.
+- **Shuffle** — randomise question order and choice-option order. Option order is derived from the round's
+  seed, so it stays put while you review an answer or step between questions, and only re-shuffles when a
+  new round starts. Grading is by anchor, so a shuffled option never changes what counts as correct.
+
+![Practice settings: how to draw, which types, and shuffle, with the planned count above the start button](docs/assets/en/window-picker.png)
+
+Degraded questions never enter a session, so a broken question can't quietly eat a slot.
+
+### 3. Practice
+
+One question at a time, rendered by the same card UI as in the note, with a sticky progress bar, a
+correct/wrong tally, and previous/next (plus a jump box on longer rounds). Submitting grades through the
+same service, so records are written back exactly as in reading view:
+
+![The practice page: progress bar, a multiple-choice question, and navigation](docs/assets/en/window-practice.png)
+
+- **Peek** reveals the answer without scoring it.
+- **Open note** in the card header jumps to the question in its bank and puts the cursor on its heading;
+  when the note is already open, that tab is reused.
+- **Clear question records** on the practice page resets only the current question's attempts and history;
+  **Clear records** on each row of the bank list resets a whole bank. Both ask for a second click.
+- The last page summarises the round, lists what you got wrong, and offers **Retry wrong only**.
+
+Because answers are keyed to file path + question id, a round survives editing a file: the window re-parses
+a bank when it changes, and again after each write-back. The command palette also has **Practise this
+bank**, which starts a round for the bank currently open (or selected in the file explorer).
+
 ## Where do my answers go?
 
 Everything is written into the question's own `quiz` block, so it travels with the note:
@@ -579,46 +606,16 @@ appears for Markdown question banks; multi-selections and other files are left a
 
 ## What's new
 
-### 1.1.1
+### 1.1.0 — embedded authoring
 
-- **Stems walk up from the target block.** The block right above is included; above that only blank lines
-  around tables are skipped and an ordinary blank line stops the walk. Matching questions use only the nearest
-  table (a table above it is ordinary content), and an essay callout is shown together with the blocks above
-  it. Stems render with Obsidian's Markdown rules — the containers carry `markdown-rendered` so tables get the
-  theme's styling — and blank lines are added around tables so the practice page and the note preview agree.
-- **Decoys are redrawn every attempt.** Review shows the set you answered with.
-- **Clear records and jump straight in.** New **Clear records** buttons reset one question or a whole bank;
-  the command palette gains **Practise this bank**.
+- **AI skill.** `skills/easyquiz-authoring/SKILL.md` documents the five question types, anchors, degrade rules, and the knowledge-link convention; AI agents use it to add questions, repair banks, and insert single questions into handouts. Its examples are parsed and graded by the test suite.
+- **Embedded authoring.** The metadata block gained `question` (overrides the displayed stem) and `distractors` (adds decoys to choice questions, with a count and an optional pool, re-drawn on every attempt). The card header has an **edit** button that follows a native internal link to the question in its source note, reusing an open tab. `![[bank#stem]]` renders an answerable card inside another note.
+- **Stem detection.** Headings can be matched **automatically**: any nearest heading whose own section contains a `quiz` block is a question, regardless of level. The stem is taken upward from the type's target block — the adjacent block belongs to the stem, and farther blocks only when the blank line around a table is a forced one; an ordinary blank line stops the walk. Choice prose attached to the options becomes the "supplement", matching uses only the nearest table, and the short-answer callout stays with the block above it.
+- **Obsidian-style rendering.** The stem and supplement carry `markdown-rendered`, and blank lines are inserted around tables so the practice page matches the note preview; options, explanations, and matching cells render Markdown too.
+- **Practice and records.** Folder checkboxes show a partial state, the bank list notices file changes when you come back, questions and banks can clear their records, the command palette can start a bank directly, and revisiting an answered question shows that attempt with updated stats.
+- **Steadier decoys.** Distractors are re-drawn after every attempt, and review shows the group you actually saw.
 
-### 1.1.0
-
-- **Only the nearest block is the stem.** Each card shows the block closest to its option list, matching table, or blank markers; prose separated by a blank line no longer leaks in, and text attached to the structure (no blank line) appears as a supplement under the stem.
-- **Automatic heading detection.** The new **Stem heading matching** setting can treat every heading that owns a `quiz` block as a question, so a file may mix heading levels.
-- **Author-controlled stem and decoys.** The `question` field replaces the heading text on the card; `distractors` adds decoy options to choice questions, with a configurable count and candidate pool.
-- **See your previous attempt.** Switching back to an answered question now restores your choice, blanks, lines, and self-assessment with correctness marked, and the attempt badge updates in place.
-- **Jump to the source note.** The pencil button in the card's top-right corner follows a native wikilink to the question heading, so the heading flashes and the cursor lands there; it switches to an already open tab and opens a new one only when needed. Clear-record buttons now sit left of **Set up practice** in red to prevent mis-clicks.
-- **A steadier picker.** Folder checkboxes show the partial state correctly, and the file list stays current when you come back from another view without a manual rescan.
-
-### 1.0.10
-
-- **Markdown everywhere on the card.** Stems, options, explanations and matching cells are rendered by
-  Obsidian, so bold, italic, inline code, `![[image]]` embeds and `$formula$` all show up on the card and
-  in the practice window.
-- **A tighter practice page on phones.** The progress row no longer repeats the question title, and the
-  header, banner and buttons take less vertical room.
-
-### 1.0.9
-
-- **Practise anywhere.** The practice window is no longer tied to the right sidebar: **Open practice window
-  in a new tab** puts it in the main area, and **Open practice window in a new window** opens a popout on
-  desktop. Each location keeps its own round, so a sidebar session and a tab session can run side by side.
-- **A progress banner that stays put.** The banner on the practice page is pinned to the top of the
-  scrolling area, so the score and position stay visible while you work through a long round.
-- **Anchors are optional.** If no choice option has an anchor, options are numbered `a`, `b`, `c`… by
-  position. If only some have anchors, the rest are hidden.
-
-The plugin shows these notes once per version. Older releases are listed in
-[GitHub releases](https://github.com/AnkingLin/EasyQuiz/releases).
+Each version is announced once. Older releases are on [GitHub Releases](https://github.com/AnkingLin/EasyQuiz/releases).
 
 ## Troubleshooting
 
@@ -638,7 +635,7 @@ The plugin shows these notes once per version. Older releases are listed in
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (396 cases)
+npm test           # bundle and run the test suite (425 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 npm run assets     # regenerate the screenshots and GIFs used by the READMEs
