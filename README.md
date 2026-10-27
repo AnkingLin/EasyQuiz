@@ -619,6 +619,7 @@ appears for Markdown question banks; multi-selections and other files are left a
 | Stem heading matching | Fixed level | **Fixed level**: only the configured heading level counts; **Auto**: every heading that owns a `quiz` block is a question, so levels can be mixed |
 | Question-bank path globs | empty | One per line, e.g. `题库/**` |
 | Write records back | on | Turn off to grade in the UI only, leaving notes untouched |
+| Show the changed-question hint | on | Show a hint on the card when the stem changed after `rev` was recorded; its **Dismiss** link writes the current `rev` back |
 | Per-question history cap | 10 | Records live in the note, so the detail list must be capped; `0` keeps only the summary |
 
 ## Installing into a vault
