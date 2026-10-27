@@ -396,4 +396,3 @@ A degraded question never exposes a guessed answer.
 6. Do not add `question` or `distractors` when generating a whole bank unless the user asked for them;
    they are for one-off inline inserts.
 7. Run **校验当前题库文件** in Obsidian — it reports `共 N 道题：可作答 X，需修正 Y`.
-8. Reading view renders each card and submits once, to confirm the block is inside a stem heading.
