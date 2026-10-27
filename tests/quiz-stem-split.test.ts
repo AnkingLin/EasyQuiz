@@ -368,3 +368,70 @@ test("表格上下的空行不打断段落：多张表与上面的题干同属�
 	assert(question.boardPairs?.length === 2, "两张表的数据行都应进入配对方");
 	assert(question.ok, "题目应可作答");
 });
+
+test("配对题：表格段自带上文时，不再并入更远的一段", () => {
+	const source = [
+		"## 多段配对",
+		"",
+		"这是分组说明，不属于本题。",
+		"",
+		"把左右两列连起来。",
+		"",
+		"| 左 | 右 |",
+		"| --- | --- |",
+		"| 甲 | 1 |",
+		"",
+		"```quiz",
+		"type: match",
+		"```",
+	].join("\n");
+	const question = must(parse(source)[0], "应解析出题目");
+	assertEqual(question.stemText, "把左右两列连起来。", "题面应只取表格上面紧邻的一段");
+	assert(!(question.stemText ?? "").includes("分组说明"), "更远的段不应进入题面");
+	assert(question.ok, "题目应可作答");
+});
+
+test("选择题：题干里的表格属于题目内容，不能被丢掉", () => {
+	// 表格和选项之间没有空行：表格和说明文字都附着在选项块里，应作为补充内容显示。
+	const attached = [
+		"## 协议端口",
+		"",
+		"根据下表作答。",
+		"",
+		"| 协议 | 端口 |",
+		"| --- | --- |",
+		"| HTTP | 80 |",
+		"",
+		"- 80 ^a",
+		"- 443 ^b",
+		"",
+		"```quiz",
+		"type: single",
+		"answer: a",
+		"```",
+	].join("\n");
+	const question = must(parse(attached)[0], "应解析出题目");
+	assert(question.ok, "题目应可作答");
+	assertEqual(question.options.length, 2, "选项应正常解析");
+	assert((question.stemText ?? "").includes("| HTTP | 80 |"), "题干里的表格应保留在题面中");
+	assert((question.stemText ?? "").includes("根据下表作答。"), "表格上面的文字仍是题面");
+
+	// 表格紧贴选项行（同一段）时也要保留表格，而不是当成结构行丢掉。
+	const glued = [
+		"## 贴在一起的表格",
+		"",
+		"| 协议 | 端口 |",
+		"| --- | --- |",
+		"| HTTP | 80 |",
+		"- 80 ^a",
+		"- 443 ^b",
+		"",
+		"```quiz",
+		"type: single",
+		"answer: a",
+		"```",
+	].join("\n");
+	const gluedQuestion = must(parse(glued)[0], "应解析出题目");
+	assertEqual(gluedQuestion.stemText, "", "表格直接贴着选项、上方没有题面时，题面为空");
+	assert((gluedQuestion.supplementText ?? "").includes("| HTTP | 80 |"), "附着的表格应作为补充内容保留");
+});

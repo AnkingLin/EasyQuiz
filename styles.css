@@ -112,6 +112,23 @@
 	color: var(--text-warning);
 }
 
+/* 右上角的编辑按钮：跳到题库里这道题所在的标题行。 */
+.easy-quiz-card__edit {
+	flex: none;
+	--icon-size: var(--icon-s, 16px);
+}
+
+/* 清除记录是危险操作：红色文字，并且和「设置刷题」保持距离、带二次确认。 */
+.easy-quiz-practice button.is-danger {
+	color: var(--text-error);
+}
+
+.easy-quiz-practice button.is-danger:hover {
+	color: var(--text-error);
+	border-color: var(--text-error);
+	background: var(--background-modifier-hover);
+}
+
 .easy-quiz-card__stale {
 	font-size: var(--font-ui-smaller);
 	color: var(--text-warning);

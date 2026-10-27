@@ -63,6 +63,11 @@ export interface CardContext {
 	reviewOnly?: boolean;
 	/** 复盘渲染完成后的回调，参数是这次作答的结果；提交页用它把卡片切到复盘视图。 */
 	onReview?: (result: GradeResult | null) => void;
+	/**
+	 * 右上角"编辑"按钮的回调：跳到题库里这道题的标题行。
+	 * 只有刷题窗口会传；笔记里就地渲染的题卡本来就在原题上，不需要这个按钮。
+	 */
+	onOpenSource?: () => void;
 	/** 题卡渲染结束（含题板布局完成）后回调，用于解除观察者等自身资源。 */
 	onCleanup?: (cleanup: () => void) => void;
 }
@@ -99,6 +104,19 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 		cls: `easy-quiz-card__stats${question.stale ? " is-stale" : ""}`,
 		text: formatStats(question),
 	});
+	// 跳到题库里的原题：放在右上角，和链接跳转一样定位到标题行。
+	if (ctx.onOpenSource !== undefined) {
+		const open = header.createEl("button", { cls: "clickable-icon easy-quiz-card__edit" });
+		open.type = "button";
+		open.setAttribute("aria-label", t("practice.session.openNote"));
+		open.setAttribute("title", t("practice.session.openNote"));
+		setIcon(open, "pencil");
+		open.addEventListener("click", (event) => {
+			event.preventDefault();
+			event.stopPropagation();
+			ctx.onOpenSource?.();
+		});
+	}
 	renderKnowledgeLink(question, card, ctx);
 
 	const stale = staleNote(question);

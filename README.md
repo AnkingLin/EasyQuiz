@@ -593,7 +593,7 @@ appears for Markdown question banks; multi-selections and other files are left a
 - **Automatic heading detection.** The new **Stem heading matching** setting can treat every heading that owns a `quiz` block as a question, so a file may mix heading levels.
 - **Author-controlled stem and decoys.** The `question` field replaces the heading text on the card; `distractors` adds decoy options to choice questions, with a configurable count and candidate pool.
 - **See your previous attempt.** Switching back to an answered question now restores your choice, blanks, lines, and self-assessment with correctness marked, and the attempt badge updates in place.
-- **Jump to the source note.** The practice window's **Open source note** button switches to the note's existing tab and moves the cursor to the question, opening a tab only when the note is not already open.
+- **Jump to the source note.** The pencil button in the card's top-right corner follows a native wikilink to the question heading, so the heading flashes and the cursor lands there; it switches to an already open tab and opens a new one only when needed. Clear-record buttons now sit left of **Set up practice** in red to prevent mis-clicks.
 - **A steadier picker.** Folder checkboxes show the partial state correctly, and the file list stays current when you come back from another view without a manual rescan.
 
 ### 1.0.10

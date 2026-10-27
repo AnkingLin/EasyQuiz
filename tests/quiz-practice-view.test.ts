@@ -1014,17 +1014,19 @@ test("刷题页：切回已答题目时显示上次的选择，并刷新统计�
 	assertEqual(textOf(harness.view).includes("1/1"), true, "统计角标应更新为 1/1");
 });
 
-test("刷题页：导航栏提供跳转到源题库题目的按钮", async () => {
+test("刷题页：题目卡片右上方提供打开原题笔记的编辑按钮", async () => {
 	const harness = buildHarness([{ file: fakeFile("题库/甲.md"), source: BANK_A }], true);
 	await openPicker(harness, "题库/甲.md");
 	await startSession(harness);
+	const buttons = findAll(harness.view, ".easy-quiz-card__header button.easy-quiz-card__edit");
+	assert(buttons.length === 1, "每题都应在卡片右上方有一个编辑按钮");
 	assert(
-		findAll(harness.view, "button[data-action='open-source']").length === 1,
-		"每题都应有一个「打开题目所在笔记」按钮"
+		findAll(harness.view, "button[data-action='open-source']").length === 0,
+		"导航栏不应再重复放打开按钮"
 	);
 });
 
-test("刷题页：源笔记已经打开时切到那个标签页并定位，而不是再开一个", async () => {
+test("刷题页：源笔记已经打开时用原生链接跳到标题，而不是再开一个标签页", async () => {
 	const harness = buildHarness([{ file: fakeFile("题库/甲.md"), source: BANK_A }], true);
 	await openPicker(harness, "题库/甲.md");
 	await startSession(harness);
@@ -1032,16 +1034,7 @@ test("刷题页：源笔记已经打开时切到那个标签页并定位，而�
 	const file = harness.service.fileAtPath("题库/甲.md");
 	assert(file !== null, "缺少源文件");
 	const calls: string[] = [];
-	const cursors: { line: number; ch: number }[] = [];
-	const existingLeaf = {
-		view: {
-			file,
-			editor: {
-				setCursor: (position: { line: number; ch: number }) => cursors.push(position),
-				scrollIntoView: () => calls.push("scroll"),
-			},
-		},
-	};
+	const existingLeaf = { view: { file } };
 	(harness.view as unknown as { app: unknown }).app = {
 		workspace: {
 			getLeavesOfType: (type: string) => (type === "markdown" ? [existingLeaf] : []),
@@ -1049,21 +1042,25 @@ test("刷题页：源笔记已经打开时切到那个标签页并定位，而�
 				calls.push("new-leaf");
 				return { openFile: async () => calls.push("open-file") };
 			},
-			setActiveLeaf: async () => { calls.push("activate"); },
+			setActiveLeaf: async () => {
+				calls.push("activate");
+			},
+			openLinkText: async (link: string, source: string, newLeaf?: boolean) => {
+				calls.push(`link:${link}|${source}|${String(newLeaf)}`);
+			},
 		},
 	};
 
-	click(find(harness.view, "button[data-action='open-source']"));
+	click(find(harness.view, "button.easy-quiz-card__edit"));
 	await flush();
 
 	assertEqual(calls.includes("new-leaf"), false, "已打开的笔记不应再开新标签页");
 	assertEqual(calls.includes("open-file"), false, "已打开的笔记不应重新打开");
 	assert(calls.includes("activate"), "应切到已有标签页");
-	// 第一题的标题「## 单选题甲」在第 4 行（0 基）。
-	assertEqual(cursors[0]?.line, 4, "光标应落在题面标题行");
+	assert(calls.includes("link:题库/甲.md#单选题甲|题库/甲.md|false"), "应调用原生链接跳转以定位到标题");
 });
 
-test("刷题页：源笔记没打开时才新开标签页并定位", async () => {
+test("刷题页：源笔记没打开时才新开标签页，并同样走原生链接", async () => {
 	const harness = buildHarness([{ file: fakeFile("题库/甲.md"), source: BANK_A }], true);
 	await openPicker(harness, "题库/甲.md");
 	await startSession(harness);
@@ -1071,12 +1068,8 @@ test("刷题页：源笔记没打开时才新开标签页并定位", async () =>
 	const file = harness.service.fileAtPath("题库/甲.md");
 	assert(file !== null, "缺少源文件");
 	const calls: string[] = [];
-	const cursors: { line: number; ch: number }[] = [];
 	const openedLeaf = {
-		view: {
-			file,
-			editor: { setCursor: (position: { line: number; ch: number }) => cursors.push(position) },
-		},
+		view: { file },
 		openFile: async () => {
 			calls.push("open-file");
 		},
@@ -1088,15 +1081,20 @@ test("刷题页：源笔记没打开时才新开标签页并定位", async () =>
 				calls.push(kind);
 				return openedLeaf;
 			},
-			setActiveLeaf: async () => { calls.push("activate"); },
+			setActiveLeaf: async () => {
+				calls.push("activate");
+			},
+			openLinkText: async (link: string) => {
+				calls.push(`link:${link}`);
+			},
 		},
 	};
 
-	click(find(harness.view, "button[data-action='open-source']"));
+	click(find(harness.view, "button.easy-quiz-card__edit"));
 	await flush();
 
 	assertEqual(calls.includes("open-file"), true, "没打开时应打开源笔记");
 	assert(calls.includes("tab"), "应在标签页中打开");
-	assertEqual(cursors[0]?.line, 4, "打开后光标应落在题面标题行");
+	assert(calls.includes("link:题库/甲.md#单选题甲"), "打开后应走原生链接定位到标题");
 });
 

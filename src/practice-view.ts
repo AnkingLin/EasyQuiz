@@ -804,18 +804,11 @@ export class PracticeView extends ItemView {
 			});
 		}
 
-		const pick = this.button(row, "pick-file-only", t("practice.file.pick"));
-		pick.dataset["path"] = summary.path;
-		pick.disabled = summary.answerable === 0;
-		pick.addEventListener("click", () => {
-			this.picked = [summary.path];
-			this.gotoPicker();
-		});
-
-		// 有记录才给"清除记录"：没有记录时按钮只会是噪音。
+		// 清除记录放在「设置刷题」左边：它是危险操作，离主操作远一点，还带两步确认。
 		if (summary.attempts > 0) {
 			const label = t("practice.file.clearRecords");
 			const clear = this.button(row, "clear-file-records", label);
+			clear.addClass("is-danger");
 			clear.dataset["path"] = summary.path;
 			this.confirmAction(clear, label, async () => {
 				const cleared = await this.host.service.clearFileRecords(entry.file);
@@ -830,6 +823,14 @@ export class PracticeView extends ItemView {
 				void this.render();
 			});
 		}
+
+		const pick = this.button(row, "pick-file-only", t("practice.file.pick"));
+		pick.dataset["path"] = summary.path;
+		pick.disabled = summary.answerable === 0;
+		pick.addEventListener("click", () => {
+			this.picked = [summary.path];
+			this.gotoPicker();
+		});
 	}
 
 	private fileStatsText(entry: FileEntry): string {
@@ -1319,6 +1320,8 @@ export class PracticeView extends ItemView {
 				this.dirty = true;
 				this.afterSubmit(host, result);
 			},
+			// 题卡右上角的编辑按钮：跳回题库里的这道题。
+			onOpenSource: () => void this.openSource(),
 			onCleanup: (cleanup) => this.cardCleanups.push(cleanup),
 		};
 		// 默认就是笔记里用的那一份题卡渲染器；测试可以注入替身。
@@ -1406,16 +1409,13 @@ export class PracticeView extends ItemView {
 			void this.goTo(this.cursor + 1);
 		});
 
-		// 跳到题库里的这道题：在新标签页打开源文件，并把光标放到题面标题行。
-		const open = this.button(nav, "open-source", t("practice.session.openNote"));
-		open.addEventListener("click", () => void this.openSource());
-
 		// 清除当前题的作答记录：有记录时才出现，清完这道题回到「未作答」。
 		const queued = this.queue[this.cursor];
 		const current = queued === undefined ? undefined : resolveEntry(this.parsedByPath, queued);
 		if (current !== undefined && (current.stats.attempts > 0 || current.history.length > 0)) {
 			const label = t("practice.session.clearRecords");
 			const clear = this.button(nav, "clear-question-records", label);
+			clear.addClass("is-danger");
 			this.confirmAction(clear, label, async () => {
 				const entry = this.queue[this.cursor];
 				const file = entry === undefined ? undefined : this.fileAt.get(entry.path);
@@ -1467,8 +1467,9 @@ export class PracticeView extends ItemView {
 	/**
 	 * 跳到当前题目所在的笔记。
 	 *
-	 * 行为对齐 Obsidian 的链接跳转：笔记已经开着就切到那个标签页（并把光标移到题面
-	 * 标题行），没开着才新开标签页——不会每点一次就多一个重复的标签。
+	 * 行为对齐 Obsidian 的内链跳转：笔记已经开着就切到那个标签页，没开着才新开；
+	 * 定位也走原生链接（`path#标题`），标题会像点击内链一样闪一下黄色高亮、光标
+	 * 落在标题行。手写 `setCursor` 不会触发那个高亮，所以只在拿不到标题时兜底。
 	 */
 	private async openSource(): Promise<void> {
 		const entry = this.queue[this.cursor];
@@ -1477,6 +1478,8 @@ export class PracticeView extends ItemView {
 		if (file === null || file === undefined) return;
 		const question = resolveEntry(this.parsedByPath, entry);
 		const line = question?.line ?? 0;
+		// 标题来自题面标题行本身（不是 `question` 字段），才能被 Obsidian 解析成链接目标。
+		const heading = (question?.title ?? "").trim();
 		try {
 			// `getLeavesOfType` 只覆盖主窗口；弹出的独立窗口里已经打开的笔记交给 Obsidian
 			// 自己处理（它不会重复打开同一个文件）。
@@ -1488,7 +1491,11 @@ export class PracticeView extends ItemView {
 			// `revealLeaf` 要 1.7.2，而插件最低支持 1.4.0；普通标签页用 setActiveLeaf
 			// 就能切过去，和点击链接的观感一致。
 			this.app.workspace.setActiveLeaf(leaf, { focus: true });
-			this.revealLine(leaf, line);
+			if (heading === "") {
+				this.revealLine(leaf, line);
+				return;
+			}
+			await this.app.workspace.openLinkText(`${file.path}#${heading}`, file.path, false);
 		} catch (error) {
 			new Notice(
 				t("practice.session.openNoteFailed", {

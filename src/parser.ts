@@ -515,7 +515,11 @@ function splitBody(
 		while (index < lines.length && (lines[index] ?? "").trim() !== "") index++;
 		const end = index;
 		const previous = blocks[blocks.length - 1];
-		if (previous !== undefined) {
+		// 选项列表是独立的结构段：表格和选项之间隔着空行时不能并进来，否则表格会被
+		// 当成「附着在选项上的说明」，连带更上面的题干文字一起被挤进补充内容。
+		const hasList = (from: number, to: number): boolean => lines.slice(from, to).some(isListLine);
+		const withList = hasList(start, end) || (previous !== undefined && hasList(previous.start, previous.end));
+		if (previous !== undefined && !withList) {
 			const before = lines[previous.end - 1] ?? "";
 			const after = lines[start] ?? "";
 			if (isTableLine(before) || isTableLine(after)) {
@@ -593,7 +597,10 @@ function splitBody(
 		const before = firstTable < 0 ? [] : anchorLines.slice(0, firstTable);
 		const after = lastTable < 0 ? [] : anchorLines.slice(lastTable + 1);
 		const textLine = (line: string): boolean => line.trim() !== "" && !isTableLine(line);
-		const stemLines = [...precedingLines.filter(textLine), ...before.filter(textLine)];
+		const beforeText = before.filter(textLine);
+		// 表格所在的段里已经有文字时，它就是最近的那一段题面；再上面隔着空行的一段
+		// 属于更远的段落，不能一起并进来（否则题干会多出一段分组说明）。
+		const stemLines = beforeText.length > 0 ? beforeText : precedingLines.filter(textLine);
 		return {
 			stem: stemLines.join("\n").trim(),
 			supplement: after.filter(textLine).join("\n").trim(),
@@ -603,21 +610,20 @@ function splitBody(
 		};
 	}
 
-	const supplementLines = anchorLines.filter(
-		(line) => line.trim() !== "" && !isListLine(line) && !isTableLine(line)
-	);
-	// 选择题：结构块自带说明文字时，它自己就是离数据块最近的一段题面；再上一段隔着空行，
-	// 属于更远的段落，不纳入题面（否则会把上一段的残留也显示出来）。
-	const attached = (type === "single" || type === "multi") && supplementLines.length > 0;
-	const stemLines = attached
-		? []
-		: precedingLines.filter((line) => !isListLine(line) && !isTableLine(line));
+	// 到这里只剩选择题：列表是结构块，其余行（附着的说明文字、题干里的表格）都要显示。
+	// 表格不能当结构行处理：选择题的结构只有选项列表，题干表格是题目内容的一部分。
+	const supplementLines = anchorLines.filter((line) => line.trim() !== "" && !isListLine(line));
+	// 结构块自带文字（说明）时，它就是离数据块最近的一段题面；再上一段隔着空行，
+	// 属于更远的段落，不纳入题面（否则会把上一段的残留也显示出来）。单纯附着的表格
+	// 不算文字段，不能因此丢掉上面的题面。
+	const attached = supplementLines.some((line) => !isTableLine(line));
+	const stemLines = attached ? [] : precedingLines.filter((line) => !isListLine(line));
 
 	return {
 		stem: stemLines.join("\n").trim(),
 		supplement: supplementLines.join("\n").trim(),
-		// 同样保留原始行：解析器只认列表/表格行，说明文字会被忽略，空行用来分隔表格组。
-		structure: anchorLines.join("\n"),
+		// 选择题的结构只取列表行：表格属于题面内容，交给 supplement 显示。
+		structure: anchorLines.filter(isListLine).join("\n"),
 		structureLine,
 	};
 }
