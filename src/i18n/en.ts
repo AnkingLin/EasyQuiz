@@ -117,6 +117,12 @@ export const en = {
 		"![[...]] embeds are no longer intercepted: images and section embeds render exactly as Obsidian does, and questions are referenced with their id as inline code.",
 	"whatsNew.cardTitleLink":
 		"In notes, a question card's title and pencil open the question's bank note at its heading, so the card itself is the way back to the source.",
+	"whatsNew.plainStem":
+		"The card's title is plain text again — an accidental click no longer jumps away; the pencil in the header is the one way back to the source note.",
+	"whatsNew.jumpReveal":
+		"Opening a question's source note now always lands on the question: the card reveals its line after opening, so headings that carry a knowledge link no longer leave you at the top of the note.",
+	"whatsNew.listStartup":
+		"The question-bank list waits for Obsidian to finish indexing at startup and rescans by itself, so it no longer opens empty.",
 	"whatsNew.noteJumpFix":
 		"The card's edit button now opens the question's heading like a backlink: the cursor lands on the heading in edit mode, reading view scrolls there with the native highlight, and an already-open tab is reused.",
 	"whatsNew.staleHintOff":

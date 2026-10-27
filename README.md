@@ -615,6 +615,12 @@ appears for Markdown question banks; multi-selections and other files are left a
 
 ## What's new
 
+### 1.1.4
+
+- **The stem is plain text again.** A card's title no longer opens the source note; the pencil in the header is the one way back.
+- **The jump lands on the question.** After opening the bank note, the card reveals the question's line, so headings that carry a `^[[[knowledge link]]]` no longer open at the top.
+- **The bank list survives startup.** The list waits for Obsidian to finish indexing and rescans by itself instead of opening empty.
+
 ### 1.1.2
 
 - `![[...]]` embeds are no longer intercepted: images and sections render exactly as Obsidian renders them, and questions are referenced with their id as inline code.
