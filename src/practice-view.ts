@@ -1465,11 +1465,12 @@ export class PracticeView extends ItemView {
 	}
 
 	/**
-	 * 打开当前题目所在的笔记，并定位到题目自己的数据块。
+	 * 打开当前题目所在的笔记，像点反向链接一样跳到题目标题。
 	 *
-	 * 笔记已经开着就切到那个标签页，没开着才新开。定位直接用行号（数据块的
-	 * ```quiz 行），不拼 `path#标题` 链接：标题可能带知识点链接 `^[[[...]]]`
-	 * 之类的尾巴，拼出来的链接解析不到标题时会静默失败，按钮看起来就像没反应。
+	 * 笔记已经开着就切到那个标签页，没开着才新开；然后调用
+	 * `openLinkText("path#标题")`，滚动和高亮都交给 Obsidian 的原生逻辑，
+	 * 编辑视图和阅读视图表现一致。标题取元数据缓存里该标题行的原文，避免
+	 * 自己拼 `^[[[...]]]` 时和缓存对不上导致静默失败。
 	 */
 	private async openSource(): Promise<void> {
 		const entry = this.queue[this.cursor];
@@ -1477,8 +1478,6 @@ export class PracticeView extends ItemView {
 		const file = this.fileAt.get(entry.path) ?? this.host.service.fileAtPath(entry.path);
 		if (file === null || file === undefined) return;
 		const question = resolveEntry(this.parsedByPath, entry);
-		// 定位到数据块（题型、答案、解析都在这里）；取不到块行时退回题目标题行。
-		const line = question?.blockLine ?? question?.line ?? 0;
 		try {
 			// `getLeavesOfType` 只覆盖主窗口；弹出的独立窗口里已经打开的笔记交给 Obsidian
 			// 自己处理（它不会重复打开同一个文件）。
@@ -1490,16 +1489,13 @@ export class PracticeView extends ItemView {
 			// `revealLeaf` 要 1.7.2，而插件最低支持 1.4.0；普通标签页用 setActiveLeaf
 			// 就能切过去，和点击链接的观感一致。
 			this.app.workspace.setActiveLeaf(leaf, { focus: true });
-			if (this.isReadingMode(leaf)) {
-				// 阅读视图没有可以放光标的编辑器：找到这道题在预览里渲染出的
-				// 卡片，滚过去。刚打开的笔记可能还没渲染完，等一帧再试一次。
-				if (this.scrollPreviewToQuestion(leaf, question)) return;
-				window.setTimeout(() => {
-					if (!this.scrollPreviewToQuestion(leaf, question)) this.revealLine(leaf, line);
-				}, 60);
+			const heading = this.headingFor(file, question);
+			if (heading === null) {
+				// 连标题都取不到（比如文件刚创建、还没进缓存）：退回按行号定位。
+				this.revealLine(leaf, question?.line ?? 0);
 				return;
 			}
-			this.revealLine(leaf, line);
+			await this.app.workspace.openLinkText(`${file.path}#${heading}`, file.path, false);
 		} catch (error) {
 			new Notice(
 				t("practice.session.openNoteFailed", {
@@ -1509,45 +1505,15 @@ export class PracticeView extends ItemView {
 		}
 	}
 
-	/** 这个标签页是不是阅读视图（没有编辑器、只能按渲染出来的元素定位）。 */
-	private isReadingMode(leaf: WorkspaceLeaf): boolean {
-		const view = leaf.view as unknown as { getMode?: () => string };
-		return view.getMode?.() === "preview";
-	}
-
-	/**
-	 * 在阅读视图里把这道题的题卡滚到视野中间。
-	 *
-	 * 数据块渲染出的题卡带着题目 id 与块行号；找不到时退回标题元素。
-	 * 返回是否真的找到了目标。
-	 */
-	private scrollPreviewToQuestion(leaf: WorkspaceLeaf, question: QuizQuestion | undefined): boolean {
-		const view = leaf.view as unknown as { previewMode?: { containerEl?: HTMLElement } };
-		const root = view.previewMode?.containerEl;
-		if (root === undefined) return false;
-		const cards = Array.from(root.querySelectorAll<HTMLElement>(".easy-quiz-card"));
-		const id = question?.id;
-		const blockLine = question?.blockLine;
-		let target = cards.find(
-			(card) =>
-				blockLine !== null &&
-				blockLine !== undefined &&
-				card.dataset.quizLine === String(blockLine) &&
-				(id === undefined || card.dataset.quizId === id)
-		);
-		if (target === undefined && id !== undefined) {
-			target = cards.find((card) => card.dataset.quizId === id);
-		}
-		if (target === undefined) {
-			const heading = (question?.title ?? "").trim();
-			if (heading !== "") {
-				target = Array.from(root.querySelectorAll<HTMLElement>("[data-heading]")).find(
-					(element) => (element.getAttribute("data-heading") ?? "").trim() === heading
-				);
-			}
-		}
-		target?.scrollIntoView({ block: "center" });
-		return target !== undefined;
+	/** 题目标题在元数据缓存里的原文；没有标题时返回 null。 */
+	private headingFor(file: TFile, question: QuizQuestion | undefined): string | null {
+		if (question === undefined) return null;
+		const cached = this.app.metadataCache
+			?.getFileCache?.(file)
+			?.headings?.find((item) => item.position.start.line === question.line)?.heading;
+		if (cached !== undefined && cached !== null && cached.trim() !== "") return cached.trim();
+		const fallback = question.title.trim();
+		return fallback === "" ? null : fallback;
 	}
 
 	/** 某个标签页里打开的笔记路径；不是 Markdown 标签页时返回 null。 */
@@ -1557,8 +1523,8 @@ export class PracticeView extends ItemView {
 	}
 
 	/**
-	 * 把光标移到指定行。阅读视图不走这里：`previewMode.applyScroll()` 收的是
-	 * 像素滚动量而不是行号，传行号只会滚到几乎顶部的位置。
+	 * 把光标移到指定行。只在拿不到标题（无法走标题跳转）时作为兜底；
+	 * 阅读视图没有编辑器时什么也不做（`applyScroll` 收的是像素量，不能传行号）。
 	 */
 	private revealLine(leaf: WorkspaceLeaf, line: number): void {
 		const view = leaf.view as unknown as {
