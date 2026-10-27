@@ -1032,7 +1032,7 @@ test("刷题页：阅读视图用 setEphemeralState 定位到题目标题（含�
 		"quiz: true",
 		"---",
 		"",
-		"## 单选题甲 ^[[[计算机网络/传输层]]]",
+		"## 单选题甲 ^[[[300 笔记/内科/【内科】ARDS#呼吸窘迫]]]",
 		"",
 		"- 选项一 ^a",
 		"- 选项二 ^b",
@@ -1066,7 +1066,7 @@ test("刷题页：阅读视图用 setEphemeralState 定位到题目标题（含�
 			getFileCache: () => ({
 				headings: [
 					{
-						heading: "单选题甲 ^[[[计算机网络/传输层]]]",
+						heading: "单选题甲 ^[[[300 笔记/内科/【内科】ARDS#呼吸窘迫]]]",
 						position: { start: { line: 4 } },
 					},
 				],
@@ -1082,7 +1082,7 @@ test("刷题页：阅读视图用 setEphemeralState 定位到题目标题（含�
 	click(find(harness.view, "button.easy-quiz-card__edit"));
 	await flush();
 
-	const expected = { subpath: "#单选题甲 ^[[[计算机网络/传输层]]]" };
+	const expected = { subpath: "#单选题甲 300 笔记/内科/【内科】ARDS 呼吸窘迫" };
 	assertEqual(
 		JSON.stringify((opened[0] as { eState?: unknown } | undefined)?.eState),
 		JSON.stringify(expected),
