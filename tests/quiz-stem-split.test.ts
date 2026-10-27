@@ -342,7 +342,7 @@ test("干扰项：每次作答后重新抽取", async () => {	const question = m
 	assert([...later].some((extras) => extras !== first), "再次作答应重新抽取干扰项");
 });
 
-test("表格上下的空行不打断段落：多张表与上面的题干同属一段", () => {
+test("配对题：只把最近的一张表当结构，上面的表格属于题面内容", () => {
 	const source = [
 		"## 连续表格",
 		"",
@@ -362,10 +362,14 @@ test("表格上下的空行不打断段落：多张表与上面的题干同属�
 	].join("\n");
 	const question = must(parse(source)[0], "应解析出题目");
 	assert(question !== undefined, "应解析出题目");
-	assertEqual(question.stemText, "把左右两列连起来。", "表格上面的题干仍应是题面");
+	assert(question.stemText?.startsWith("把左右两列连起来。") === true, "表格上面的题干仍应是题面");
+	assert(question.stemText?.includes("| 甲 | 1 |") === true, "更上面的表格是题面内容，应保留");
 	assertEqual(question.supplementText, "", "表格之间不应被当成补充内容");
-	// 两张表的数据行都要收进结构里，不能只剩最后一张。
-	assert(question.boardPairs?.length === 2, "两张表的数据行都应进入配对方");
+	// 只识别最近的一张表：甲/1 不进入配对结构。
+	assert(question.boardPairs?.length === 1, "只有最近一张表的数据行进入配对方");
+	const cellTexts = (question.board ?? []).flatMap((column) => column.items.map((item) => item.text));
+	assert(cellTexts.includes("乙"), "最近一张表应进入配对结构");
+	assert(!cellTexts.includes("甲"), "更上面的表格不应进入配对结构");
 	assert(question.ok, "题目应可作答");
 });
 
@@ -500,5 +504,96 @@ test("补充内容里的表格：渲染前补上表格需要的空行", async ()
 	assert(
 		rendered.source.includes("说明文字。\n\n| 协议 | 端口 |"),
 		`表格前应有空行（实际：${JSON.stringify(rendered.source)}）`
+	);
+});
+
+test("问答题：callout 与上面的段一起显示，表格的强制空行同样越过", () => {
+	const source = [
+		"## 问答一",
+		"",
+		"阅读下表。",
+		"",
+		"| 项目 | 值 |",
+		"| --- | --- |",
+		"| 甲 | 1 |",
+		"",
+		"请说明甲的作用。",
+		"",
+		"> [!note] 参考答案",
+		"> 甲的值是 1。",
+		"",
+		"```quiz",
+		"type: essay",
+		"```",
+	].join("\n");
+	const question = must(parse(source)[0], "应解析出题目");
+	assert(question !== undefined, "应解析出题目");
+	const stem = question.stemText ?? "";
+	assert(stem.includes("阅读下表。"), "表格上方的普通段属于题面");
+	assert(stem.includes("| 甲 | 1 |"), "表格本身属于题目内容");
+	assert(stem.includes("请说明甲的作用。"), "callout 上面紧邻的一段属于题面");
+	assert(stem.includes("参考答案"), "参考答案 callout 应保留在题面里");
+	assertEqual(question.supplementText, "", "问答题不应产生补充内容");
+	assert(question.ok, "题目应可作答");
+});
+
+test("问答题：callout 上面的普通段从第二段起就停下", () => {
+	const source = [
+		"## 问答二",
+		"",
+		"更远的说明，不属于本题。",
+		"",
+		"题干一段。",
+		"",
+		"> 参考答案。",
+		"",
+		"```quiz",
+		"type: essay",
+		"```",
+	].join("\n");
+	const question = must(parse(source)[0], "应解析出题目");
+	assert(question !== undefined, "应解析出题目");
+	const stem = question.stemText ?? "";
+	assert(stem.includes("题干一段。"), "紧邻 callout 的一段属于题面");
+	assert(stem.includes("参考答案。"), "callout 应保留");
+	assert(!stem.includes("更远的说明"), "普通空行之后的更远段不应取进题面");
+	assert(question.ok, "题目应可作答");
+});
+
+test("题面与补充内容容器带 markdown-rendered，表格使用主题样式", async () => {
+	const source = [
+		"## 样式",
+		"",
+		"说明文字。",
+		"| 协议 | 端口 |",
+		"| --- | --- |",
+		"| HTTP | 80 |",
+		"- 80 ^a",
+		"- 443 ^b",
+		"",
+		"```quiz",
+		"type: single",
+		"answer: a",
+		"```",
+	].join("\n");
+	const question = must(parse(source)[0], "应解析出题目");
+	assert(question !== undefined, "应解析出题目");
+	const host = document.createElement("div");
+	document.body.appendChild(host);
+	await renderQuizCard(question, {
+		app: {},
+		service: {},
+		file: { path: "题库/测试.md" },
+		el: host,
+		blankMarker: "highlight",
+	} as unknown as Parameters<typeof renderQuizCard>[1]);
+	const body = host.querySelector(".easy-quiz-card__body");
+	const supplement = host.querySelector(".easy-quiz-card__supplement");
+	assert(body !== null, "应渲染题面容器");
+	assert(supplement !== null, "应渲染补充内容容器");
+	assert(body?.classList.contains("markdown-rendered") === true, "题面容器应带 markdown-rendered");
+	assert(
+		supplement?.classList.contains("markdown-rendered") === true,
+		"补充内容容器应带 markdown-rendered，表格才会用上主题样式"
 	);
 });

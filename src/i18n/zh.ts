@@ -83,7 +83,7 @@ export const zh: MessageTable = {
 	"whatsNew.distractors": "选择题可以在数据块里加干扰项：设置追加几个，以及候选干扰项的候选池。",
 	"whatsNew.answerReview": "切回已答过的题会显示你当时的作答，右上角统计也会跟着更新；新增“打开笔记”按钮，直接跳到题库里的这道题，笔记已经打开时会切到原来的标签页。",
 	"whatsNew.bankListFix": "题库选择页的文件夹会显示半选状态；从其他页面切回来时自动发现文件变化，不用再手动重新扫描。",
-	"whatsNew.stemTighter": "题面从各题型的目标段向上取：紧邻的一段属于题面，再往上只有表格上下的强制空行才继续跨过，遇到普通空行就停下；连续多张表可以合并成一道配对题。题面按 Obsidian 的 Markdown 渲染，表格前后会自动补上空行。",
+	"whatsNew.stemTighter": "题面从各题型的目标段向上取：紧邻的一段属于题面，再往上只有表格上下的强制空行才继续跨过，遇到普通空行就停下。配对题只识别最近的一张表，问答题的 callout 与上面的段一起显示。题面按 Obsidian 的 Markdown 渲染（容器带 markdown-rendered），表格样式与笔记预览一致。",
 	"whatsNew.distractorReroll": "每次作答后干扰项都会重新抽取，复盘时看到的是作答当时那一组。",
 	"whatsNew.clearRecords": "题目卡片和题库列表新增“清除记录”按钮，可以清掉本题或整个题库的作答记录；命令面板也能直接为当前题库开始一轮。",
 

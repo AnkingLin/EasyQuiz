@@ -386,18 +386,18 @@ block stay inside the question above as sub-headings.
 consecutive non-blank lines):
 
 - Target block: `single` / `multi` use the nearest option list; `match` the nearest table; `blank` the nearest block with `==blank==` markers; `essay` the last block.
-- Walking up: the block right above the target counts as the stem; further up, only blank lines **hugging a table** (the padding table syntax needs) are crossed — an ordinary blank line stops the walk. This is how several consecutive tables (each with its own header and separator row) can back one question.
+- Walking up: the block right above the target counts as the stem; further up, only blank lines **hugging a table** (the padding table syntax needs) are crossed — an ordinary blank line stops the walk. A table therefore keeps its surrounding prose together with the question.
 - `single` / `multi`: non-list lines inside the target block appear as a supplement under the stem, and no ordinary block above is taken then; tables inside the target belong to the question and stay visible.
-- `match`: prose above the tables is the stem, prose after the last table is the supplement.
+- `match`: prose above the table is the stem, prose after the table is the supplement. Only the **nearest table** becomes the matching structure; tables above it are ordinary content and stay in the stem.
 - `blank`: the target block plus any tables/prose picked up by the walk is the stem.
-- `essay`: the last block. A reference callout stays in the shown stem (collapsed), together with the
-  instruction paragraph right above it.
+- `essay`: the last block. A reference callout and the blocks above it stay in the shown stem (collapsed), gathered by the same upward walk, so tables above the callout are crossed too.
 
 Stems are rendered with Obsidian's Markdown rules — tables, quotes, and code all display as in a note — and
-blank lines are inserted around tables so the practice page matches the note preview. Only the controls
-(option list, matching table, blank fields) are taken over. Blocks further up are not shown, so a preceding
-question cannot leak into this one. When the heading must stay short but the question needs a full sentence,
-use the `question` field (see below).
+the stem containers carry `markdown-rendered` so tables get the theme's table styling. Blank lines are inserted
+around tables so the practice page matches the note preview. Only the controls (option list, matching table,
+blank fields) are taken over. Blocks further up are not shown, so a preceding question cannot leak into this
+one. When the heading must stay short but the question needs a full sentence, use the `question` field (see
+below).
 
 ### Metadata fields
 
@@ -582,9 +582,10 @@ appears for Markdown question banks; multi-selections and other files are left a
 ### 1.1.1
 
 - **Stems walk up from the target block.** The block right above is included; above that only blank lines
-  around tables are skipped and an ordinary blank line stops the walk, so consecutive tables can back one
-  matching question. Stems render with Obsidian's Markdown rules, with blank lines added around tables so the
-  practice page and the note preview agree.
+  around tables are skipped and an ordinary blank line stops the walk. Matching questions use only the nearest
+  table (a table above it is ordinary content), and an essay callout is shown together with the blocks above
+  it. Stems render with Obsidian's Markdown rules — the containers carry `markdown-rendered` so tables get the
+  theme's styling — and blank lines are added around tables so the practice page and the note preview agree.
 - **Decoys are redrawn every attempt.** Review shows the set you answered with.
 - **Clear records and jump straight in.** New **Clear records** buttons reset one question or a whole bank;
   the command palette gains **Practise this bank**.

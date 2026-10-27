@@ -124,7 +124,7 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 		card.createDiv({ cls: "easy-quiz-card__stale", text: stale });
 	}
 
-	const bodyEl = card.createDiv({ cls: "easy-quiz-card__body" });
+	const bodyEl = card.createDiv({ cls: "easy-quiz-card__body markdown-rendered" });
 
 	// Obsidian 要求传入承载生命周期的 Component：传 null 会直接抛错，
 	// 并使这一道题后续的渲染（包括题板）全部中断。
@@ -140,7 +140,7 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 	// 它不属于题面，但作者写在这里通常正是为了说明选项/表格，因此紧跟题面显示。
 	const supplement = formatSupplement(question, ctx.blankMarker);
 	if (supplement.trim() !== "") {
-		const supplementEl = card.createDiv({ cls: "easy-quiz-card__supplement" });
+		const supplementEl = card.createDiv({ cls: "easy-quiz-card__supplement markdown-rendered" });
 		await MarkdownRenderer.render(ctx.app, supplement, supplementEl, ctx.file.path, component);
 	}
 

@@ -106,14 +106,15 @@ non-blank lines; a blank line starts a new block.
 | `type` | Target block | What the card shows |
 |---|---|---|
 | `single` / `multi` | The nearest block that contains the option list | The block right above is the stem; non-list lines inside the target block are the supplement, and no ordinary block above is taken then. Tables inside the target stay visible. |
-| `match` | The nearest block that contains the table | Prose above the tables is the stem, prose after the last table is the supplement. Blank lines hugging tables are crossed, so several consecutive tables (each with its own header and separator row) merge into one structure. |
+| `match` | The nearest block that contains the table | Only the nearest table becomes the matching structure. Prose above the table is the stem, prose after the table is the supplement; tables above it are ordinary content and stay in the stem. |
 | `blank` | The nearest block that contains blank markers | The target block plus any tables/prose reached by the walk is the stem. |
-| `essay` | The last block; if it is a reference callout, the block right above it | The instruction prose plus the collapsed callout stay in the shown stem, so the reference answer is never lost. |
+| `essay` | The last block (a reference callout is the last block) | The callout and the blocks above it stay in the shown stem (collapsed), gathered by the same upward walk, so tables above the callout are crossed too and the reference answer is never lost. |
 
 - Walking up, an ordinary blank line stops the stem; a blank line that touches a table is padding and is
-  crossed, which is how a table keeps the prose above it.
-- Stems render with Obsidian's Markdown rules (tables, quotes, code), and blank lines are inserted around
-  tables so the card matches the note preview.
+  crossed, which is how a table keeps its surrounding prose together.
+- Stems render with Obsidian's Markdown rules (tables, quotes, code) into containers that carry
+  `markdown-rendered`, so tables use the theme's table styling; blank lines are inserted around tables so the
+  card matches the note preview.
 - A supplement is rendered directly under the stem, in the same Markdown style.
 - Blocks above the stem are not shown at all, so a group heading's intro paragraph (separated by a blank
   line) never leaks into the first question under it.

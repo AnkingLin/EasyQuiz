@@ -479,8 +479,6 @@ interface BodySplit {
 	structureLine: number;
 }
 
-const CALLOUT_LINE_RE = /^\s*>\s*/;
-
 /** 一段连续的非空行。 */
 interface LineBlock {
 	start: number;
@@ -508,6 +506,8 @@ function splitBlocks(lines: string[]): LineBlock[] {
  * 2. 从目标块向上逐段探测：紧邻目标块的一段属于题面；再往上，只有空行紧贴
  *    表格（表格语法的强制空行）时才继续跨过，碰到普通空行就停下。
  * 3. 停下处到目标块（含目标块）就是这道题的题面范围。
+ * 4. 配对题只把目标块里最近的一张表当结构，往上的内容（包括表格）照常显示。
+ * 5. 问答题的 callout（参考答案）和上面的段一起显示，上面的段同样按 2 向上取。
  * 更远的段不纳入题面，避免把上一题的残留内容显示出来。
  */
 function splitBody(
@@ -592,7 +592,6 @@ function splitBody(
 	const spanLines = lines.slice(firstBlock.start, anchorBlock.end);
 	const spanText = spanLines.join("\n");
 	const structureLine = bodyStartLine + firstBlock.start;
-	const textLine = (line: string): boolean => line.trim() !== "" && !isTableLine(line);
 
 	if (type === "blank") {
 		// 空位就在目标段里，整段（含被强制空行拉进来的表格）都是题面。
@@ -601,33 +600,34 @@ function splitBody(
 	}
 
 	if (type === "essay") {
-		// 参考答案常写成 callout：它是答案本身，题面是它上面紧邻的一段。
-		const anchorLines = blockLines(anchorBlock);
-		const precedingBlock = blocks[anchor - 1];
-		const precedingLines = precedingBlock !== undefined ? blockLines(precedingBlock) : [];
-		const isCallout = anchorLines.some((line) => CALLOUT_LINE_RE.test(line));
-		const stem = isCallout
-			? [precedingLines.join("\n"), anchorLines.join("\n")]
-					.filter((part) => part.trim() !== "")
-					.join("\n\n")
-			: spanText;
-		return { stem: stem.trim(), supplement: "", structure: "", structureLine };
+		// 目标段是最后一段；参考答案常写成 callout，它和上面的段一起属于题面。
+		// 上面的段按普通规则向上取，表格上下的强制空行照常越过。
+		return { stem: spanText.trim(), supplement: "", structure: "", structureLine };
 	}
 
 	if (type === "match") {
-		// 配对题：表格是结构块（可能有多张）；表格上方是题面，最后一张表下方是补充内容。
-		const tableIndexes = spanLines
-			.map((line, index) => (isTableLine(line) ? index : -1))
-			.filter((index) => index >= 0);
-		const firstTable = tableIndexes[0] ?? -1;
-		const lastTable = tableIndexes[tableIndexes.length - 1] ?? -1;
-		const stemLines = firstTable >= 0 ? spanLines.slice(0, firstTable) : spanLines;
-		const afterLines = lastTable >= 0 ? spanLines.slice(lastTable + 1) : [];
+		// 只把最近的一张表当结构，往上的段按普通规则处理（内容里的表格照常显示）。
+		const runs: { start: number; end: number }[] = [];
+		let runStart = -1;
+		anchorLines.forEach((line, index) => {
+			if (isTableLine(line)) {
+				if (runStart < 0) runStart = index;
+			} else if (runStart >= 0) {
+				runs.push({ start: runStart, end: index });
+				runStart = -1;
+			}
+		});
+		if (runStart >= 0) runs.push({ start: runStart, end: anchorLines.length });
+		const structureRun = runs[runs.length - 1];
+		if (structureRun === undefined) return fallback;
+		const beforeLines = anchorLines.slice(0, structureRun.start);
+		const afterLines = anchorLines.slice(structureRun.end).filter((line) => line.trim() !== "");
+		const stemLines = lines.slice(firstBlock.start, anchorBlock.start).concat(beforeLines);
 		return {
-			stem: stemLines.filter(textLine).join("\n").trim(),
-			supplement: afterLines.filter(textLine).join("\n").trim(),
-			structure: spanText,
-			structureLine,
+			stem: stemLines.join("\n").trim(),
+			supplement: afterLines.join("\n").trim(),
+			structure: anchorLines.slice(structureRun.start, structureRun.end).join("\n"),
+			structureLine: bodyStartLine + anchorBlock.start + structureRun.start,
 		};
 	}
 

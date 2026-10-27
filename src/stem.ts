@@ -69,9 +69,8 @@ export function formatStem(question: QuizQuestion, mode: BlankMarkerMode = "high
 	if (question.type === "single" || question.type === "multi") {
 		text = dropTopLevelLists(text);
 	}
-	if (question.type === "match") {
-		text = dropTables(text);
-	}
+	// 配对题的结构表格由题板接管，解析阶段已把它从题面里剔除；题面里剩下的
+	// 表格（例如上面作为材料的数据表）属于题目内容，按 Markdown 正常显示。
 	return ensureTableSpacing(text).replace(/\n{3,}/g, "\n\n").trim();
 }
 

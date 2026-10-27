@@ -103,7 +103,7 @@ export const en = {
 	"whatsNew.bankListFix":
 		"The bank picker shows partial selection for folders and picks up file changes when you switch back, without a manual rescan.",
 	"whatsNew.stemTighter":
-		"Stems are gathered upward from each type's target block: the paragraph right above it is included, further up only blank lines hugging tables are skipped, and an ordinary blank line stops. Consecutive tables can back one matching question, and stems render with Obsidian's Markdown rules — blank lines are added around tables so they display the same as in a note.",
+		"Stems are gathered upward from each type's target block: the paragraph right above it is included, further up only blank lines hugging tables are skipped, and an ordinary blank line stops. Matching questions use only the nearest table, and an essay callout is shown together with the blocks above it. Stems render with Obsidian's Markdown rules — the containers carry markdown-rendered, so tables use the theme's styling.",
 	"whatsNew.distractorReroll":
 		"Distractors are redrawn after every attempt, and the review shows the set you answered with.",
 	"whatsNew.clearRecords":
