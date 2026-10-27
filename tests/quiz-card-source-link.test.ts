@@ -2,7 +2,7 @@
  * 题卡回到原题的入口。
  *
  * 阅读视图里的题卡（数据块、`题目id` 引用）没有刷题窗口的导航栏，
- * 标题与右上角的铅笔必须都能打开源笔记，否则题卡是死路一条。
+ * 右上角的铅笔是回到源笔记的唯一入口；题面标题只是文本，点它不该跳走。
  */
 
 import * as yaml from "js-yaml";
@@ -51,7 +51,7 @@ async function render(host: HTMLElement, onOpenSource?: () => void): Promise<voi
 	});
 }
 
-test("题卡：有回源入口时标题可点击、右上角有铅笔", async () => {
+test("题卡：有回源入口时只显示铅笔，点标题不会跳走", async () => {
 	const host = document.createElement("div");
 	document.body.appendChild(host);
 	let opened = 0;
@@ -60,17 +60,17 @@ test("题卡：有回源入口时标题可点击、右上角有铅笔", async ()
 	});
 
 	const title = must(host.querySelector<HTMLElement>(".easy-quiz-card__title") ?? undefined, "题卡缺少标题");
-	assert(title.classList.contains("is-link"), "标题应显示为链接");
-	assertEqual(title.getAttribute("role"), "link", "标题的无障碍角色");
+	assert(!title.classList.contains("is-link"), "标题保持普通文本");
+	assertEqual(title.getAttribute("role"), null, "标题不带链接角色");
 	title.click();
-	assertEqual(opened, 1, "点标题应打开源笔记");
+	assertEqual(opened, 0, "点标题不应打开源笔记");
 
 	const pencil = must(host.querySelector<HTMLElement>(".easy-quiz-card__edit") ?? undefined, "缺少铅笔按钮");
 	pencil.click();
-	assertEqual(opened, 2, "点铅笔也应打开源笔记");
+	assertEqual(opened, 1, "点铅笔应打开源笔记");
 });
 
-test("题卡：没有回源入口时不显示链接样式与铅笔", async () => {
+test("题卡：没有回源入口时不显示铅笔，标题保持普通文本", async () => {
 	const host = document.createElement("div");
 	document.body.appendChild(host);
 	await render(host);

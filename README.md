@@ -13,7 +13,7 @@ Questions are plain Markdown. EasyQuiz renders each `quiz` block as an interacti
 | **AI skill** | Ships [`skills/easyquiz-authoring/SKILL.md`](skills/easyquiz-authoring/SKILL.md): skeletons for all five question types, anchor and degrade rules, the knowledge-link convention. AI agents use it to add, fix, or insert questions; every skeleton in the spec is parsed and graded by the test suite. |
 | **Five question types** | Single choice, multiple choice, matching, fill in the blank, short answer. The `type` field alone decides the type — the plugin never guesses from the shape of the content. |
 | **Stem detection** | Fixed heading level or automatic nearest-heading matching; the stem is only the nearest block, forced blank lines around tables do not break it, and Markdown renders the Obsidian way. |
-| **Records and review** | Attempts are written back into the question's own `quiz` block; revisiting an answered question shows what you picked and updates the header stats, and the card's title and edit button jump back to the source note. |
+| **Records and review** | Attempts are written back into the question's own `quiz` block; revisiting an answered question shows what you picked and updates the header stats, and the edit button jumps back to the source note. |
 
 ![One single-choice question: the Markdown in the note on the left, the rendered card on the right](docs/assets/en/card-anatomy.png)
 
@@ -445,8 +445,8 @@ id is clearer), then reference it with **inline code** from any note:
 This week: `tcp-handshake`
 ```
 
-The question renders as a **real, answerable card** right where you write it; click the card's title or the
-pencil to open the question's bank note at its heading.
+The question renders as a **real, answerable card** right where you write it; click the pencil in the
+card's header to open the question's bank note at its heading.
 
 - Only a code span that is **exactly one question id** counts as a reference. Ordinary code, fenced code
   blocks and code inside headings are left alone.
@@ -656,7 +656,7 @@ Each version is announced once. Older releases are on [GitHub Releases](https://
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (422 cases)
+npm test           # bundle and run the test suite (429 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 npm run assets     # regenerate the screenshots and GIFs used by the READMEs
@@ -717,6 +717,7 @@ src/session.ts       practice planning: file summaries, filtering, sampling, pro
 src/runtime.ts       Obsidian adapter: file detection, dependency injection, atomic writes
 src/view.ts          practice card rendering (including the header's knowledge-point link)
 src/practice-view.ts practice window: question-bank list / practice settings / practice
+src/source-note.ts   opening a question's source note: heading link and line reveal (Obsidian adapter)
 src/whats-new.ts     update notes by version and the upgrade check (pure logic)
 src/whats-new-modal.ts the one-time What's new dialog
 src/insert.ts        question templates and insertion positioning (pure logic)
@@ -732,8 +733,8 @@ tools/readme-assets/ README screenshot & GIF generator (see above)
 `parser` / `stem` / `reference` / `plain-text` / `grade` / `writeback` / `hash` / `match-board` / `insert` /
 `session` / `labels` / `i18n` deliberately do **not** import `obsidian`, so they run under plain Node;
 every Obsidian API dependency is confined to `runtime.ts`, `view.ts`, `practice-view.ts`,
-`insert-modal.ts`, and `file-menu.ts`. That includes the message tables: they are plain objects, so the
-parser can produce a localized warning without touching the Obsidian API.
+`source-note.ts`, `insert-modal.ts`, and `file-menu.ts`. That includes the message tables: they are plain
+objects, so the parser can produce a localized warning without touching the Obsidian API.
 
 The stem is rendered **without** the parts that get their own interactive control — the option list, the
 matching table, and the `==answer==` text are stripped so that nothing is displayed twice.

@@ -13,7 +13,7 @@
 | **AI Skill** | 自带 [`skills/easyquiz-authoring/SKILL.md`](skills/easyquiz-authoring/SKILL.md)：五种题型的骨架、锚点与降级规则、知识点链接约定。AI 照着它补题、修题、在讲义里插题；规范里的示例由测试真正解析并判分。 |
 | **五种题型** | 单选、多选、配对、填空、问答。题型只由 `type` 决定，绝不根据内容形态去猜。 |
 | **题面识别** | 固定层级或自动匹配最近的标题；题面只取最近的一段，表格上下的强制空行不打断段落；Markdown 按 Obsidian 规则渲染。 |
-| **记录与复盘** | 作答写回题目自己的 `quiz` 数据块；切回已答的题能看到当时的作答与统计，题卡标题或右上角按钮可跳回源笔记的题目位置。 |
+| **记录与复盘** | 作答写回题目自己的 `quiz` 数据块；切回已答的题能看到当时的作答与统计，题卡右上角的按钮可跳回源笔记的题目位置。 |
 
 ![同一道单选题：左边是笔记里的 Markdown，右边是渲染出的题卡](docs/assets/zh/card-anatomy.png)
 
@@ -398,7 +398,7 @@ The minimum TCP header length is ==20== ^b1 bytes.
 本周复习：`tcp-handshake`
 ```
 
-题目会**就地渲染成一张真正能作答的题卡**；点题卡标题或右上角的铅笔，就回到它所在的题库笔记并定位到题面。
+题目会**就地渲染成一张真正能作答的题卡**；点题卡右上角的铅笔，就回到它所在的题库笔记并定位到题面。
 
 - 只有**整段内联代码就是一个 id** 时才算引用；普通代码片段、围栏代码块、标题里的代码都不会被接管。
 - id 在整个 vault 里唯一时直接定位；重名时优先当前笔记里的那一道题，仍然无法唯一确定就保持代码原样。
@@ -573,7 +573,7 @@ history:
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (422 cases)
+npm test           # bundle and run the test suite (429 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 npm run assets     # 重新生成两份 README 用到的截图与 GIF
@@ -616,6 +616,7 @@ src/session.ts       practice planning: file summaries, filtering, sampling, pro
 src/runtime.ts       Obsidian adapter: file detection, dependency injection, atomic writes
 src/view.ts          practice card rendering (including the header's knowledge-point link)
 src/practice-view.ts practice window: question-bank list / practice settings / practice
+src/source-note.ts   回到题面所在的笔记：标题链接与按行定位（Obsidian 适配层）
 src/whats-new.ts     update notes by version and the upgrade check (pure logic)
 src/whats-new-modal.ts the one-time What's new dialog
 src/insert.ts        question templates and insertion positioning (pure logic)
@@ -628,13 +629,13 @@ tests/               parser / stem / grading / write-back / insert / session tes
 tools/readme-assets/ README 截图与 GIF 生成器（见上一节）
 ```
 
-`parser` / `stem` / `reference` / `plain-text` / `grade` / `writeback` / `hash` / `match-board` / `insert` / `session` / `labels` / `i18n` 刻意**不**导入 `obsidian`，因此它们可以在纯 Node 下运行；所有对 Obsidian API 的依赖都限制在 `runtime.ts`、`view.ts`、`practice-view.ts`、`insert-modal.ts` 和 `file-menu.ts` 里。文案表也是如此：它们是普通对象，所以解析器不必接触 Obsidian API 就能产生本地化的提示。
+`parser` / `stem` / `reference` / `plain-text` / `grade` / `writeback` / `hash` / `match-board` / `insert` / `session` / `labels` / `i18n` 刻意**不**导入 `obsidian`，因此它们可以在纯 Node 下运行；所有对 Obsidian API 的依赖都限制在 `runtime.ts`、`view.ts`、`practice-view.ts`、`source-note.ts`、`insert-modal.ts` 和 `file-menu.ts` 里。文案表也是如此：它们是普通对象，所以解析器不必接触 Obsidian API 就能产生本地化的提示。
 
 题干渲染时会**去掉**那些有自己交互控件的部分——选项列表、配对表格以及 `==answer==` 文本都会被剥离，以免同一内容显示两遍。
 
 ## 状态
 
-已实现并有测试覆盖：解析器、题干预处理、五种题型的判分、记录写回、连线板逻辑、题目模板及其插入定位、题卡界面（题面、选项、解析与配对单元格都按 Markdown 渲染、可点击连线的多列配对及打乱、内嵌的点击输入式空位及其随内容变宽、问答题自评，以及可点击的知识点链接）、刷题窗口（带逐文件数据的题库列表，外加搜索、文件夹折叠与整组勾选；带题型/抽题筛选与「打乱顺序」的刷题设置；以及一次一道题、在原处揭示答案并给出最终报告的一轮）、「题目 id」引用（在别的笔记里就地渲染成可作答的题卡，题卡标题与铅笔可回到题库笔记），从文件浏览器菜单直接跳到某个题库刷题设置的入口，还有带语言设置的英文/中文界面。题库文件被修改会触发防抖的阅读视图刷新，并使窗口缓存的解析结果失效。
+已实现并有测试覆盖：解析器、题干预处理、五种题型的判分、记录写回、连线板逻辑、题目模板及其插入定位、题卡界面（题面、选项、解析与配对单元格都按 Markdown 渲染、可点击连线的多列配对及打乱、内嵌的点击输入式空位及其随内容变宽、问答题自评，以及可点击的知识点链接）、刷题窗口（带逐文件数据的题库列表，外加搜索、文件夹折叠与整组勾选；带题型/抽题筛选与「打乱顺序」的刷题设置；以及一次一道题、在原处揭示答案并给出最终报告的一轮）、「题目 id」引用（在别的笔记里就地渲染成可作答的题卡，右上角的铅笔可回到题库笔记），从文件浏览器菜单直接跳到某个题库刷题设置的入口，还有带语言设置的英文/中文界面。题库文件被修改会触发防抖的阅读视图刷新，并使窗口缓存的解析结果失效。
 
 尚未实现：把多次写回合并成一次文件写入，以及跨轮次的统计（错题本、图表）——目前只有窗口为单轮计算出的那些数据。
 

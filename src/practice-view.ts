@@ -12,7 +12,7 @@
  * 因此窗口内作答与在笔记里作答写回的是同一份记录。
  */
 
-import { Component, ItemView, Notice, Setting, stripHeadingForLink, TFile, WorkspaceLeaf } from "obsidian";
+import { Component, ItemView, Notice, Setting, TFile, WorkspaceLeaf } from "obsidian";
 import { MessageKey, t } from "./i18n";
 import { typeLabel } from "./labels";
 import { QuizService, formatStats, RuntimeSettings } from "./runtime";
@@ -34,6 +34,7 @@ import {
 import { ParsedQuizFile, QuizQuestion, QuizType } from "./types";
 import type { GradeResult, UserAnswer } from "./grade";
 import { CardContext, renderQuizCard } from "./view";
+import { openQuestionSource } from "./source-note";
 
 export const PRACTICE_VIEW_TYPE = "easy-quiz-practice";
 
@@ -116,6 +117,8 @@ export class PracticeView extends ItemView {
 	private stale = false;
 	/** 上次扫描时的文件指纹（路径 + 修改时间）；用来判断列表缓存是否还能直接用。 */
 	private scanSignature: string | null = null;
+	/** 正在进行的扫描；重复进入列表页时共用同一个结果。 */
+	private scanInFlight: Promise<FileEntry[]> | null = null;
 
 	/** 刷题会话。 */
 	private queue: QueueEntry[] = [];
@@ -260,6 +263,19 @@ export class PracticeView extends ItemView {
 				void this.refreshOnActivate();
 			})
 		);
+		// 启动时 Obsidian 先恢复布局、再建元数据缓存：那一刻所有笔记都还没有
+		// frontmatter，整个 vault 会被当成空库。缓存建好后自己再扫一次。
+		const cache = this.app.metadataCache;
+		if (typeof cache?.on === "function") {
+			this.registerEvent(
+				cache.on("resolved", () => {
+					if (this.page !== 0) return;
+					this.stale = true;
+					this.entries = null;
+					void this.render();
+				})
+			);
+		}
 		await this.render();
 	}
 
@@ -442,9 +458,25 @@ export class PracticeView extends ItemView {
 		return folder === "" ? t("practice.list.rootFolder") : `/${folder}`;
 	}
 
+	/**
+	 * 扫描一次题库；启动时两处渲染可能同时要数据，共用同一次扫描，
+	 * 免得 140 份题库被解析两遍。
+	 */
+	private scan(): Promise<FileEntry[]> {
+		const running = this.scanInFlight;
+		if (running !== null) return running;
+		const started = this.runScan();
+		this.scanInFlight = started;
+		const clear = (): void => {
+			if (this.scanInFlight === started) this.scanInFlight = null;
+		};
+		void started.then(clear, clear);
+		return started;
+	}
+
 	/** 扫描 vault 里的题库文件并逐份解析；结果缓存在 `entries` 里。 */
-	private async scan(): Promise<FileEntry[]> {
-		const files = this.host.service.listQuizFiles();
+	private async runScan(): Promise<FileEntry[]> {
+		const files = await this.quizFiles();
 		const signature = files.map((file) => `${file.path}\u0000${file.stat.mtime}`).join("\n");
 		// 缓存仍然有效需要同时满足：没被标记过期，且文件集合与修改时间都没变。
 		// 只凭 `stale` 判断会漏掉「窗口在后台时文件被别人改了」的情形。
@@ -476,6 +508,51 @@ export class PracticeView extends ItemView {
 		this.stale = false;
 		this.scanSignature = signature;
 		return entries;
+	}
+
+	/**
+	 * 当前该扫哪些题库文件。
+	 *
+	 * 启动时 Obsidian 先恢复布局、再建元数据缓存：那一刻所有笔记都还没有
+	 * frontmatter，整个 vault 会被当成空库，列表于是显示"没有题库文件"并且
+	 * 不会自己恢复。这里先等缓存就绪（最多 3 秒），再取一次文件列表。
+	 */
+	private async quizFiles(): Promise<TFile[]> {
+		const files = this.host.service.listQuizFiles();
+		if (files.length > 0 || !this.metadataPending()) return files;
+		await this.awaitMetadata();
+		return this.host.service.listQuizFiles();
+	}
+
+	/** 元数据缓存看起来还没建好：抽一批笔记，一份都没有缓存。 */
+	private metadataPending(): boolean {
+		const vault = this.app.vault;
+		if (typeof vault?.getMarkdownFiles !== "function") return false;
+		const markdown = vault.getMarkdownFiles();
+		if (markdown.length === 0) return false;
+		return markdown
+			.slice(0, 20)
+			.every((file) => (this.app.metadataCache?.getFileCache?.(file) ?? null) === null);
+	}
+
+	/** 等元数据缓存建好：收到 `resolved` 就继续，收不到最多等 3 秒。 */
+	private awaitMetadata(): Promise<void> {
+		const cache = this.app.metadataCache;
+		if (typeof cache?.on !== "function") return Promise.resolve();
+		return new Promise((resolve) => {
+			let timer = 0;
+			let ref: ReturnType<typeof cache.on> | null = null;
+			let settled = false;
+			const finish = (): void => {
+				if (settled) return;
+				settled = true;
+				if (ref !== null) cache.offref(ref);
+				window.clearTimeout(timer);
+				resolve();
+			};
+			ref = cache.on("resolved", finish);
+			timer = window.setTimeout(finish, 3000);
+		});
 	}
 
 	private async renderList(): Promise<void> {
@@ -1480,43 +1557,15 @@ export class PracticeView extends ItemView {
 	/**
 	 * 打开当前题目所在的笔记，并跳到题目标题。
 	 *
-	 * 直接用 `workspace.openLinkText("笔记#标题")`，和点笔记里的标题链接走
-	 * 同一条路径：笔记已经打开就复用标签页，阅读视图滚动到标题并高亮，编辑
-	 * 视图把光标放到标题行。
-	 *
-	 * 标题末尾常带知识点链接 `^[[[笔记#小节]]]`，其中的 `#` 会被 Obsidian 当成
-	 * 层级分隔符，所以先用 `stripHeadingForLink`（Obsidian 生成链接时用的同一个
-	 * 函数）转成链接里的写法，例如
-	 * `我国引起肝硬化最常见的病因是 [300 笔记/内科/【内科】肝硬化 病因 ]`。
+	 * 拼链接、打开、定位都由 `source-note.ts` 负责：它先按 Obsidian 的写法拼标题
+	 * 链接，打开之后再按题面所在的行号定位一次，标题末尾的知识点链接不会让定位落空。
 	 */
 	private async openSource(): Promise<void> {
 		const entry = this.queue[this.cursor];
 		if (entry === undefined) return;
 		const file = this.fileAt.get(entry.path) ?? this.host.service.fileAtPath(entry.path);
 		if (file === null || file === undefined) return;
-		const question = resolveEntry(this.parsedByPath, entry);
-		const heading = this.headingFor(file, question);
-		const link = heading === null ? file.path : `${file.path}#${heading}`;
-		try {
-			await this.app.workspace.openLinkText(link, file.path, false);
-		} catch (error) {
-			new Notice(
-				t("practice.session.openNoteFailed", {
-					error: error instanceof Error ? error.message : String(error),
-				})
-			);
-		}
-	}
-
-	/** 标题在链接里的写法：取元数据缓存里的原文，按 Obsidian 的规则转成链接形式。 */
-	private headingFor(file: TFile, question: QuizQuestion | undefined): string | null {
-		if (question === undefined) return null;
-		const cache = this.app.metadataCache?.getFileCache?.(file);
-		const cached = cache?.headings?.find(
-			(item) => item.position.start.line === question.line
-		)?.heading;
-		const heading = stripHeadingForLink(cached ?? question.title).trim();
-		return heading === "" ? null : heading;
+		await openQuestionSource(this.app, file, resolveEntry(this.parsedByPath, entry));
 	}
 
 	/** 切到队列里的某一题。 */

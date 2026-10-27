@@ -341,8 +341,8 @@ This week: `tcp-handshake`
   knowledge-point link still points at the knowledge note.
 - Prefer referencing over copying: copies drift, references cannot.
 
-A card rendered from an id reference is also a link: its title and pencil open the bank note at the
-question. The plugin **does not intercept `![[...]]` embeds** — images and section embeds keep Obsidian's
+A card rendered from an id reference is also a link: its pencil opens the bank note at the question.
+The plugin **does not intercept `![[...]]` embeds** — images and section embeds keep Obsidian's
 native rendering, so do not write embeds expecting a card.
 
 ## Fields you must never write by hand

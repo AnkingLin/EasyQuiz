@@ -12,7 +12,6 @@ import {
 	Plugin,
 	PluginSettingTab,
 	Setting,
-	stripHeadingForLink,
 	TFile,
 } from "obsidian";
 import type { WorkspaceLeaf } from "obsidian";
@@ -40,6 +39,7 @@ import {
 } from "./reference";
 import type { PracticePlacement } from "./practice-placement";
 import { PRACTICE_VIEW_TYPE, PracticeView } from "./practice-view";
+import { openQuestionSource } from "./source-note";
 import { shouldAnnounce, whatsNewFor } from "./whats-new";
 import { WhatsNewModal } from "./whats-new-modal";
 
@@ -416,7 +416,7 @@ export default class EasyQuizPlugin extends Plugin {
 			blankMarker: this.settings.blankMarker,
 			showStaleHint: this.settings.showStaleHint,
 			onDismissStaleHint: () => this.dismissStaleHint(),
-			onOpenSource: () => void this.openQuestionSource(file, question),
+			onOpenSource: () => void openQuestionSource(this.app, file, question),
 			// MarkdownRenderer 需要一个 Component 承载生命周期；交给渲染上下文托管。
 			addRenderChild: (child) => post.addChild(child),
 			onSubmitted: () => this.refreshNotice(),
@@ -498,31 +498,10 @@ export default class EasyQuizPlugin extends Plugin {
 			blankMarker: this.settings.blankMarker,
 			showStaleHint: this.settings.showStaleHint,
 			onDismissStaleHint: () => this.dismissStaleHint(),
-			onOpenSource: () => void this.openQuestionSource(file, question),
+			onOpenSource: () => void openQuestionSource(this.app, file, question),
 			addRenderChild: (child) => post.addChild(child),
 			onSubmitted: () => this.refreshNotice(),
 		});
-	}
-
-	/**
-	 * 打开题目所在的题库笔记，并用标题子路径定位到题面（阅读视图里是原生高亮）。
-	 *
-	 * 阅读视图里的题卡、引用卡也走这里：没有刷题窗口时，卡片右上角的铅笔就是
-	 * 回到原题的入口。
-	 */
-	private async openQuestionSource(file: TFile, question: QuizQuestion): Promise<void> {
-		const cached = this.app.metadataCache?.getFileCache?.(file)?.headings?.find(
-			(item) => item.position.start.line === question.line
-		)?.heading;
-		const heading = stripHeadingForLink(cached ?? question.title).trim();
-		const link = heading === "" ? file.path : `${file.path}#${heading}`;
-		try {
-			await this.app.workspace.openLinkText(link, file.path, false);
-		} catch (error) {
-			new Notice(t("practice.session.openNoteFailed", {
-				error: error instanceof Error ? error.message : String(error),
-			}));
-		}
 	}
 
 	/** 查一处引用：优先当前笔记，其次整个 vault 里唯一的那一道。 */

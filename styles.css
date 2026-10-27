@@ -105,15 +105,6 @@
 }
 
 /* 右上角的编辑按钮：跳到题库里这道题所在的标题行。 */
-.easy-quiz-card__title.is-link {
-	cursor: pointer;
-}
-
-.easy-quiz-card__title.is-link:hover,
-.easy-quiz-card__title.is-link:focus-visible {
-	text-decoration: underline;
-}
-
 .easy-quiz-card__edit {
 	flex: none;
 	--icon-size: var(--icon-s, 16px);
