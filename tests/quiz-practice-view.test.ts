@@ -152,6 +152,7 @@ function buildHarness(files: { file: FakeFile; source: string }[], realCard = fa
 			pathGlobs: [],
 			historyLimit: 10,
 			writeBackEnabled: false,
+			showStaleHint: false,
 		},
 		service: service as unknown as EasyQuizHost["service"],
 	};

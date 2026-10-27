@@ -172,6 +172,20 @@ export function planClear(blockSource: string, deps: WriteBackDeps): ClearPatch 
 }
 
 /**
+ * 计算「关闭题面变更提示」后的数据块内容。
+ *
+ * 只把 `rev` 更新成当前题面的版本：作者确认"我知道题面改过了"，
+ * 提示因此消失，但作答记录原样保留。
+ */
+export function planAcceptStem(blockSource: string, rev: string, deps: WriteBackDeps): ClearPatch {
+	const content = patchBlockSource(blockSource, { rev: `rev: ${JSON.stringify(rev)}` });
+	if (!isMapping(content, deps)) {
+		return { content: blockSource, applied: false, reason: t("writeback.invalidYaml") };
+	}
+	return { content, applied: true };
+}
+
+/**
  * 计算写回后的数据块内容。
  *
  * 与 `patchBlockSource` 的区别：这里会先用解析器校验补丁结果，

@@ -135,6 +135,23 @@
 	margin-bottom: var(--eqq-2);
 }
 
+/* 「关闭提示」：跟在警告文字右边，反色链接打扮成可点的次级操作 */
+.easy-quiz-card__stale-dismiss {
+	margin-left: var(--eqq-2);
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.easy-quiz-card__stale-dismiss:hover {
+	color: var(--text-normal);
+	text-decoration: underline;
+}
+
+/* `题目id` 引用：内联代码换成题卡后，上下留一点与正文的间隔 */
+.easy-quiz-reference {
+	margin: var(--eqq-2) 0;
+}
+
 /* 知识点：题卡头部链接到题目来源的笔记 */
 
 .easy-quiz-card__knowledge {

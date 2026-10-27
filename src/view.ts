@@ -8,7 +8,7 @@
  * 填空题的 `==答案==` 由各自的交互控件承担，避免同一内容出现两次。
  */
 
-import { App, Component, MarkdownRenderer, MarkdownRenderChild, setIcon, TFile } from "obsidian";
+import { App, Component, MarkdownRenderer, MarkdownRenderChild, Notice, setIcon, TFile } from "obsidian";
 import { GradeResult, matchBlank, UserAnswer } from "./grade";
 import { contentHash } from "./hash";
 import { t } from "./i18n";
@@ -68,6 +68,11 @@ export interface CardContext {
 	 * 只有刷题窗口会传；笔记里就地渲染的题卡本来就在原题上，不需要这个按钮。
 	 */
 	onOpenSource?: () => void;
+	/**
+	 * 是否显示「题面已变更」提示（设置里可关）。
+	 * 不传时按显示处理，这样单独调用 `renderQuizCard` 的旧代码行为不变。
+	 */
+	showStaleHint?: boolean;
 	/** 题卡渲染结束（含题板布局完成）后回调，用于解除观察者等自身资源。 */
 	onCleanup?: (cleanup: () => void) => void;
 }
@@ -126,8 +131,31 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 	renderKnowledgeLink(question, card, ctx);
 
 	const stale = staleNote(question);
-	if (stale) {
-		card.createDiv({ cls: "easy-quiz-card__stale", text: stale });
+	if (stale !== null && ctx.showStaleHint !== false) {
+		const row = card.createDiv({ cls: "easy-quiz-card__stale" });
+		row.createSpan({ text: stale });
+		// 「关闭提示」= 把当前题面的 rev 写回数据块，确认"我知道题面改了"，
+		// 之后的渲染就不会再把它标成「题面已变更」。
+		const dismiss = row.createEl("a", {
+			cls: "easy-quiz-card__stale-dismiss",
+			text: t("card.staleDismiss"),
+			href: "#",
+		});
+		dismiss.addEventListener("click", (event) => {
+			event.preventDefault();
+			void (async () => {
+				if (typeof ctx.service.acceptStem !== "function") return;
+				const accepted = await ctx.service.acceptStem(ctx.file, question.id);
+				if (!accepted) {
+					new Notice(t("practice.clear.failed"));
+					return;
+				}
+				question.stale = false;
+				row.detach();
+				const badge = ctx.el.querySelector<HTMLElement>(".easy-quiz-card__stats");
+				badge?.removeClass("is-stale");
+			})();
+		});
 	}
 
 	const bodyEl = card.createDiv({ cls: "easy-quiz-card__body markdown-rendered" });

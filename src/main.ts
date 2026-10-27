@@ -30,6 +30,13 @@ import { renderQuizCard } from "./view";
 import { insertQuestionAtCursor, InsertQuestionOptions } from "./insert-modal";
 import { registerFileMenu } from "./file-menu";
 import { placementOf } from "./practice-placement";
+import {
+	buildReferenceIndex,
+	parseReferenceId,
+	pickReference,
+	ReferenceBank,
+	QuestionReferenceTarget,
+} from "./reference";
 import type { PracticePlacement } from "./practice-placement";
 import { PRACTICE_VIEW_TYPE, PracticeView } from "./practice-view";
 import { shouldAnnounce, whatsNewFor } from "./whats-new";
@@ -63,6 +70,8 @@ export default class EasyQuizPlugin extends Plugin {
 	service!: QuizService;
 	/** 已经提示过更新内容的版本；null 表示还没有记录。 */
 	private whatsNewSeen: string | null = null;
+	/** `` `题目id` `` 引用索引；题库文件变动时清空，下次渲染重建。 */
+	private referenceIndex: Map<string, QuestionReferenceTarget[]> | null = null;
 
 	async onload() {
 		await this.loadSettings();
@@ -343,6 +352,8 @@ export default class EasyQuizPlugin extends Plugin {
 	 * 只有当前正在阅读视图里显示的笔记才需要刷新；`force` 为 true 时用于手动刷新命令。
 	 */
 	private refreshPreviews(file: TFile, force = false): void {
+		// 题目内容可能变了，id → 题目的索引也随之失效。
+		this.referenceIndex = null;
 		for (const view of this.practiceViews()) view.markStale();
 		for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
 			const view = leaf.view;
@@ -404,6 +415,7 @@ export default class EasyQuizPlugin extends Plugin {
 			el,
 			blockLine: question.blockLine ?? undefined,
 			blankMarker: this.settings.blankMarker,
+			showStaleHint: this.settings.showStaleHint,
 			// MarkdownRenderer 需要一个 Component 承载生命周期；交给渲染上下文托管。
 			addRenderChild: (child) => post.addChild(child),
 			onSubmitted: () => this.refreshNotice(),
@@ -436,7 +448,11 @@ export default class EasyQuizPlugin extends Plugin {
 	 */
 	private renderEmbeds(el: HTMLElement, post: MarkdownPostProcessorContext): Promise<void> | void {
 		const embeds = Array.from(el.querySelectorAll<HTMLElement>(".internal-embed:not(.is-loaded)"));
-		if (embeds.length === 0) return;
+		// 新版引用：整段内联代码就是一个题目 id。只处理行内代码，围栏代码块原样保留。
+		const codes = Array.from(el.querySelectorAll<HTMLElement>("code")).filter(
+			(code) => code.closest("pre") === null && code.closest("h1, h2, h3, h4, h5, h6") === null
+		);
+		if (embeds.length === 0 && codes.length === 0) return;
 
 		const jobs: Promise<void>[] = [];
 		for (const embed of embeds) {
@@ -467,6 +483,14 @@ export default class EasyQuizPlugin extends Plugin {
 			// 份题库的原文渲染一遍。边界与理由见 `claimEmbedHost`。
 			const host = claimEmbedHost(embed);
 			jobs.push(this.fillEmbeddedQuestion(host, targetFile, target.subpath, post));
+		}
+
+		for (const code of codes) {
+			// 题卡内部不再套题卡，否则题面里引用自己会无限递归。
+			if (isInsideQuizCard(code)) continue;
+			const id = parseReferenceId(code.textContent ?? "");
+			if (id === null) continue;
+			jobs.push(this.fillReferencedQuestion(code, id, post));
 		}
 		if (jobs.length === 0) return;
 		// 返回 Promise 会被 Obsidian 收进渲染的 promises 里等待，题卡因此不会晚于整页出现。
@@ -512,10 +536,81 @@ export default class EasyQuizPlugin extends Plugin {
 			el: host,
 			blockLine: question.blockLine ?? undefined,
 			blankMarker: this.settings.blankMarker,
+			showStaleHint: this.settings.showStaleHint,
 			// MarkdownRenderer 需要一个 Component 承载生命周期；交给渲染上下文托管。
 			addRenderChild: (child) => post.addChild(child),
 			onSubmitted: () => this.refreshNotice(),
 		});
+	}
+
+	/**
+	 * 把内联代码 `` `题目id` `` 换成题卡。
+	 *
+	 * 引用是异步解析的：找不到、或有重名无法确定是哪一道时，**不改动 DOM**，
+	 * 内联代码保持原样，普通代码片段因此不会被打扰。
+	 */
+	private async fillReferencedQuestion(
+		code: HTMLElement,
+		id: string,
+		post: MarkdownPostProcessorContext
+	): Promise<void> {
+		const target = await this.findReference(id, post.sourcePath);
+		if (target === null) return;
+		const file = this.service.fileAtPath(target.path);
+		if (file === null) return;
+
+		let question: QuizQuestion | undefined;
+		try {
+			const parsed = await this.service.parseFile(file);
+			question = parsed.questions.find((item) => item.id === id && item.ok);
+		} catch {
+			question = undefined;
+		}
+		if (question === undefined) return;
+
+		const parent = code.parentElement;
+		if (parent === null) return;
+		const host = parent.createDiv({ cls: "easy-quiz-reference" });
+		code.replaceWith(host);
+
+		await renderQuizCard(question, {
+			app: this.app,
+			service: this.service,
+			file,
+			el: host,
+			blockLine: question.blockLine ?? undefined,
+			blankMarker: this.settings.blankMarker,
+			showStaleHint: this.settings.showStaleHint,
+			addRenderChild: (child) => post.addChild(child),
+			onSubmitted: () => this.refreshNotice(),
+		});
+	}
+
+	/** 查一处引用：优先当前笔记，其次整个 vault 里唯一的那一道。 */
+	private async findReference(id: string, sourcePath: string): Promise<QuestionReferenceTarget | null> {
+		const index = await this.referenceTargets();
+		const hits = index.get(id);
+		if (hits === undefined) return null;
+		return pickReference(hits, sourcePath);
+	}
+
+	/** 建立 id → 题目的索引；一次渲染期间复用，题库变动或设置变更时清空。 */
+	private async referenceTargets(): Promise<Map<string, QuestionReferenceTarget[]>> {
+		const cached = this.referenceIndex;
+		if (cached !== null) return cached;
+
+		const banks: ReferenceBank[] = [];
+		for (const file of this.service.listQuizFiles()) {
+			try {
+				const parsed = await this.service.parseFile(file);
+				banks.push({ path: file.path, questions: parsed.questions });
+			} catch {
+				continue;
+			}
+		}
+		const index = buildReferenceIndex(banks);
+		this.referenceIndex = index;
+		return index;
 	}
 
 	/**
@@ -539,6 +634,12 @@ export default class EasyQuizPlugin extends Plugin {
 		// 触发一次布局变更请它刷新标题（只是重画标签头，不会重建视图，进行中的一轮不会丢）。
 		if (views.length > 0) this.app.workspace.trigger("layout-change");
 		if (!refreshNotes) return;
+		this.refreshNotes();
+	}
+
+	/** 重画已经渲染出来的题卡：设置改动后让新开关立即生效，不必等下一次渲染。 */
+	refreshNotes(): void {
+		for (const view of this.practiceViews()) void view.render();
 		for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
 			if (leaf.view instanceof MarkdownView) leaf.view.previewMode.rerender(true);
 		}
@@ -580,6 +681,8 @@ export default class EasyQuizPlugin extends Plugin {
 	async saveSettings() {
 		await this.saveData({ ...this.settings, whatsNewSeen: this.whatsNewSeen });
 		this.service?.updateSettings(this.settings);
+		// 题的解析方式可能随设置改变（标题匹配、空位标记），已建的引用索引不再可信。
+		this.referenceIndex = null;
 	}
 }
 
@@ -733,6 +836,17 @@ class EasyQuizSettingTab extends PluginSettingTab {
 				toggle.setValue(this.plugin.settings.writeBackEnabled).onChange(async (value) => {
 					this.plugin.settings.writeBackEnabled = value;
 					await this.plugin.saveSettings();
+				})
+			);
+
+		new Setting(containerEl)
+			.setName(t("setting.staleHint.name"))
+			.setDesc(t("setting.staleHint.desc"))
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.showStaleHint).onChange(async (value) => {
+					this.plugin.settings.showStaleHint = value;
+					await this.plugin.saveSettings();
+					this.plugin.refreshNotes();
 				})
 			);
 

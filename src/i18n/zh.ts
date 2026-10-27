@@ -47,6 +47,8 @@ export const zh: MessageTable = {
 	"setting.blankMarker.highlight": "== 高亮 ==",
 	"setting.blankMarker.bold": "** 加粗 **",
 	"setting.blankMarker.both": "两者都识别",
+	"setting.staleHint.name": "显示「题面已变更」提示",
+	"setting.staleHint.desc": "题面在记下 rev 后发生变化时，在题卡上显示提示；提示右侧带「关闭提示」。",
 	"setting.historyLimit.name": "单题历史条数上限",
 	"setting.historyLimit.desc": "记录写在笔记内，必须有上限；0 表示只保留汇总。",
 
@@ -100,6 +102,7 @@ export const zh: MessageTable = {
 	// 题卡
 	// -----------------------------------------------------------------------
 	"card.knowledgePoint": "知识点",
+	"card.staleDismiss": "关闭提示",
 	"card.submit": "提交答案",
 	"card.diagnostic.hint": "这道题暂时不能作答，请修正数据块后重试：",
 	"card.diagnostic.incomplete": "题目数据不完整。",

@@ -1300,6 +1300,7 @@ export class PracticeView extends ItemView {
 			file,
 			el: host,
 			blankMarker: this.host.settings.blankMarker,
+			showStaleHint: this.host.settings.showStaleHint,
 			// 「打乱顺序」开关也作用于选择题的选项顺序（题目自己写的 shuffle: true 同样生效）。
 			shuffleOptions: this.config.shuffleOptions,
 			shuffleSeed: this.sessionSeed,
@@ -1409,7 +1410,17 @@ export class PracticeView extends ItemView {
 			void this.goTo(this.cursor + 1);
 		});
 
+		// 作答前也能直接看答案：看过的题按"未作答"处理，不计入正确率。
+		if (!this.reviewing) {
+			const peek = this.button(nav, "peek", t("practice.session.peek"));
+			peek.addEventListener("click", () => {
+				this.reviewing = true;
+				void this.renderCard();
+			});
+		}
+
 		// 清除当前题的作答记录：有记录时才出现，清完这道题回到「未作答」。
+		// 紧贴在跳题输入框左边会被误触，因此放在「查看解析」之后。
 		const queued = this.queue[this.cursor];
 		const current = queued === undefined ? undefined : resolveEntry(this.parsedByPath, queued);
 		if (current !== undefined && (current.stats.attempts > 0 || current.history.length > 0)) {
@@ -1436,15 +1447,6 @@ export class PracticeView extends ItemView {
 				this.answers[this.cursor] = null;
 				new Notice(t("practice.clear.doneQuestion"));
 				void this.goTo(this.cursor);
-			});
-		}
-
-		// 作答前也能直接看答案：看过的题按"未作答"处理，不计入正确率。
-		if (!this.reviewing) {
-			const peek = this.button(nav, "peek", t("practice.session.peek"));
-			peek.addEventListener("click", () => {
-				this.reviewing = true;
-				void this.renderCard();
 			});
 		}
 

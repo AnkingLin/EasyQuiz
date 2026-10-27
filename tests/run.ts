@@ -26,6 +26,7 @@ import "./quiz-skill-doc.test";
 import "./quiz-styles.test";
 import "./quiz-i18n.test";
 import "./quiz-embed.test";
+import "./quiz-reference.test";
 import "./quiz-whats-new.test";
 
 async function main(): Promise<void> {

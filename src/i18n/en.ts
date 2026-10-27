@@ -54,6 +54,9 @@ export const en = {
 	"setting.blankMarker.highlight": "== highlight ==",
 	"setting.blankMarker.bold": "** bold **",
 	"setting.blankMarker.both": "Both",
+	"setting.staleHint.name": "Show changed-question hint",
+	"setting.staleHint.desc":
+		"Show a note on a card when the stem changed after its revision was recorded. The hint itself has a dismiss link.",
 	"setting.historyLimit.name": "Per-question history cap",
 	"setting.historyLimit.desc": "Records live in the note, so the detail list must be capped; 0 keeps the summary only.",
 
@@ -125,6 +128,7 @@ export const en = {
 	// 题卡
 	// -----------------------------------------------------------------------
 	"card.knowledgePoint": "Knowledge point",
+	"card.staleDismiss": "Dismiss",
 	"card.submit": "Submit answer",
 	"card.diagnostic.hint": "This question cannot be answered yet. Fix the data block and try again:",
 	"card.diagnostic.incomplete": "Question data is incomplete.",

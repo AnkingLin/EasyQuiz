@@ -323,20 +323,33 @@ value, or start the text with a normal word.
 option is correct. Do not write `shuffle` expecting the *question* order to change — question order is
 decided in the practice window, not by the field.
 
-## Embedding a question in another note
+## Referencing a question in another note
 
-Any note can render one question as a live, answerable card by referencing its heading:
+Any note can render one question as a live, answerable card. Prefer the id form:
+
+```markdown
+This week: `tcp-handshake`
+```
+
+- The reference must be **exactly one question id as an inline code span**. Ordinary code, fenced code
+  blocks and code inside headings are left alone.
+- Give referenced questions an explicit `id`. A derived id changes when you rename the heading, and attempt
+  records are keyed by the id.
+- An id that appears once in the vault resolves directly. Duplicates are ambiguous: a copy in the current
+  note wins, otherwise the code is left as written — so keep referenced ids unique.
+- Referencing changes nothing about records: answering writes back to the bank note, and the card's
+  knowledge-point link still points at the knowledge note.
+- Prefer referencing over copying: copies drift, references cannot.
+
+Embedding by stem heading works too, and is what older notes may use:
 
 ```markdown
 ![[计算机网络/传输层#TCP 建立连接需要几次握手？]]
 ```
 
 - The subpath must be the **stem heading text with the trailing `^[[[]]]` knowledge link left out**.
-- Embedding changes nothing about records: answering writes back to the bank note, and the card's
-  knowledge-point link still points at the knowledge note.
 - A subpath that does not match a stem heading is ignored, so ordinary `![[note#section]]` embeds keep
   Obsidian's normal behaviour.
-- Prefer embedding over copying: copies drift, embeds cannot.
 
 ## Fields you must never write by hand
 

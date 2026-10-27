@@ -412,6 +412,7 @@ function buildHost(set: FixtureSet): EasyQuizHost {
 			pathGlobs: [],
 			historyLimit: 10,
 			writeBackEnabled: true,
+			showStaleHint: true,
 		},
 		service: service as unknown as EasyQuizHost["service"],
 	};

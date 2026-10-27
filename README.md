@@ -25,7 +25,7 @@ Questions are plain Markdown. EasyQuiz renders each `quiz` block as an interacti
 | Get one question working first | [Quick start](#quick-start) |
 | Pick a type and copy a skeleton | [The five question types](#the-five-question-types) |
 | Look up fields, anchors, blank rules, degrade behaviour | [How exactly do I write a question?](#how-exactly-do-i-write-a-question) |
-| Answer one question inside another note | [How do I embed a question in another note?](#how-do-i-embed-a-question-in-another-note) |
+| Answer one question inside another note | [How do I reference a question in another note?](#how-do-i-reference-a-question-in-another-note) |
 | Tie a question back to a knowledge note | [How do I tie a question to my notes?](#how-do-i-tie-a-question-to-my-notes) |
 | Practise a whole question bank | [How do I practise a whole question bank?](#how-do-i-practise-a-whole-question-bank) |
 | See where answers are stored | [Where do my answers go?](#where-do-my-answers-go) |
@@ -436,27 +436,44 @@ The full authoring convention, including the five question types and the review 
 authoring or reviewing a bank, and its examples are executed by the test suite, so the documented
 skeletons are guaranteed to parse.
 
-## How do I embed a question in another note?
+## How do I reference a question in another note?
 
-Reference a question by its stem heading and it renders as a **real, answerable card** right there:
+There are two ways, and both render the question as a **real, answerable card** right where you write it.
+
+### Reference it by question id (recommended)
+
+Give the question an `id` in its bank file (if omitted, one is derived from the stem heading — an explicit
+id is clearer), then reference it with **inline code** from any note:
+
+```markdown
+This week: `tcp-handshake`
+```
+
+- Only a code span that is **exactly one question id** counts as a reference. Ordinary code, fenced code
+  blocks and code inside headings are left alone.
+- A vault-wide unique id resolves directly. If several questions share the id, one in the current note wins;
+  if it is still ambiguous the code is left as written.
+- You can reference several questions in one paragraph. The reference itself never participates in grading,
+  and attempts are still written back to the question's own bank note.
+- Handy for assembling a review note, handout or mock exam without copying question text.
+
+### Embed it by stem heading
+
+Embedding by stem heading works the same way:
 
 ```markdown
 ![[计算机网络/第三章#TCP 建立连接需要几次握手？]]
 ```
 
 - The subpath is the **stem heading text, with the trailing `^[[[]]]` knowledge link left out**.
-- Records still belong to the bank: answering in an embedded copy writes back to the bank note, exactly as
-  in reading view there. The **Knowledge point** link on the card still points at the knowledge note.
-- Use it to build a review note, a lecture handout, or a mock exam out of questions you already wrote —
-  without copying the question text (and therefore without letting the copies drift apart).
 - A subpath that does not name a stem heading is left completely alone, so ordinary embeds such as
   `![[Some note#Some section]]` keep behaving exactly as Obsidian renders them.
 - Block references (`![[bank#^block-id]]`) and footnote references are not questions and are also left alone.
 
-This is deliberately **not** Obsidian's built-in heading embed. Two reasons: a plain embed would show the
-option list and the raw `quiz` data block instead of a card, and Obsidian's heading lookup normalises
+Both forms are deliberately **not** Obsidian's built-in heading embed. Two reasons: a plain embed would show
+the option list and the raw `quiz` data block instead of a card, and Obsidian's heading lookup normalises
 punctuation — which the trailing `^[[[knowledge link]]]` derails, making it silently fall back to rendering
-the **entire** bank file. EasyQuiz recognises the embed itself and replaces it with a card.
+the **entire** bank file. EasyQuiz recognises these references itself and replaces them with a card.
 
 ## How do I practise a whole question bank?
 

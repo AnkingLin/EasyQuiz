@@ -408,6 +408,7 @@ function buildView(): PracticeView {
 			pathGlobs: [],
 			historyLimit: 10,
 			writeBackEnabled: true,
+			showStaleHint: true,
 		},
 		service: service as unknown as EasyQuizHost["service"],
 	};
