@@ -1026,13 +1026,14 @@ test("刷题页：题目卡片右上方提供打开原题笔记的编辑按钮",
 	);
 });
 
-test("刷题页：阅读视图用 setEphemeralState 定位到题目标题（含知识点链接）", async () => {
+test("刷题页：打开按钮用链接跳到题目标题（知识点链接里的 # 不会拆坏子路径）", async () => {
+	const heading = "单选题甲 ^[[[300 笔记/内科/【内科】ARDS#呼吸窘迫]]]";
 	const source = [
 		"---",
 		"quiz: true",
 		"---",
 		"",
-		"## 单选题甲 ^[[[计算机网络/传输层]]]",
+		`## ${heading}`,
 		"",
 		"- 选项一 ^a",
 		"- 选项二 ^b",
@@ -1044,86 +1045,48 @@ test("刷题页：阅读视图用 setEphemeralState 定位到题目标题（含�
 		"```",
 		"",
 	];
-	const harness = buildHarness([{ file: fakeFile("题库/甲.md"), source: source.join(String.fromCharCode(10)) }], true);
+	const harness = buildHarness(
+		[{ file: fakeFile("题库/甲.md"), source: source.join(String.fromCharCode(10)) }],
+		true
+	);
 	await openPicker(harness, "题库/甲.md");
 	await startSession(harness);
 
-	const file = harness.service.fileAtPath("题库/甲.md");
-	assert(file !== null, "缺少源文件");
-	const states: unknown[] = [];
-	const opened: unknown[] = [];
-	const leaf = {
-		view: { file },
-		openFile: async (_file: unknown, viewState?: unknown) => {
-			opened.push(viewState);
-		},
-		setEphemeralState: (state: unknown) => {
-			states.push(state);
-		},
-	};
+	const links: { link: string; sourcePath: string }[] = [];
 	(harness.view as unknown as { app: unknown }).app = {
 		metadataCache: {
 			getFileCache: () => ({
-				headings: [
-					{
-						heading: "单选题甲 ^[[[计算机网络/传输层]]]",
-						position: { start: { line: 4 } },
-					},
-				],
+				headings: [{ heading, position: { start: { line: 4 } } }],
 			}),
 		},
 		workspace: {
-			getLeavesOfType: () => [],
-			getLeaf: () => leaf,
-			setActiveLeaf: async () => undefined,
+			openLinkText: (link: string, sourcePath: string) => {
+				links.push({ link, sourcePath });
+			},
 		},
 	};
 
 	click(find(harness.view, "button.easy-quiz-card__edit"));
 	await flush();
 
-	const expected = { subpath: "#单选题甲 ^[[[计算机网络/传输层]]]" };
 	assertEqual(
-		JSON.stringify((opened[0] as { eState?: unknown } | undefined)?.eState),
-		JSON.stringify(expected),
-		"新标签页应在打开时就带上标题位置"
+		links[0]?.link,
+		"题库/甲.md#单选题甲 [300 笔记/内科/【内科】ARDS 呼吸窘迫 ]",
+		"应把带知识点链接的标题转成 Obsidian 链接写法"
 	);
-	assertEqual(JSON.stringify(states[0]), JSON.stringify(expected), "阅读视图应走原生标题定位");
 });
 
-test("刷题页：源笔记已经打开时切到那个标签页，并把光标放到标题行", async () => {
+test("刷题页：缓存里没有标题时退回普通标题", async () => {
 	const harness = buildHarness([{ file: fakeFile("题库/甲.md"), source: BANK_A }], true);
 	await openPicker(harness, "题库/甲.md");
 	await startSession(harness);
 
-	const file = harness.service.fileAtPath("题库/甲.md");
-	assert(file !== null, "缺少源文件");
-	const calls: string[] = [];
-	const cursors: number[] = [];
-	const existingLeaf = {
-		view: {
-			file,
-			editor: {
-				setCursor: (position: { line: number }) => {
-					cursors.push(position.line);
-				},
-			},
-		},
-	};
+	const links: string[] = [];
 	(harness.view as unknown as { app: unknown }).app = {
-		metadataCache: {
-			getFileCache: () => ({
-				headings: [{ heading: "单选题甲", position: { start: { line: 4 } } }],
-			}),
-		},
+		metadataCache: { getFileCache: () => ({}) },
 		workspace: {
-			getLeavesOfType: (type: string) => (type === "markdown" ? [existingLeaf] : []),
-			getLeaf: () => {
-				calls.push("new-leaf");
-				return { openFile: async () => calls.push("open-file") };
-			},
-			setActiveLeaf: async () => {
-				calls.push("activate");
+			openLinkText: (link: string) => {
+				links.push(link);
 			},
 		},
 	};
@@ -1131,55 +1094,5 @@ test("刷题页：源笔记已经打开时切到那个标签页，并把光标�
 	click(find(harness.view, "button.easy-quiz-card__edit"));
 	await flush();
 
-	assertEqual(calls.includes("new-leaf"), false, "已打开的笔记不应再开新标签页");
-	assertEqual(calls.includes("open-file"), false, "已打开的笔记不应重新打开");
-	assert(calls.includes("activate"), "应切到已有标签页");
-	assertEqual(cursors[0], 4, "编辑视图应把光标放到题目标题行");
-});
-
-test("刷题页：源笔记没打开时才新开标签页并带标题位置", async () => {
-	const harness = buildHarness([{ file: fakeFile("题库/甲.md"), source: BANK_A }], true);
-	await openPicker(harness, "题库/甲.md");
-	await startSession(harness);
-
-	const file = harness.service.fileAtPath("题库/甲.md");
-	assert(file !== null, "缺少源文件");
-	const calls: string[] = [];
-	const opened: unknown[] = [];
-	const openedLeaf = {
-		view: { file },
-		openFile: async (_file: unknown, viewState?: unknown) => {
-			calls.push("open-file");
-			opened.push(viewState);
-		},
-		setEphemeralState: () => undefined,
-	};
-	(harness.view as unknown as { app: unknown }).app = {
-		metadataCache: {
-			getFileCache: () => ({
-				headings: [{ heading: "单选题甲", position: { start: { line: 4 } } }],
-			}),
-		},
-		workspace: {
-			getLeavesOfType: () => [],
-			getLeaf: (kind: string) => {
-				calls.push(kind);
-				return openedLeaf;
-			},
-			setActiveLeaf: async () => {
-				calls.push("activate");
-			},
-		},
-	};
-
-	click(find(harness.view, "button.easy-quiz-card__edit"));
-	await flush();
-
-	assertEqual(calls.includes("open-file"), true, "没打开时应打开源笔记");
-	assert(calls.includes("tab"), "应在标签页中打开");
-	assertEqual(
-		JSON.stringify((opened[0] as { eState?: unknown } | undefined)?.eState),
-		JSON.stringify({ subpath: "#单选题甲" }),
-		"新标签页应在打开时定位到题目标题"
-	);
+	assertEqual(links[0], "题库/甲.md#单选题甲", "没有缓存标题时应使用题目标题");
 });

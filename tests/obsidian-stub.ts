@@ -78,13 +78,33 @@ export class TFile {
 	extension = "md";
 	stat = { mtime: 0 };
 }
-/** 标题/块引用解析：测试只需要标题这一支，按缓存里的标题原文精确匹配。 */
+/** 与 Obsidian 相同：去掉会破坏标题匹配的字符，并压缩空白。 */
+export function stripHeading(heading: string): string {
+	return heading
+		.replace(/([!"#$%&()*+,.:;<=>?@^`{|}~/[\]\\\r\n])/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+/** 与 Obsidian 相同：生成标题链接时用的写法（保留单个方括号与斜杠）。 */
+export function stripHeadingForLink(heading: string): string {
+	return heading
+		.replace(/([:#|^\\\r\n]|%%|\[\[|\]\])/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+/** 标题/块引用解析：测试只需要标题这一支，按 Obsidian 的规范化规则匹配。 */
 export function resolveSubpath(
 	cache: { headings?: { heading: string }[] },
 	subpath: string
 ): { heading: string } | null {
-	const name = subpath.startsWith("#") ? subpath.slice(1) : subpath;
-	const heading = cache.headings?.find((item) => item.heading === name);
+	const parts = subpath.split("#").filter((part) => part !== "");
+	if (parts.length !== 1) return null;
+	const target = stripHeading(parts[0] ?? "").toLowerCase();
+	const heading = cache.headings?.find(
+		(item) => stripHeading(item.heading).toLowerCase() === target
+	);
 	return heading === undefined ? null : heading;
 }
 
