@@ -1479,7 +1479,8 @@ export class PracticeView extends ItemView {
 		const question = resolveEntry(this.parsedByPath, entry);
 		const line = question?.line ?? 0;
 		// 标题来自题面标题行本身（不是 `question` 字段），才能被 Obsidian 解析成链接目标。
-		const heading = (question?.title ?? "").trim();
+		// 必须用原始标题文本：知识点链接 `^[[[…]]]` 也在标题行里，剥掉它反而匹配不上。
+		const heading = (question?.headingText ?? question?.title ?? "").trim();
 		try {
 			// `getLeavesOfType` 只覆盖主窗口；弹出的独立窗口里已经打开的笔记交给 Obsidian
 			// 自己处理（它不会重复打开同一个文件）。
@@ -1492,6 +1493,14 @@ export class PracticeView extends ItemView {
 			// 就能切过去，和点击链接的观感一致。
 			this.app.workspace.setActiveLeaf(leaf, { focus: true });
 			if (heading === "") {
+				this.revealLine(leaf, line);
+				return;
+			}
+			// 标题里出现 `|` 之类字符时，Obsidian 会把它当成别名分隔符，链接就落不到
+			// 标题上。缓存里查不到这个标题时直接按行号兜底，至少把光标送到题目处。
+			const cache = this.app.metadataCache?.getFileCache?.(file);
+			const headings = cache?.headings ?? [];
+			if (headings.length > 0 && !headings.some((item) => item.heading === heading)) {
 				this.revealLine(leaf, line);
 				return;
 			}

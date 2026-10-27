@@ -84,6 +84,24 @@ const BANK_B = [
 	"```",
 ].join("\n");
 
+/** 标题带知识点链接的题库，用来验证打开源笔记时不丢标题尾巴。 */
+const BANK_LINKED = [
+	"---",
+	"quiz: true",
+	"---",
+	"",
+	"## 三次握手 ^[[[计算机网络/传输层#TCP 三次握手]]]",
+	"",
+	"- 一次 ^a",
+	"- 三次 ^c",
+	"",
+	"```quiz",
+	"id: l1",
+	"type: single",
+	"answer: c",
+	"```",
+].join("\n");
+
 interface FakeFile {
 	path: string;
 	basename: string;
@@ -1058,6 +1076,76 @@ test("刷题页：源笔记已经打开时用原生链接跳到标题，而不�
 	assertEqual(calls.includes("open-file"), false, "已打开的笔记不应重新打开");
 	assert(calls.includes("activate"), "应切到已有标签页");
 	assert(calls.includes("link:题库/甲.md#单选题甲|题库/甲.md|false"), "应调用原生链接跳转以定位到标题");
+});
+
+test("刷题页：标题带知识点链接时用原始标题跳转，才能命中原生高亮", async () => {
+	const harness = buildHarness([{ file: fakeFile("题库/丙.md"), source: BANK_LINKED }], true);
+	await openPicker(harness, "题库/丙.md");
+	await startSession(harness);
+
+	const file = harness.service.fileAtPath("题库/丙.md");
+	assert(file !== null, "缺少源文件");
+	const heading = "三次握手 ^[[[计算机网络/传输层#TCP 三次握手]]]";
+	const links: string[] = [];
+	(harness.view as unknown as { app: unknown }).app = {
+		workspace: {
+			getLeavesOfType: (type: string) => (type === "markdown" ? [{ view: { file } }] : []),
+			getLeaf: () => ({ openFile: async () => undefined }),
+			setActiveLeaf: async () => undefined,
+			openLinkText: async (link: string) => {
+				links.push(link);
+			},
+		},
+		metadataCache: {
+			getFileCache: () => ({ headings: [{ heading, level: 2 }] }),
+		},
+	};
+
+	click(find(harness.view, "button.easy-quiz-card__edit"));
+	await flush();
+
+	assertEqual(links[0], `题库/丙.md#${heading}`, "链接应保留标题里的知识点链接");
+});
+
+test("刷题页：标题索引里找不到标题时按行号兜底", async () => {
+	const harness = buildHarness([{ file: fakeFile("题库/丙.md"), source: BANK_LINKED }], true);
+	await openPicker(harness, "题库/丙.md");
+	await startSession(harness);
+
+	const file = harness.service.fileAtPath("题库/丙.md");
+	assert(file !== null, "缺少源文件");
+	const cursors: number[] = [];
+	let linked = false;
+	const leaf = {
+		view: {
+			file,
+			editor: {
+				setCursor: (position: { line: number }) => {
+					cursors.push(position.line);
+				},
+			},
+		},
+		openFile: async () => undefined,
+	};
+	(harness.view as unknown as { app: unknown }).app = {
+		workspace: {
+			getLeavesOfType: (type: string) => (type === "markdown" ? [leaf] : []),
+			getLeaf: () => leaf,
+			setActiveLeaf: async () => undefined,
+			openLinkText: async () => {
+				linked = true;
+			},
+		},
+		metadataCache: {
+			getFileCache: () => ({ headings: [{ heading: "别的标题", level: 2 }] }),
+		},
+	};
+
+	click(find(harness.view, "button.easy-quiz-card__edit"));
+	await flush();
+
+	assertEqual(linked, false, "链接解析不到标题时不应调用原生链接");
+	assertEqual(cursors[0], 4, "应把光标送到题目标题行");
 });
 
 test("刷题页：源笔记没打开时才新开标签页，并同样走原生链接", async () => {

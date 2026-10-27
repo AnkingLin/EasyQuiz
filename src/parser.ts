@@ -746,6 +746,7 @@ function parseQuestion(ctx: QuestionContext): QuizQuestion {
 		id,
 		idDerived: meta.id === null,
 		title: headingTitle.title,
+		headingText: heading.title.trim(),
 		displayTitle: meta.question ?? headingTitle.title,
 		knowledgeLink: headingTitle.knowledgeLink,
 		level: heading.level,
