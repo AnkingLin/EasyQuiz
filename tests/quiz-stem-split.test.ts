@@ -132,14 +132,17 @@ const NEAREST = [
 	"```",
 ].join("\n");
 
-test("题面只取最近的一段：更远的段不纳入，贴着的文字算补充内容", () => {
+test("题面只取最近的一段：贴着选项的文字不再带回空行后的段落", () => {
 	const question = must(parse(NEAREST)[0], "应解析出题目");
 	assert(question !== undefined, "应解析出题目");
-	assertEqual(question.stemText, "这是真正的题面。", "题面应是结构块上面紧邻的一段");
+	// 最近的一段是「说明文字 + 选项列表」：说明文字已经是题面下面的补充内容，
+	// 再上面隔着空行的一段属于更远的段落，不能再显示成题面。
+	assertEqual(question.stemText, "", "贴着选项的说明文字存在时，题面不应再取上一段");
 	assert(
 		question.supplementText === "附着在选项上方的说明文字。",
 		"贴着选项列表的文字应单独作为补充内容"
 	);
+	assert(!question.stemText?.includes("这是真正的题面。"), "空行后的段落不应进入题面");
 	assert(!question.stemText?.includes("上一段的残留"), "更远的段不应进入题面");
 	assertEqual(question.options.length, 2, "选项只取最近列表里的两条");
 	assert(question.ok, "题目应可作答");
@@ -163,7 +166,7 @@ test("题面与补充内容在题卡里分成两个区域", async () => {
 	// 测试里的 MarkdownRenderer 只记录调用；按目标元素区分题面与补充内容。
 	const rendered = MarkdownRenderer.calls.filter((call) => call.el !== supplement);
 	const stemText = rendered.map((call) => call.source).join("\n");
-	assert(stemText.includes("这是真正的题面。"), "题面区应渲染最近的段落");
+	assert(!stemText.includes("这是真正的题面。"), "题面区不应渲染空行后的段落");
 	assert(!stemText.includes("上一段的残留"), "题面区不应渲染更远的段");
 	assert(
 		MarkdownRenderer.calls.some(
@@ -306,4 +309,62 @@ test("复盘填空：写出用户填的值，并在不同时补上正确答案",
 	assert(answer?.textContent?.includes("18") === true, "应显示用户填的 18");
 	const expected = host.querySelector(".easy-quiz-card__blank-expected");
 	assert(expected?.textContent?.includes("→ 20") === true, "填错时应补上正确答案");
+});
+
+test("干扰项：每次作答后重新抽取", async () => {	const question = must(parse(WITH_DISTRACTORS)[0], "应解析出题目");
+	assert(question !== undefined, "应解析出题目");
+
+	const extrasOf = async (attempts: number): Promise<string> => {
+		question.stats = { attempts, correct: 0, lastResult: null, lastAt: null };
+		const host = document.createElement("div");
+		document.body.appendChild(host);
+		await renderQuizCard(question, {
+			app: {},
+			service: {},
+			file: { path: "题库/测试.md" },
+			el: host,
+			blankMarker: "highlight",
+			shuffleOptions: true,
+			shuffleSeed: 7,
+		} as unknown as Parameters<typeof renderQuizCard>[1]);
+		return [...host.querySelectorAll<HTMLElement>(".easy-quiz-card__option")]
+			.filter((row) => (row.dataset["anchor"] ?? "").startsWith("~d"))
+			.map((row) => (row.textContent ?? "").trim())
+			.sort()
+			.join(",");
+	};
+
+	// 种子跟随 attempts：前几次作答应至少出现一种与首次不同的干扰项组合。
+	const first = await extrasOf(0);
+	const later = new Set<string>();
+	for (let attempts = 1; attempts < 8; attempts++) later.add(await extrasOf(attempts));
+	assert(first !== "", "首次作答也应有干扰项");
+	assert([...later].some((extras) => extras !== first), "再次作答应重新抽取干扰项");
+});
+
+test("表格上下的空行不打断段落：多张表与上面的题干同属一段", () => {
+	const source = [
+		"## 连续表格",
+		"",
+		"把左右两列连起来。",
+		"",
+		"| 左 | 右 |",
+		"| --- | --- |",
+		"| 甲 | 1 |",
+		"",
+		"| 左 | 右 |",
+		"| --- | --- |",
+		"| 乙 | 2 |",
+		"",
+		"```quiz",
+		"type: match",
+		"```",
+	].join("\n");
+	const question = must(parse(source)[0], "应解析出题目");
+	assert(question !== undefined, "应解析出题目");
+	assertEqual(question.stemText, "把左右两列连起来。", "表格上面的题干仍应是题面");
+	assertEqual(question.supplementText, "", "表格之间不应被当成补充内容");
+	// 两张表的数据行都要收进结构里，不能只剩最后一张。
+	assert(question.boardPairs?.length === 2, "两张表的数据行都应进入配对方");
+	assert(question.ok, "题目应可作答");
 });

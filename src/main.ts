@@ -153,6 +153,18 @@ export default class EasyQuizPlugin extends Plugin {
 			},
 		});
 
+		// 「刷这个题库」：命令面板里直接对当前笔记开一轮，不必先进列表再勾选。
+		this.addCommand({
+			id: "practice-active-quiz",
+			name: t("command.practiceQuiz"),
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (file === null || !this.service.isQuizFile(file)) return false;
+				if (!checking) void this.practiceActiveQuiz(file);
+				return true;
+			},
+		});
+
 		this.addRibbonIcon("graduation-cap", t("command.openPractice"), () => {
 			void this.openPracticeView("sidebar");
 		});
@@ -286,6 +298,20 @@ export default class EasyQuizPlugin extends Plugin {
 		await leaf.setViewState({ type: PRACTICE_VIEW_TYPE, active: true });
 		const view = leaf.view;
 		if (view instanceof PracticeView) await view.openPickerFor(path);
+	}
+
+	/**
+	 * 命令「刷这个题库」：对当前文件直接开一轮练习。
+	 *
+	 * 与文件菜单的 `openPracticeFor` 不同，这里跳过刷题设置页；
+	 * 侧边栏里已经有刷题视图时复用它，避免一个命令开出好几个窗口。
+	 */
+	private async practiceActiveQuiz(file: TFile): Promise<void> {
+		const leaf = this.practiceLeafAt("sidebar") ?? this.newPracticeLeaf("sidebar");
+		if (leaf === null) return;
+		await leaf.setViewState({ type: PRACTICE_VIEW_TYPE, active: true });
+		const view = leaf.view;
+		if (view instanceof PracticeView) await view.practiceFile(file.path);
 	}
 
 	/** 让设置页定位到本插件（视图里的「打开设置」按钮）。 */
@@ -642,7 +668,9 @@ class EasyQuizSettingTab extends PluginSettingTab {
 				})
 			);
 
-		new Setting(containerEl)
+		// 固定层级模式才有「几级标题」可言：自动模式按最近的带数据块标题识别，
+		// 这一项不再参与解析，留着只会让人以为它还在生效。
+		const headingLevelSetting = new Setting(containerEl)
 			.setName(t("setting.headingLevel.name"))
 			.setDesc(t("setting.headingLevel.desc"))
 			.addDropdown((dropdown) =>
@@ -673,8 +701,15 @@ class EasyQuizSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.settings.headingMode = value === "auto" ? "auto" : "level";
 						await this.plugin.saveSettings();
+						syncHeadingLevel();
 					})
 			);
+
+		const syncHeadingLevel = (): void => {
+			headingLevelSetting.settingEl.style.display =
+				this.plugin.settings.headingMode === "auto" ? "none" : "";
+		};
+		syncHeadingLevel();
 
 		new Setting(containerEl)
 			.setName(t("setting.pathGlobs.name"))

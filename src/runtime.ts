@@ -18,7 +18,7 @@ import {
 import { GradeResult, gradeAnswer, UserAnswer } from "./grade";
 import { contentHash } from "./hash";
 import { LanguagePreference, t } from "./i18n";
-import { DEFAULT_HISTORY_LIMIT, planWriteBack, replaceBlockInFile } from "./writeback";
+import { DEFAULT_HISTORY_LIMIT, planClear, planWriteBack, replaceBlockInFile } from "./writeback";
 import { BlankMarkerMode, HistoryEntry, ParsedQuizFile, QuizQuestion, QuizStats } from "./types";
 
 export { contentHash };
@@ -218,6 +218,73 @@ export class QuizService {
 			const next = replaceBlockInFile(data, question.blockLine, patch.content, this.settings.blockLanguage);
 			return next ?? data;
 		});
+	}
+
+	/**
+	 * 清除单道题的作答记录。
+	 *
+	 * 与写回共享同一套 `Vault.process` 约束：回调里按最新内容重新解析，从下往上
+	 * 修改多个数据块，避免行号因为前面的删除而错位。
+	 */
+	async clearQuestionRecords(file: TFile, questionId: string): Promise<boolean> {
+		let cleared = false;
+		await this.app.vault.process(file, (data) => {
+			const parsed = this.parseContent(data, file.path);
+			const question = parsed.questions.find((item) => item.id === questionId);
+			if (question === undefined) return data;
+			const next = this.clearOne(data, question);
+			if (next === null) return data;
+			cleared = true;
+			return next;
+		});
+		return cleared;
+	}
+
+	/** 清除整个题库文件的作答记录，返回实际清除的题目数。 */
+	async clearFileRecords(file: TFile): Promise<number> {
+		let cleared = 0;
+		await this.app.vault.process(file, (data) => {
+			const parsed = this.parseContent(data, file.path);
+			// 从文件末尾往前改：前面的数据块一旦变短，后面保存的行号依然有效。
+			const targets = parsed.questions
+				.filter((question) => question.blockLine !== null && question.blockSource !== null)
+				.sort((first, second) => (second.blockLine ?? 0) - (first.blockLine ?? 0));
+			let next = data;
+			for (const question of targets) {
+				const replaced = this.clearOne(next, question);
+				if (replaced === null) continue;
+				next = replaced;
+				cleared += 1;
+			}
+			return next;
+		});
+		return cleared;
+	}
+
+	/** 用当前设置解析一段文件内容。 */
+	private parseContent(content: string, path: string): ParsedQuizFile {
+		return parseQuizFile(content, path, {
+			blockLanguage: this.settings.blockLanguage,
+			headingLevels: this.settings.headingLevels,
+			headingMode: this.settings.headingMode,
+			blankMarker: this.settings.blankMarker,
+			deps: parserDeps,
+		});
+	}
+
+	/** 清除一道题在文件文本里的记录；没有可清的记录时返回 null。 */
+	private clearOne(data: string, question: QuizQuestion): string | null {
+		if (question.blockLine === null || question.blockSource === null) return null;
+		if (!/^\s*(stats|history)\s*:/m.test(question.blockSource)) return null;
+		const patch = planClear(question.blockSource, {
+			blockLanguage: this.settings.blockLanguage,
+			headingLevels: this.settings.headingLevels,
+			headingMode: this.settings.headingMode,
+			blankMarker: this.settings.blankMarker,
+			deps: parserDeps,
+		});
+		if (!patch.applied) return null;
+		return replaceBlockInFile(data, question.blockLine, patch.content, this.settings.blockLanguage);
 	}
 }
 

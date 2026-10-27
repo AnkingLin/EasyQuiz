@@ -299,7 +299,7 @@ async function renderChoice(
 	const randomize = ctx.shuffleOptions === true || question.shuffle;
 	// 干扰项只影响"看到哪些选项"，不参与判分：它们使用 `~d1` 这类作者无法写出的锚点，
 	// 提交的作答里永远不会出现，正确答案的锚点集合也不包含它们。
-	const options = choiceOptions(question, randomize, ctx.shuffleSeed);
+	const options = choiceOptions(question, randomize, ctx.shuffleSeed, review);
 
 	// 复盘态里把用户上次的选择重新标出来（刷题窗口切回已答题目时）。
 	const lastAnswer = ctx.lastAnswer?.kind === "choice" ? ctx.lastAnswer : null;
@@ -766,7 +766,8 @@ function shuffleOptionOrder(question: QuizQuestion, seed?: number): AnchoredOpti
 function choiceOptions(
 	question: QuizQuestion,
 	randomize: boolean,
-	seed?: number
+	seed?: number,
+	review = false
 ): AnchoredOption[] {
 	const base = randomize ? shuffleOptionOrder(question, seed) : anchoredOptions(question);
 	const requested = Math.max(0, Math.floor(question.distractorCount ?? 0));
@@ -788,8 +789,14 @@ function choiceOptions(
 	}
 	if (candidates.length === 0) return base;
 
+	// 干扰项每次作答后重新抽取：把已作答次数并入种子，回答一次就换一组；
+	// 复盘时用"上一次作答时"的次数，保证看到的仍是当时那组选项。
+	const attempt = Math.max(0, question.stats.attempts - (review ? 1 : 0));
 	const random = seededRandom(
-		Number.parseInt(contentHash(`${seed ?? 0}\u0000${question.id}\u0000distractors`), 16) >>> 0
+		Number.parseInt(
+			contentHash(`${seed ?? 0}\u0000${question.id}\u0000distractors\u0000${attempt}`),
+			16
+		) >>> 0
 	);
 	const extras: AnchoredOption[] = shuffle(candidates, random)
 		.slice(0, requested)

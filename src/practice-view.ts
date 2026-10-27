@@ -235,6 +235,20 @@ export class PracticeView extends ItemView {
 		await this.render();
 	}
 
+	/**
+	 * 命令「刷这个题库」：立即用指定文件开一轮练习，跳过刷题设置页。
+	 *
+	 * 沿用窗口里上一次的抽题方式与题型筛选；只把选中文件换成这一个。
+	 */
+	async practiceFile(path: string): Promise<void> {
+		this.picked = [path];
+		this.page = 1;
+		this.entries = null;
+		this.stale = true;
+		await this.loadParsed(true);
+		await this.startSession();
+	}
+
 	async onOpen(): Promise<void> {
 		// 从别的标签页切回来时文件可能已经被改过。列表页先核对一次缓存指纹，
 		// 过期就自己重扫，而不是让用户再点一次「重新扫描」才能看到正常的列表。
@@ -797,6 +811,25 @@ export class PracticeView extends ItemView {
 			this.picked = [summary.path];
 			this.gotoPicker();
 		});
+
+		// 有记录才给"清除记录"：没有记录时按钮只会是噪音。
+		if (summary.attempts > 0) {
+			const label = t("practice.file.clearRecords");
+			const clear = this.button(row, "clear-file-records", label);
+			clear.dataset["path"] = summary.path;
+			this.confirmAction(clear, label, async () => {
+				const cleared = await this.host.service.clearFileRecords(entry.file);
+				if (cleared === 0) {
+					new Notice(t("practice.clear.failed"));
+					return;
+				}
+				new Notice(t("practice.clear.doneFile", { count: cleared }));
+				// 统计写在笔记里，清完必须重新扫描才能反映出来。
+				this.entries = null;
+				this.stale = true;
+				void this.render();
+			});
+		}
 	}
 
 	private fileStatsText(entry: FileEntry): string {
@@ -861,6 +894,35 @@ export class PracticeView extends ItemView {
 	private gotoPicker(): void {
 		this.page = 1;
 		void this.render();
+	}
+
+	/**
+	 * 给按钮加上两步确认：第一次点击只是"上膛"，再点一次才真正执行。
+	 *
+	 * 清除记录不可撤销，但又不想弹窗打断列表操作，所以用按钮自身给出确认提示；
+	 * 4 秒内没有再点就自动恢复原文案。
+	 */
+	private confirmAction(button: HTMLButtonElement, label: string, action: () => void | Promise<void>): void {
+		let armed = false;
+		let timer: number | null = null;
+		const reset = (): void => {
+			armed = false;
+			button.setText(label);
+			button.removeClass("is-warning");
+			if (timer !== null) window.clearTimeout(timer);
+			timer = null;
+		};
+		button.addEventListener("click", () => {
+			if (!armed) {
+				armed = true;
+				button.setText(t("practice.clear.confirm"));
+				button.addClass("is-warning");
+				timer = window.setTimeout(reset, 4000);
+				return;
+			}
+			reset();
+			void action();
+		});
 	}
 
 	// -----------------------------------------------------------------------
@@ -1347,6 +1409,35 @@ export class PracticeView extends ItemView {
 		// 跳到题库里的这道题：在新标签页打开源文件，并把光标放到题面标题行。
 		const open = this.button(nav, "open-source", t("practice.session.openNote"));
 		open.addEventListener("click", () => void this.openSource());
+
+		// 清除当前题的作答记录：有记录时才出现，清完这道题回到「未作答」。
+		const queued = this.queue[this.cursor];
+		const current = queued === undefined ? undefined : resolveEntry(this.parsedByPath, queued);
+		if (current !== undefined && (current.stats.attempts > 0 || current.history.length > 0)) {
+			const label = t("practice.session.clearRecords");
+			const clear = this.button(nav, "clear-question-records", label);
+			this.confirmAction(clear, label, async () => {
+				const entry = this.queue[this.cursor];
+				const file = entry === undefined ? undefined : this.fileAt.get(entry.path);
+				if (entry === undefined || file === undefined) return;
+				const ok = await this.host.service.clearQuestionRecords(file, entry.id);
+				if (!ok) {
+					new Notice(t("practice.clear.failed"));
+					return;
+				}
+				current.stats = { attempts: 0, correct: 0, lastResult: null, lastAt: null };
+				current.history = [];
+				const badge = host.querySelector<HTMLElement>(".easy-quiz-card__stats");
+				if (badge !== null) badge.setText(formatStats(current));
+				// 列表里的统计也是从文件重新扫描来的，标记过期后返回列表才会更新。
+				this.entries = null;
+				this.stale = true;
+				this.results[this.cursor] = null;
+				this.answers[this.cursor] = null;
+				new Notice(t("practice.clear.doneQuestion"));
+				void this.goTo(this.cursor);
+			});
+		}
 
 		// 作答前也能直接看答案：看过的题按"未作答"处理，不计入正确率。
 		if (!this.reviewing) {

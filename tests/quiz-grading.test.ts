@@ -10,7 +10,7 @@
 import * as yaml from "js-yaml";
 import { parseQuizFile, ParseOptions } from "../src/parser";
 import { gradeAnswer, matchBlank } from "../src/grade";
-import { patchBlockSource, planWriteBack, replaceBlockInFile, WriteBackDeps } from "../src/writeback";
+import { patchBlockSource, planClear, planWriteBack, replaceBlockInFile, WriteBackDeps } from "../src/writeback";
 import { contentHash } from "../src/hash";
 import { HistoryEntry, QuizQuestion, QuizStats } from "../src/types";
 import { assert, assertEqual, at, must, test } from "./harness";
@@ -516,4 +516,53 @@ test("替换：内容相同时逐字不变", () => {
 	const question = questionOf(source);
 	const next = replaceBlockInFile(source, question.blockLine!, "type: essay");
 	assertEqual(next, source, "内容相同时应逐字相同");
+});
+
+test("清除记录：只删 stats 与 history，保留题目本身", () => {
+	const block = [
+		"id: keep",
+		"type: single",
+		"answer: a",
+		"stats:",
+		"  attempts: 3",
+		"  correct: 1",
+		"history:",
+		"  - at: 2025-01-01T00:00:00.000Z",
+		"    result: wrong",
+		"rev: abcd1234",
+	].join("\n");
+	const patch = planClear(block, writeBackOptions);
+	assertEqual(patch.applied, true, `应可清除（原因：${patch.reason ?? "无"}）`);
+	assert(!patch.content.includes("stats:"), "stats 应被删除");
+	assert(!patch.content.includes("history:"), "history 应被删除");
+	assert(patch.content.includes("type: single"), "题型应保留");
+	assert(patch.content.includes("answer: a"), "答案应保留");
+	assert(patch.content.includes("rev: abcd1234"), "rev 记录的是题面版本，不应删除");
+
+	// 清干净后必须仍能解析成同一道题，否则宁可不清。
+	const reparsed = parse([
+		"---",
+		"quiz: true",
+		"---",
+		"",
+		"## 题",
+		"",
+		"- 甲 ^a",
+		"- 乙 ^b",
+		"",
+		"```quiz",
+		patch.content,
+		"```",
+	].join("\n"));
+	const question = must(reparsed.questions[0], "应解析出题目");
+	assertEqual(question.ok, true, "清除后仍应可作答");
+	assertEqual(question.stats.attempts, 0, "清除后应回到未作答");
+	assertEqual(question.history.length, 0, "清除后不应留下历史");
+});
+
+test("清除记录：没有记录的题目不改动", () => {
+	const block = ["type: essay", "answer: 略"].join("\n");
+	const patch = planClear(block, writeBackOptions);
+	assertEqual(patch.applied, true, "合法 YAML 应可直接清除（内容相同）");
+	assertEqual(patch.content, block, "没有记录时逐字不变");
 });

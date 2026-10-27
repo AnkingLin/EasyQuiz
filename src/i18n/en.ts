@@ -66,6 +66,7 @@ export const en = {
 	"command.openPracticeTab": "Open practice window in a new tab",
 	"command.openPracticePopout": "Open practice window in a new window",
 	"command.insert": "Insert question",
+	"command.practiceQuiz": "Practise this question bank",
 	"menu.insert": "Insert question",
 	"fileMenu.practice": "Practise this question bank",
 	"notice.recorded": "Attempt recorded.",
@@ -101,6 +102,12 @@ export const en = {
 		"Going back to an answered question shows your own answer, and the stats badge reflects the new attempt. A new Open note button jumps to the question in its bank, reusing the tab if the note is already open.",
 	"whatsNew.bankListFix":
 		"The bank picker shows partial selection for folders and picks up file changes when you switch back, without a manual rescan.",
+	"whatsNew.stemTighter":
+		"The nearest block is now the whole stem: for choice questions a paragraph attached above the options is supporting text, and blank lines around tables no longer split the structure, so several tables can back one matching question.",
+	"whatsNew.distractorReroll":
+		"Distractors are redrawn after every attempt, and the review shows the set you answered with.",
+	"whatsNew.clearRecords":
+		"New Clear records buttons on the question and the bank reset attempts and history. The command palette can also start a round for the current bank.",
 
 	// -----------------------------------------------------------------------
 	// 诊断卡片（数据块渲染）
@@ -236,6 +243,11 @@ export const en = {
 	"practice.file.stats.broken": "Need fixing: {count}",
 	"practice.file.stats.noRecords": "No records",
 	"practice.file.stats.lastAt": "Last {date}",
+	"practice.file.clearRecords": "Clear records",
+	"practice.clear.confirm": "Click again to clear",
+	"practice.clear.doneFile": "Cleared {count} question(s) in this bank.",
+	"practice.clear.doneQuestion": "Attempts for this question were cleared.",
+	"practice.clear.failed": "Nothing to clear or the note could not be updated.",
 	"practice.picker.heading": "Practice settings",
 	"practice.picker.noFiles": "No question-bank file selected yet.",
 	"practice.picker.back": "Back to question banks",
@@ -272,6 +284,7 @@ export const en = {
 	"practice.session.jump": "Jump to question",
 	"practice.session.openNote": "Open source note",
 	"practice.session.openNoteFailed": "Could not open the source note: {error}",
+	"practice.session.clearRecords": "Clear this question's records",
 	"practice.summary.title": "Round results",
 	"practice.summary.line":
 		"{total} in this round · {answered} answered · {correct} correct · {wrong} wrong · {rate}% accuracy",

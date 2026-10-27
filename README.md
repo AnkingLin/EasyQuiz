@@ -290,10 +290,15 @@ same service, so records are written back exactly as in reading view:
 ![The practice page: progress bar, a multiple-choice question, and navigation](docs/assets/en/window-practice.png)
 
 - **Peek** reveals the answer without scoring it.
+- **Open note** in the card header jumps to the question in its bank and puts the cursor on its heading;
+  when the note is already open, that tab is reused.
+- **Clear question records** on the practice page resets only the current question's attempts and history;
+  **Clear records** on each row of the bank list resets a whole bank. Both ask for a second click.
 - The last page summarises the round, lists what you got wrong, and offers **Retry wrong only**.
 
 Because answers are keyed to file path + question id, a round survives editing a file: the window re-parses
-a bank when it changes, and again after each write-back.
+a bank when it changes, and again after each write-back. The command palette also has **Practise this
+bank**, which starts a round for the bank currently open (or selected in the file explorer).
 
 ## How do I tie a question to my notes?
 
@@ -381,9 +386,11 @@ block stay inside the question above as sub-headings.
 consecutive non-blank lines):
 
 - `single` / `multi`: the nearest block containing the option list. Non-list lines inside it appear as a
-  supplement under the stem; the block above it is the stem.
-- `match`: the nearest block containing the table (a blank line above the table is allowed). Prose in the
-  same block is the supplement; the block above it is the stem.
+  supplement under the stem; the block above is the stem **only when that nearest block has no accompanying
+  prose** — with prose attached to the options, the farther block stays hidden.
+- `match`: the nearest block containing the table. Blank lines above and below tables do not split the
+  block: prose above the table is the stem, prose below it is the supplement, and several consecutive
+  tables (each with its own header and separator row) are merged into one structure.
 - `blank`: the nearest block containing the `==blank==` markers is the stem, shown whole.
 - `essay`: the last block. A reference callout stays in the shown stem (collapsed), together with the
   instruction paragraph right above it.
@@ -405,7 +412,7 @@ stay short but the question needs a full sentence, use the `question` field (see
 | `stats` | no | **Written by the plugin**: `attempts` / `correct` / `lastResult` / `lastAt`. |
 | `rev` | no | **Written by the plugin**: stem hash, used to detect edits. |
 | `question` | no | Replaces the heading text on the card; the heading still supplies the `id` and the knowledge link. |
-| `distractors` | no | Choice questions only: `distractors: 2` adds 2 decoys, or `distractors: { count: 2, pool: [ ... ] }` names the candidate pool. |
+| `distractors` | no | Choice questions only: `distractors: 2` adds 2 decoys, or `distractors: { count: 2, pool: [ ... ] }` names the candidate pool. Redrawn after every attempt; review shows the set used for that answer. |
 
 `stats` and `rev` are maintained automatically — **authors never write them**.
 
@@ -535,6 +542,7 @@ the setting.
 | Open practice window in a new tab | Opens the practice window as a main-area tab |
 | Open practice window in a new window | Opens the practice window in its own window (desktop only) |
 | Insert question | Opens a dialog to build a question skeleton and inserts it at the cursor |
+| Practise this bank | Starts a round for the bank currently open (same entry in the file explorer menu) |
 | Validate current question bank | Reports how many questions are answerable vs. need fixing |
 | Refresh quiz view | Forces the reading view to re-render the quiz blocks (also happens after edits) |
 
@@ -556,7 +564,7 @@ appears for Markdown question banks; multi-selections and other files are left a
 | Interface language | Follow Obsidian | `Follow Obsidian`, `English`, or `中文` |
 | Block language | `quiz` | Change if it clashes; reload Obsidian afterwards |
 | Blank marker | `==` | Which Markdown marker defines a blank: `==answer==`, `**answer**`, or both |
-| Stem heading level | H2 | In **Fixed level** mode, decides which headings are questions |
+| Stem heading level | H2 | In **Fixed level** mode, decides which headings are questions; hidden in **Auto** mode |
 | Stem heading matching | Fixed level | **Fixed level**: only the configured heading level counts; **Auto**: every heading that owns a `quiz` block is a question, so levels can be mixed |
 | Question-bank path globs | empty | One per line, e.g. `题库/**` |
 | Write records back | on | Turn off to grade in the UI only, leaving notes untouched |
@@ -569,6 +577,15 @@ appears for Markdown question banks; multi-selections and other files are left a
 3. Reload Obsidian and enable the plugin under **Settings → Community plugins**.
 
 ## What's new
+
+### 1.1.1
+
+- **The nearest block is the whole stem.** For choice questions, prose attached above the options is the
+  supplement and the blank-separated block above stays hidden; blank lines around tables no longer split the
+  block, so several consecutive tables can back one matching question.
+- **Decoys are redrawn every attempt.** Review shows the set you answered with.
+- **Clear records and jump straight in.** New **Clear records** buttons reset one question or a whole bank;
+  the command palette gains **Practise this bank**.
 
 ### 1.1.0
 

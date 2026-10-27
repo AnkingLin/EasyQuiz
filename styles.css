@@ -559,6 +559,12 @@
 	 */
 	padding: 0 var(--eqq-3) 0;
 	overflow-y: auto;
+	/*
+	 * 展开/折叠文件夹会让内容高度跨过滚动阈值，滚动条一出现就会把内容整体往左挤，
+	 * 表现为"整个刷题窗口的宽度变了"。预留滚动条槽位，宽度就始终稳定。
+	 */
+	scrollbar-gutter: stable;
+	overflow-x: hidden;
 }
 
 /* ------------------------------------------------------ 顶部步骤 */
@@ -814,6 +820,21 @@
 /* 组标题上的勾选框：整组勾选/取消 */
 .easy-quiz-practice__folder-check {
 	flex: none;
+}
+
+/*
+ * 部分选中（半选）：Obsidian 只给勾选态画对勾，没有给原生 checkbox 的
+ * `:indeterminate` 单独上色，默认看起来和未选中一模一样。这里用一条横线补上第三种状态，
+ * 保证"组里选了一部分"能一眼看出来。
+ */
+.easy-quiz-practice input[type="checkbox"]:indeterminate {
+	background-color: var(--interactive-accent);
+	border-color: var(--interactive-accent);
+	background-image: linear-gradient(var(--text-on-accent), var(--text-on-accent));
+	background-size: 60% 2px;
+	background-position: center;
+	background-repeat: no-repeat;
+	box-shadow: none;
 }
 
 .easy-quiz-practice__group.is-folded .easy-quiz-practice__folder-caret {

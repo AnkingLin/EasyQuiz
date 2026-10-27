@@ -59,6 +59,7 @@ export const zh: MessageTable = {
 	"command.openPracticeTab": "在新标签页打开刷题窗口",
 	"command.openPracticePopout": "在新窗口打开刷题窗口",
 	"command.insert": "插入题目",
+	"command.practiceQuiz": "刷这个题库",
 	"menu.insert": "插入题目",
 	"fileMenu.practice": "刷这个题库",
 	"notice.recorded": "已记录本次作答。",
@@ -82,6 +83,9 @@ export const zh: MessageTable = {
 	"whatsNew.distractors": "选择题可以在数据块里加干扰项：设置追加几个，以及候选干扰项的候选池。",
 	"whatsNew.answerReview": "切回已答过的题会显示你当时的作答，右上角统计也会跟着更新；新增“打开笔记”按钮，直接跳到题库里的这道题，笔记已经打开时会切到原来的标签页。",
 	"whatsNew.bankListFix": "题库选择页的文件夹会显示半选状态；从其他页面切回来时自动发现文件变化，不用再手动重新扫描。",
+	"whatsNew.stemTighter": "题面按最近的一段整体取：选择题里贴着选项上方的说明文字作为补充内容；表格上下的空行不再打断同一段结构，多张表可以合并成一道配对题。",
+	"whatsNew.distractorReroll": "每次作答后干扰项都会重新抽取，复盘时看到的是作答当时那一组。",
+	"whatsNew.clearRecords": "题目卡片和题库列表新增“清除记录”按钮，可以清掉本题或整个题库的作答记录；命令面板也能直接为当前题库开始一轮。",
 
 	// -----------------------------------------------------------------------
 	// 诊断卡片（数据块渲染）
@@ -213,6 +217,11 @@ export const zh: MessageTable = {
 	"practice.file.stats.broken": "需修正 {count}",
 	"practice.file.stats.noRecords": "无记录",
 	"practice.file.stats.lastAt": "最近 {date}",
+	"practice.file.clearRecords": "清除记录",
+	"practice.clear.confirm": "再点一次确认清除",
+	"practice.clear.doneFile": "已清除该题库 {count} 道题的记录。",
+	"practice.clear.doneQuestion": "已清除这道题的作答记录。",
+	"practice.clear.failed": "没有可清除的记录，或笔记写入失败。",
 	"practice.picker.heading": "刷题设置",
 	"practice.picker.noFiles": "还没有选择题库文件。",
 	"practice.picker.back": "返回题库列表",
@@ -245,6 +254,7 @@ export const zh: MessageTable = {
 	"practice.session.jump": "跳到第几题",
 	"practice.session.openNote": "打开原题笔记",
 	"practice.session.openNoteFailed": "打开原题笔记失败：{error}",
+	"practice.session.clearRecords": "清除本题记录",
 	"practice.summary.title": "本轮结果",
 	"practice.summary.line": "共 {total} 题 · 已作答 {answered} · 正确 {correct} · 错误 {wrong} · 正确率 {rate}%",
 	"practice.summary.writeBackOff": "当前设置关闭了记录写回，本轮成绩没有写入笔记。",

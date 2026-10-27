@@ -122,6 +122,56 @@ export function patchBlockSource(blockSource: string, updates: Record<string, st
 }
 
 /**
+ * 从数据块源码里删掉指定键（连同它下面缩进的子行）。
+ *
+ * 与 `patchBlockSource` 的分工：那个函数负责"更新已有的键"，这里负责把
+ * `stats` / `history` 这类记录整个拿掉，让题目回到"未作答"的样子。
+ */
+export function removeBlockKeys(blockSource: string, keys: readonly string[]): string {
+	const lines = blockSource.replace(/\r\n?/g, "\n").split("\n");
+	const result: string[] = [];
+	let skipping = false;
+	for (const line of lines) {
+		if (skipping) {
+			if (/^\s+\S/.test(line)) continue;
+			// 记录块后面的空行也一并收掉，避免留下连续空行。
+			if (line.trim() === "") {
+				skipping = false;
+				continue;
+			}
+			skipping = false;
+		}
+		if (keys.some((key) => isKnownKey(line, key))) {
+			skipping = true;
+			continue;
+		}
+		result.push(line);
+	}
+	return result.join("\n").replace(/^\n+|\n+$/g, "");
+}
+
+/** 清除一条记录后的数据块内容。 */
+export interface ClearPatch {
+	content: string;
+	applied: boolean;
+	reason?: string;
+}
+
+/**
+ * 计算"清除做题记录"后的数据块内容。
+ *
+ * 只动 `stats` 与 `history`：`rev` 记录的是题面结构版本，清记录不该让它失效。
+ * 与写回一样，补丁结果必须仍是合法 YAML 映射，否则宁可不清也不写坏笔记。
+ */
+export function planClear(blockSource: string, deps: WriteBackDeps): ClearPatch {
+	const content = removeBlockKeys(blockSource, ["stats", "history"]);
+	if (!isMapping(content, deps)) {
+		return { content: blockSource, applied: false, reason: t("writeback.invalidYaml") };
+	}
+	return { content, applied: true };
+}
+
+/**
  * 计算写回后的数据块内容。
  *
  * 与 `patchBlockSource` 的区别：这里会先用解析器校验补丁结果，

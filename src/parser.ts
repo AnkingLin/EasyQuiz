@@ -499,6 +499,11 @@ function splitBody(
 	if (type === null) return fallback;
 
 	const lines = splitLines(body);
+	const isListLine = (line: string): boolean => LIST_ITEM_RE.test(line);
+	const isTableLine = (line: string): boolean => parseTableRow(line) !== null;
+
+	// 先按空行切段，再忽略表格上下的空行：表格和它上面的说明文字、以及连续多个
+	// 表格之间无论隔多少空行都算同一段，否则题面只会剩下最后一张表。
 	const blocks: { start: number; end: number }[] = [];
 	let index = 0;
 	while (index < lines.length) {
@@ -508,12 +513,20 @@ function splitBody(
 		}
 		const start = index;
 		while (index < lines.length && (lines[index] ?? "").trim() !== "") index++;
-		blocks.push({ start, end: index });
+		const end = index;
+		const previous = blocks[blocks.length - 1];
+		if (previous !== undefined) {
+			const before = lines[previous.end - 1] ?? "";
+			const after = lines[start] ?? "";
+			if (isTableLine(before) || isTableLine(after)) {
+				previous.end = end;
+				continue;
+			}
+		}
+		blocks.push({ start, end });
 	}
 	if (blocks.length === 0) return fallback;
 	const blockLines = (block: { start: number; end: number }): string[] => lines.slice(block.start, block.end);
-	const isListLine = (line: string): boolean => LIST_ITEM_RE.test(line);
-	const isTableLine = (line: string): boolean => parseTableRow(line) !== null;
 
 	let anchor = -1;
 	if (type === "single" || type === "multi") {
@@ -569,16 +582,42 @@ function splitBody(
 		return { stem: stem.trim(), supplement: "", structure: "", structureLine };
 	}
 
-	const isStructureLine = type === "single" || type === "multi" ? isListLine : isTableLine;
-	const structureLines = anchorLines.filter(isStructureLine);
-	const supplementLines = anchorLines.filter((line) => !isStructureLine(line));
-	// 题面取结构块上面那一段；远一点的列表/表格属于更远的题目结构，只保留其中的纯文字。
-	const stemLines = precedingLines.filter((line) => !isListLine(line) && !isTableLine(line));
+	if (type === "match") {
+		// 配对题：表格是结构块。表格上面的文字（同一段或紧邻的一段）是题面，
+		// 表格下面的文字才是补充内容——合并表格上下的空行时两者可能落在同一段里。
+		const tableIndexes = anchorLines
+			.map((line, index) => (isTableLine(line) ? index : -1))
+			.filter((index) => index >= 0);
+		const firstTable = tableIndexes[0] ?? -1;
+		const lastTable = tableIndexes[tableIndexes.length - 1] ?? -1;
+		const before = firstTable < 0 ? [] : anchorLines.slice(0, firstTable);
+		const after = lastTable < 0 ? [] : anchorLines.slice(lastTable + 1);
+		const textLine = (line: string): boolean => line.trim() !== "" && !isTableLine(line);
+		const stemLines = [...precedingLines.filter(textLine), ...before.filter(textLine)];
+		return {
+			stem: stemLines.join("\n").trim(),
+			supplement: after.filter(textLine).join("\n").trim(),
+			// 结构块保留原始行（含空行）：解析多张表时要靠空行把表格分组。
+			structure: anchorLines.join("\n"),
+			structureLine,
+		};
+	}
+
+	const supplementLines = anchorLines.filter(
+		(line) => line.trim() !== "" && !isListLine(line) && !isTableLine(line)
+	);
+	// 选择题：结构块自带说明文字时，它自己就是离数据块最近的一段题面；再上一段隔着空行，
+	// 属于更远的段落，不纳入题面（否则会把上一段的残留也显示出来）。
+	const attached = (type === "single" || type === "multi") && supplementLines.length > 0;
+	const stemLines = attached
+		? []
+		: precedingLines.filter((line) => !isListLine(line) && !isTableLine(line));
 
 	return {
 		stem: stemLines.join("\n").trim(),
 		supplement: supplementLines.join("\n").trim(),
-		structure: structureLines.join("\n"),
+		// 同样保留原始行：解析器只认列表/表格行，说明文字会被忽略，空行用来分隔表格组。
+		structure: anchorLines.join("\n"),
 		structureLine,
 	};
 }
@@ -1089,7 +1128,10 @@ const ITEM_PREFIX = "i";
 function parseBodyStructure(body: string, bodyStartLine: number, ctx: QuestionContext): BodyStructure {
 	const lines = splitLines(body);
 	const options: QuizOption[] = [];
-	const tableRows: string[][] = [];
+	// 按「连续的表格行」分组：题目里可以写多张表，空行只是表格之间的间隔，
+	// 每张表自己的表头与分隔行都不应被当成数据行。
+	const tableGroups: string[][][] = [];
+	let tableGroup: string[][] = [];
 	let tableStartLine = -1;
 	let inFence = false;
 	let fenceMarker = "";
@@ -1105,12 +1147,20 @@ function parseBodyStructure(body: string, bodyStartLine: number, ctx: QuestionCo
 			} else if (fence.marker === fenceMarker && fence.language === "") {
 				inFence = false;
 			}
+			if (tableGroup.length > 0) {
+				tableGroups.push(tableGroup);
+				tableGroup = [];
+			}
 			continue;
 		}
 		if (inFence) continue;
 
 		const listMatch = LIST_ITEM_RE.exec(line);
 		if (listMatch) {
+			if (tableGroup.length > 0) {
+				tableGroups.push(tableGroup);
+				tableGroup = [];
+			}
 			const raw = listMatch[1] ?? "";
 			const anchorMatch = ANCHOR_RE.exec(raw);
 			const anchor = anchorMatch?.[1] ?? null;
@@ -1121,19 +1171,33 @@ function parseBodyStructure(body: string, bodyStartLine: number, ctx: QuestionCo
 
 		const row = parseTableRow(line);
 		if (row) {
-			if (isSeparatorRow(row)) continue;
 			if (tableStartLine < 0) tableStartLine = bodyStartLine + i;
-			tableRows.push(row);
+			tableGroup.push(row);
+			continue;
+		}
+		if (tableGroup.length > 0) {
+			tableGroups.push(tableGroup);
+			tableGroup = [];
 		}
 	}
+	if (tableGroup.length > 0) tableGroups.push(tableGroup);
 
-	// 表格：首行为表头，其余为数据行。
-	const header = tableRows[0];
-	const hasTable = header !== undefined && tableRows.length >= 2;
+	// 表格：每张表的第一行是表头、第二行是分隔行，其余才是数据行；
+	// 多张表共用第一张表的列数，列数不同的表直接忽略，避免错位。
+	const header = tableGroups[0]?.[0];
 	const knownColumns = header?.length ?? 0;
-	const dataRows = hasTable
-		? tableRows.slice(1).filter((row) => row.length === knownColumns)
-		: [];
+	const dataRows: string[][] = [];
+	for (const group of tableGroups) {
+		const groupHeader = group[0];
+		if (groupHeader === undefined || groupHeader.length !== knownColumns) continue;
+		const separator = group[1];
+		const start = separator !== undefined && isSeparatorRow(separator) ? 2 : 1;
+		for (let i = start; i < group.length; i++) {
+			const row = group[i];
+			if (row !== undefined && row.length === knownColumns && !isSeparatorRow(row)) dataRows.push(row);
+		}
+	}
+	const hasTable = knownColumns > 0 && dataRows.length > 0;
 	const table = hasTable ? dataRows : null;
 
 	const board = table && header ? buildBoardColumns(header, table) : [];

@@ -105,8 +105,8 @@ non-blank lines; a blank line starts a new block.
 
 | `type` | Structure block | What the card shows |
 |---|---|---|
-| `single` / `multi` | The nearest block that contains the option list | The block above the option block is the stem. Non-list lines inside the option block are shown as a supplement under the stem. |
-| `match` | The nearest block that contains the table | The block above the table is the stem; prose inside the table block (with no blank line above the table) is a supplement. |
+| `single` / `multi` | The nearest block that contains the option list | Non-list lines inside the option block are the supplement. The block above the option block is the stem **only when the option block has no such prose**; with prose attached to the options, the farther block stays hidden. |
+| `match` | The nearest block that contains the table | Blank lines above and below tables do not split the block: prose above the table is the stem, prose below it is the supplement. Several consecutive tables (each with its own header and separator row) merge into one structure. |
 | `blank` | The nearest block that contains blank markers | That whole block is the stem. |
 | `essay` | The last block; if it is a reference callout, the block right above it | The instruction prose plus the collapsed callout stay in the shown stem, so the reference answer is never lost. |
 
@@ -125,8 +125,9 @@ Two optional data-block fields change only how a card looks:
   sentence (for example a data-heavy multi-part prompt).
 - `distractors: <count>` or `distractors: { count: 2, pool: ["TCP", "UDP"] }` adds that many decoy
   options to a `single` / `multi` card. Decoys are never correct answers: `answer` still names only the
-  author's anchors, and a decoy ticked by the learner counts as wrong. If the pool has fewer usable
-  candidates than `count`, fewer decoys are added.
+  author's anchors, and a decoy ticked by the learner counts as wrong. Options are redrawn after every
+  attempt, and a review shows the set used for that answer. If the pool has fewer usable candidates than
+  `count`, fewer decoys are added.
 
 Write `question` and `distractors` **only when inserting a single question into an existing note** (for
 example with the Insert question command or an embedded question). When generating a whole question bank
