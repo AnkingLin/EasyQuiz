@@ -296,3 +296,9 @@ test("样式：窄屏跳题输入框与导航按钮等高（44px）", () => {
 		`跳题输入框的高度应与导航按钮一致（${expected}px），实际：${jump.trim()}`
 	);
 });
+
+test("样式：清除记录与跳题输入框靠右成组", () => {
+	const block = anyRuleBlock(styles, ".easy-quiz-practice__nav-end");
+	assert(block.includes("display: flex"), "右侧操作组应横向排列");
+	assert(block.includes("margin-left: auto"), "右侧操作组应推到最右边");
+});

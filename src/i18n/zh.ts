@@ -48,7 +48,7 @@ export const zh: MessageTable = {
 	"setting.blankMarker.bold": "** 加粗 **",
 	"setting.blankMarker.both": "两者都识别",
 	"setting.staleHint.name": "显示「题面已变更」提示",
-	"setting.staleHint.desc": "题面在记下 rev 后发生变化时，在题卡上显示提示；提示右侧带「关闭提示」。",
+	"setting.staleHint.desc": "题面在记下 rev 后发生变化时，在题卡上显示提示；在题卡上点「关闭提示」会直接关掉这个设置。",
 	"setting.historyLimit.name": "单题历史条数上限",
 	"setting.historyLimit.desc": "记录写在笔记内，必须有上限；0 表示只保留汇总。",
 
@@ -88,6 +88,10 @@ export const zh: MessageTable = {
 	"whatsNew.stemTighter": "题面从各题型的目标段向上取：紧邻的一段属于题面，再往上只有表格上下的强制空行才继续跨过，遇到普通空行就停下。配对题只识别最近的一张表，问答题的 callout 与上面的段一起显示。题面按 Obsidian 的 Markdown 渲染（容器带 markdown-rendered），表格样式与笔记预览一致。",
 	"whatsNew.distractorReroll": "每次作答后干扰项都会重新抽取，复盘时看到的是作答当时那一组。",
 	"whatsNew.clearRecords": "题目卡片和题库列表新增“清除记录”按钮，可以清掉本题或整个题库的作答记录；命令面板也能直接为当前题库开始一轮。",
+	"whatsNew.referenceById": "题目引用改用「题目id」：在任意笔记里用内联代码写题目 id，就地渲染成题卡，不必再写 `![[题库#题面]]`；旧写法继续兼容。",
+	"whatsNew.noteJumpFix": "题卡右上角的「编辑」按钮像反向链接一样跳到题目标题：编辑模式光标落在标题行，阅读视图滚动到标题并显示原生高亮，已打开的标签页会复用。",
+	"whatsNew.staleHintOff": "「题面已变更」提示可以在设置里关闭；在题卡上点「关闭提示」会直接关掉这个设置，所有题卡的警告色一起恢复。",
+	"whatsNew.navRight": "「清除本题记录」移到导航右侧、和跳题输入框同一组，不再贴着提交区，避免误触。",
 	"whatsNew.aiSkill": "内置面向 AI 的出题规范 skills/easyquiz-authoring/SKILL.md：五种题型的骨架、锚点与降级规则、知识点链接约定都在里面，AI 可以照着它批量补题、修题、在讲义里插题；规范里的示例由测试真正解析并判分。",
 
 	// -----------------------------------------------------------------------

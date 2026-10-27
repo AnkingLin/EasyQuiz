@@ -1225,6 +1225,14 @@
 	background: var(--background-primary);
 }
 
+/* 右侧操作组：清除记录、跳题输入框靠右，和左侧的翻页/解析分开 */
+.easy-quiz-practice__nav-end {
+	display: flex;
+	align-items: center;
+	gap: var(--eqq-2);
+	margin-left: auto;
+}
+
 .easy-quiz-practice__jump {
 	width: 5em;
 	margin-left: auto;
@@ -1656,6 +1664,13 @@
 	.easy-quiz-practice__nav {
 		flex-wrap: wrap;
 		gap: var(--eqq-2);
+	}
+
+	/* 移动端一行放不下右侧组：让它独占一行并继续靠右 */
+	.easy-quiz-practice__nav-end {
+		width: 100%;
+		margin-left: 0;
+		justify-content: flex-end;
 	}
 
 	.easy-quiz-practice__nav button {

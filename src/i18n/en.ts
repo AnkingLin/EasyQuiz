@@ -56,7 +56,7 @@ export const en = {
 	"setting.blankMarker.both": "Both",
 	"setting.staleHint.name": "Show changed-question hint",
 	"setting.staleHint.desc":
-		"Show a note on a card when the stem changed after its revision was recorded. The hint itself has a dismiss link.",
+		"Show a note on a card when the stem changed after its revision was recorded. Dismissing it on a card turns this setting off.",
 	"setting.historyLimit.name": "Per-question history cap",
 	"setting.historyLimit.desc": "Records live in the note, so the detail list must be capped; 0 keeps the summary only.",
 
@@ -111,6 +111,14 @@ export const en = {
 		"Distractors are redrawn after every attempt, and the review shows the set you answered with.",
 	"whatsNew.clearRecords":
 		"New Clear records buttons on the question and the bank reset attempts and history. The command palette can also start a round for the current bank.",
+	"whatsNew.referenceById":
+		"Reference a question from any note by writing its id as inline code, and the card is rendered in place — the old ![[bank#stem]] embed still works.",
+	"whatsNew.noteJumpFix":
+		"The card's edit button now opens the question's heading like a backlink: the cursor lands on the heading in edit mode, reading view scrolls there with the native highlight, and an already-open tab is reused.",
+	"whatsNew.staleHintOff":
+		"The changed-question hint can be switched off in settings; Dismiss on a card turns that setting off, so the warning colour disappears from every card.",
+	"whatsNew.navRight":
+		"Clear this question's records moved to the right-hand nav group, beside the jump box, so it no longer sits next to the submit area.",
 	"whatsNew.aiSkill":
 		"An authoring spec for AI agents ships in skills/easyquiz-authoring/SKILL.md: skeletons for the five question types, anchors, degrade rules and the knowledge-link convention. AI agents use it to add questions, repair banks and insert single questions into handouts; its examples are parsed and graded by the test suite.",
 

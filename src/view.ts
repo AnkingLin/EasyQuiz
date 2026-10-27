@@ -8,7 +8,7 @@
  * 填空题的 `==答案==` 由各自的交互控件承担，避免同一内容出现两次。
  */
 
-import { App, Component, MarkdownRenderer, MarkdownRenderChild, Notice, setIcon, TFile } from "obsidian";
+import { App, Component, MarkdownRenderer, MarkdownRenderChild, setIcon, TFile } from "obsidian";
 import { GradeResult, matchBlank, UserAnswer } from "./grade";
 import { contentHash } from "./hash";
 import { t } from "./i18n";
@@ -73,6 +73,11 @@ export interface CardContext {
 	 * 不传时按显示处理，这样单独调用 `renderQuizCard` 的旧代码行为不变。
 	 */
 	showStaleHint?: boolean;
+	/**
+	 * 点「关闭提示」时的回调：关掉的是设置里的总开关，而不是只藏起这一题。
+	 * 不传时只就地隐藏本次提示。
+	 */
+	onDismissStaleHint?: () => void | Promise<void>;
 	/** 题卡渲染结束（含题板布局完成）后回调，用于解除观察者等自身资源。 */
 	onCleanup?: (cleanup: () => void) => void;
 }
@@ -112,7 +117,7 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 	// 数据块里写了 `question:` 时用它代替标题作为题面标题（标题仍用于锚定题目边界）。
 	header.createSpan({ cls: "easy-quiz-card__title", text: question.displayTitle ?? question.title });
 	header.createSpan({
-		cls: `easy-quiz-card__stats${question.stale ? " is-stale" : ""}`,
+		cls: `easy-quiz-card__stats${question.stale && ctx.showStaleHint !== false ? " is-stale" : ""}`,
 		text: formatStats(question),
 	});
 	// 跳到题库里的原题：放在右上角，和链接跳转一样定位到标题行。
@@ -134,8 +139,8 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 	if (stale !== null && ctx.showStaleHint !== false) {
 		const row = card.createDiv({ cls: "easy-quiz-card__stale" });
 		row.createSpan({ text: stale });
-		// 「关闭提示」= 把当前题面的 rev 写回数据块，确认"我知道题面改了"，
-		// 之后的渲染就不会再把它标成「题面已变更」。
+		// 「关闭提示」关掉的是设置里的总开关：用户嫌提示烦时不必逐题点，
+		// 设置页同步显示为关闭，所有题卡的下一次渲染都不再出现提示与警告色。
 		const dismiss = row.createEl("a", {
 			cls: "easy-quiz-card__stale-dismiss",
 			text: t("card.staleDismiss"),
@@ -144,13 +149,7 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 		dismiss.addEventListener("click", (event) => {
 			event.preventDefault();
 			void (async () => {
-				if (typeof ctx.service.acceptStem !== "function") return;
-				const accepted = await ctx.service.acceptStem(ctx.file, question.id);
-				if (!accepted) {
-					new Notice(t("practice.clear.failed"));
-					return;
-				}
-				question.stale = false;
+				await ctx.onDismissStaleHint?.();
 				row.detach();
 				const badge = ctx.el.querySelector<HTMLElement>(".easy-quiz-card__stats");
 				badge?.removeClass("is-stale");

@@ -747,6 +747,19 @@ test("上一题：回到已经答过的题时直接进入复盘态", async () =>
 	assertEqual(at(harness.renders, 2, "缺少第三次渲染").ctx.reviewOnly, true, "答过的题重看应是复盘态");
 });
 
+test("清除本题记录：位于右侧操作组，与查看解析分开", async () => {
+	const harness = standardHarness();
+	await openPicker(harness, "题库/甲.md");
+	await startSession(harness);
+	at(harness.renders, 0, "缺少第一次渲染").ctx.onSubmitted?.({ correct: true, details: [], recorded: [] });
+	await flush();
+
+	const clear = find(harness.view, "button[data-action='clear-question-records']", "缺少清除本题记录按钮");
+	const group = clear.closest(".easy-quiz-practice__nav-end");
+	assert(group !== null, "清除按钮应位于右侧操作组");
+	assertEqual((group as HTMLElement).firstElementChild, clear, "清除按钮应是右侧组的第一项");
+});
+
 test("查看解析：直接进入复盘态且不计分", async () => {
 	const harness = standardHarness();
 	await openPicker(harness, "题库/甲.md");

@@ -61,6 +61,50 @@ const TILDE = [
 	"```",
 ].join("\n");
 
+/** 题面与 rev 不一致时，卡片会提示「题面已变更」，并提供关闭入口。 */
+test("DOM：「关闭提示」关闭全局设置并消掉警告色", async () => {
+	const question = parse(TILDE);
+	question.stale = true;
+	let dismissed = 0;
+	let asked = 0;
+
+	const host = document.createElement("div");
+	document.body.appendChild(host);
+	await renderQuizCard(question, {
+		app: {},
+		service: {},
+		file: { path: "题库/测试.md" },
+		el: host,
+		blankMarker: "highlight",
+		onDismissStaleHint: () => {
+			asked += 1;
+			dismissed += 1;
+		},
+	} as unknown as Parameters<typeof renderQuizCard>[1]);
+
+	const badge = must(host.querySelector<HTMLElement>(".easy-quiz-card__stats") ?? undefined, "缺少统计角标");
+	assert(badge.classList.contains("is-stale"), "未关闭前统计角标应带警告色");
+	const dismiss = must(host.querySelector<HTMLElement>(".easy-quiz-card__stale-dismiss") ?? undefined, "缺少关闭提示入口");
+	dismiss.click();
+	await Promise.resolve();
+	await Promise.resolve();
+
+	assertEqual(asked, 1, "点击应请求关闭设置里的提示开关");
+	assert(question.stale, "题卡自身的 stale 状态不应被就地改掉");
+	assert(host.querySelector(".easy-quiz-card__stale") === null, "提示行应移除");
+	assert(!badge.classList.contains("is-stale"), "统计角标的警告色应恢复");
+	assertEqual(dismissed, 1, "关闭动作只应触发一次");
+});
+
+test("DOM：设置里关闭提示后，题卡不显示提示与警告色", async () => {
+	const question = parse(TILDE);
+	question.stale = true;
+	const host = await render(question, { showStaleHint: false });
+	assert(host.querySelector(".easy-quiz-card__stale") === null, "关闭设置后不应出现提示");
+	const badge = must(host.querySelector<HTMLElement>(".easy-quiz-card__stats") ?? undefined, "缺少统计角标");
+	assert(!badge.classList.contains("is-stale"), "关闭设置后角标不应是警告色");
+});
+
 /** 解析里带 Markdown 标记：复盘时必须按原文渲染。 */
 const EXPLAINED = [
 	"---",

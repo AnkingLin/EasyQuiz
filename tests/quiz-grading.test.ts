@@ -10,7 +10,7 @@
 import * as yaml from "js-yaml";
 import { parseQuizFile, ParseOptions } from "../src/parser";
 import { gradeAnswer, matchBlank } from "../src/grade";
-import { patchBlockSource, planAcceptStem, planClear, planWriteBack, replaceBlockInFile, WriteBackDeps } from "../src/writeback";
+import { patchBlockSource, planClear, planWriteBack, replaceBlockInFile, WriteBackDeps } from "../src/writeback";
 import { contentHash } from "../src/hash";
 import { HistoryEntry, QuizQuestion, QuizStats } from "../src/types";
 import { assert, assertEqual, at, must, test } from "./harness";
@@ -565,42 +565,4 @@ test("清除记录：没有记录的题目不改动", () => {
 	const patch = planClear(block, writeBackOptions);
 	assertEqual(patch.applied, true, "合法 YAML 应可直接清除（内容相同）");
 	assertEqual(patch.content, block, "没有记录时逐字不变");
-});
-
-test("关闭题面提示：只把 rev 更新成当前题面的版本", () => {
-	const block = [
-		"id: keep",
-		"type: essay",
-		"stats:",
-		"  attempts: 2",
-		"  correct: 1",
-		"rev: oldrev",
-	].join("\n");
-	const patch = planAcceptStem(block, "newrev", writeBackOptions);
-	assertEqual(patch.applied, true, `应可写回（原因：${patch.reason ?? "无"}）`);
-	assert(patch.content.includes("rev: \"newrev\""), "rev 应更新为当前题面版本");
-	assert(patch.content.includes("attempts: 2"), "作答记录不应受影响");
-	assert(!patch.content.includes("oldrev"), "旧的 rev 不应残留");
-
-	const reparsed = parse([
-		"---",
-		"quiz: true",
-		"---",
-		"",
-		"## 题",
-		"",
-		"```quiz",
-		patch.content,
-		"```",
-	].join("\n"));
-	const question = must(reparsed.questions[0], "应解析出题目");
-	assertEqual(question.rev, "newrev", "写回的 rev 应被解析回来");
-	assertEqual(question.stats.attempts, 2, "统计应保留");
-});
-
-test("关闭题面提示：非法 YAML 时不改动", () => {
-	const block = "type: [unclosed";
-	const patch = planAcceptStem(block, "newrev", writeBackOptions);
-	assertEqual(patch.applied, false, "坏掉的 YAML 不应写入");
-	assertEqual(patch.content, block, "内容应逐字不变");
 });

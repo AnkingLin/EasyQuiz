@@ -69,6 +69,8 @@ export interface EasyQuizHost {
 	 * 留出这个口子是为了测试能替换掉题卡内部交互，只验证窗口本身的行为。
 	 */
 	cardRenderer?: (question: QuizQuestion, ctx: CardContext) => Promise<void>;
+	/** 题卡上的「关闭提示」：关掉设置里的总开关并保存。 */
+	dismissStaleHint?: () => void | Promise<void>;
 }
 
 /** 一个题库文件的完整信息（汇总 + 解析结果）。 */
@@ -1301,6 +1303,7 @@ export class PracticeView extends ItemView {
 			el: host,
 			blankMarker: this.host.settings.blankMarker,
 			showStaleHint: this.host.settings.showStaleHint,
+			onDismissStaleHint: () => this.host.dismissStaleHint?.(),
 			// 「打乱顺序」开关也作用于选择题的选项顺序（题目自己写的 shuffle: true 同样生效）。
 			shuffleOptions: this.config.shuffleOptions,
 			shuffleSeed: this.sessionSeed,
@@ -1419,13 +1422,21 @@ export class PracticeView extends ItemView {
 			});
 		}
 
-		// 清除当前题的作答记录：有记录时才出现，清完这道题回到「未作答」。
-		// 紧贴在跳题输入框左边会被误触，因此放在「查看解析」之后。
+		// 右侧操作组：清除记录与跳题输入框靠右，和左侧的翻页/解析拉开距离，避免误触。
 		const queued = this.queue[this.cursor];
 		const current = queued === undefined ? undefined : resolveEntry(this.parsedByPath, queued);
-		if (current !== undefined && (current.stats.attempts > 0 || current.history.length > 0)) {
+		const hasRecords =
+			current !== undefined && (current.stats.attempts > 0 || current.history.length > 0);
+		const end =
+			hasRecords || this.queue.length > 3
+				? nav.createDiv({ cls: "easy-quiz-practice__nav-end" })
+				: undefined;
+		const right = end ?? nav;
+
+		// 清除当前题的作答记录：有记录时才出现，清完这道题回到「未作答」。
+		if (current !== undefined && hasRecords) {
 			const label = t("practice.session.clearRecords");
-			const clear = this.button(nav, "clear-question-records", label);
+			const clear = this.button(right, "clear-question-records", label);
 			clear.addClass("is-danger");
 			this.confirmAction(clear, label, async () => {
 				const entry = this.queue[this.cursor];
@@ -1451,7 +1462,7 @@ export class PracticeView extends ItemView {
 		}
 
 		if (this.queue.length > 3) {
-			const jump = nav.createEl("input", { cls: "easy-quiz-practice__jump" });
+			const jump = right.createEl("input", { cls: "easy-quiz-practice__jump" });
 			jump.type = "number";
 			jump.min = "1";
 			jump.max = String(this.queue.length);

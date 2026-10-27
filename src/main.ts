@@ -416,6 +416,7 @@ export default class EasyQuizPlugin extends Plugin {
 			blockLine: question.blockLine ?? undefined,
 			blankMarker: this.settings.blankMarker,
 			showStaleHint: this.settings.showStaleHint,
+			onDismissStaleHint: () => this.dismissStaleHint(),
 			// MarkdownRenderer 需要一个 Component 承载生命周期；交给渲染上下文托管。
 			addRenderChild: (child) => post.addChild(child),
 			onSubmitted: () => this.refreshNotice(),
@@ -537,6 +538,7 @@ export default class EasyQuizPlugin extends Plugin {
 			blockLine: question.blockLine ?? undefined,
 			blankMarker: this.settings.blankMarker,
 			showStaleHint: this.settings.showStaleHint,
+			onDismissStaleHint: () => this.dismissStaleHint(),
 			// MarkdownRenderer 需要一个 Component 承载生命周期；交给渲染上下文托管。
 			addRenderChild: (child) => post.addChild(child),
 			onSubmitted: () => this.refreshNotice(),
@@ -581,6 +583,7 @@ export default class EasyQuizPlugin extends Plugin {
 			blockLine: question.blockLine ?? undefined,
 			blankMarker: this.settings.blankMarker,
 			showStaleHint: this.settings.showStaleHint,
+			onDismissStaleHint: () => this.dismissStaleHint(),
 			addRenderChild: (child) => post.addChild(child),
 			onSubmitted: () => this.refreshNotice(),
 		});
@@ -634,6 +637,19 @@ export default class EasyQuizPlugin extends Plugin {
 		// 触发一次布局变更请它刷新标题（只是重画标签头，不会重建视图，进行中的一轮不会丢）。
 		if (views.length > 0) this.app.workspace.trigger("layout-change");
 		if (!refreshNotes) return;
+		this.refreshNotes();
+	}
+
+	/**
+	 * 关闭「题面已变更」提示：题卡上的「关闭提示」直接关掉设置里的总开关。
+	 *
+	 * 与设置页的开关走同一条保存路径，保存后立即重画已渲染的题卡，
+	 * 因此提示和右上角统计的警告色会一起消失。
+	 */
+	async dismissStaleHint(): Promise<void> {
+		if (!this.settings.showStaleHint) return;
+		this.settings.showStaleHint = false;
+		await this.saveSettings();
 		this.refreshNotes();
 	}
 

@@ -18,13 +18,7 @@ import {
 import { GradeResult, gradeAnswer, UserAnswer } from "./grade";
 import { contentHash } from "./hash";
 import { LanguagePreference, t } from "./i18n";
-import {
-	DEFAULT_HISTORY_LIMIT,
-	planAcceptStem,
-	planClear,
-	planWriteBack,
-	replaceBlockInFile,
-} from "./writeback";
+import { DEFAULT_HISTORY_LIMIT, planClear, planWriteBack, replaceBlockInFile } from "./writeback";
 import { BlankMarkerMode, HistoryEntry, ParsedQuizFile, QuizQuestion, QuizStats } from "./types";
 
 export { contentHash };
@@ -247,41 +241,6 @@ export class QuizService {
 			return next;
 		});
 		return cleared;
-	}
-
-	/**
-	 * 确认题面的新结构：把当前题面的 `rev` 写回数据块，使「题面已变更」提示消失。
-	 *
-	 * 不评判作答、不清记录；与写回一样在 `Vault.process` 里按最新内容重新定位，
-	 * 写不进去就保持原样并返回 false（宁可提示不消失，也不写坏笔记）。
-	 */
-	async acceptStem(file: TFile, questionId: string): Promise<boolean> {
-		let applied = false;
-		await this.app.vault.process(file, (data) => {
-			const parsed = this.parseContent(data, file.path);
-			const question = parsed.questions.find((item) => item.id === questionId);
-			if (question === undefined || question.blockLine === null || question.blockSource === null) {
-				return data;
-			}
-			const patch = planAcceptStem(question.blockSource, question.revNow, {
-				blockLanguage: this.settings.blockLanguage,
-				headingLevels: this.settings.headingLevels,
-				headingMode: this.settings.headingMode,
-				blankMarker: this.settings.blankMarker,
-				deps: parserDeps,
-			});
-			if (!patch.applied) return data;
-			const next = replaceBlockInFile(
-				data,
-				question.blockLine,
-				patch.content,
-				this.settings.blockLanguage
-			);
-			if (next === null) return data;
-			applied = true;
-			return next;
-		});
-		return applied;
 	}
 
 	/** 清除整个题库文件的作答记录，返回实际清除的题目数。 */
