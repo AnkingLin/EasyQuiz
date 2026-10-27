@@ -12,16 +12,7 @@
  * 因此窗口内作答与在笔记里作答写回的是同一份记录。
  */
 
-import {
-	Component,
-	ItemView,
-	Notice,
-	resolveSubpath,
-	Setting,
-	stripHeadingForLink,
-	TFile,
-	WorkspaceLeaf,
-} from "obsidian";
+import { Component, ItemView, Notice, resolveSubpath, Setting, TFile, WorkspaceLeaf } from "obsidian";
 import { MessageKey, t } from "./i18n";
 import { typeLabel } from "./labels";
 import { QuizService, formatStats, RuntimeSettings } from "./runtime";
@@ -1529,27 +1520,23 @@ export class PracticeView extends ItemView {
 	}
 
 	/**
-	 * 题目标题在元数据缓存里的原文，处理成链接可用的形式；没有标题时返回 null。
+	 * 题目标题在元数据缓存里的原文；没有标题时返回 null。
 	 *
-	 * 标题末尾常带知识点链接 `^[[[笔记#小节]]]`，里面的 `#` 会被 Obsidian
-	 * 当成层级分隔符，直接把原文塞进 `#标题` 永远解析不到。这里用
-	 * `stripHeadingForLink`（Obsidian 生成标题链接时用的同一个函数）去掉
-	 * 会造成歧义的字符，再用 `resolveSubpath` 验证，保证预览能定位到标题。
+	 * 带知识点链接的标题在缓存里是 `标题 ^[[[知识点]]]`，而 `question.title`
+	 * 已经剥掉了尾巴。用 `resolveSubpath` 逐个验证，优先选 Obsidian 认得的那个。
 	 */
 	private headingFor(file: TFile, question: QuizQuestion | undefined): string | null {
 		if (question === undefined) return null;
 		const cache = this.app.metadataCache?.getFileCache?.(file);
-		const raw = cache?.headings?.find(
+		const cached = cache?.headings?.find(
 			(item) => item.position.start.line === question.line
 		)?.heading;
 		const candidates: string[] = [];
-		const add = (value: string | undefined | null): void => {
-			if (value === undefined || value === null) return;
-			const text = stripHeadingForLink(value).trim();
-			if (text !== "" && !candidates.includes(text)) candidates.push(text);
-		};
-		add(raw);
-		add(question.title);
+		if (cached !== undefined && cached !== null && cached.trim() !== "") {
+			candidates.push(cached.trim());
+		}
+		const title = question.title.trim();
+		if (title !== "" && title !== candidates[0]) candidates.push(title);
 		if (candidates.length === 0) return null;
 		if (cache !== undefined && cache !== null && typeof resolveSubpath === "function") {
 			for (const candidate of candidates) {

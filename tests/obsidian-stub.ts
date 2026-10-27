@@ -78,36 +78,13 @@ export class TFile {
 	extension = "md";
 	stat = { mtime: 0 };
 }
-/** 与 Obsidian 相同：去掉会破坏链接的字符，并压缩空白。 */
-function stripChars(value: string, chars: string): string {
-	let out = "";
-	for (const ch of value) out += chars.includes(ch) ? " " : ch;
-	return out.replace(/ {2,}/g, " ").trim();
-}
-
-const HEADING_STRIP_CHARS =
-	'!"#$%&()*+,.:;<=>?@^`{|}~' + "/[]" + String.fromCharCode(92, 13, 10);
-const LINK_STRIP_CHARS = ":#|^%[]" + String.fromCharCode(92, 13, 10);
-
-export function stripHeading(heading: string): string {
-	return stripChars(heading, HEADING_STRIP_CHARS);
-}
-
-export function stripHeadingForLink(heading: string): string {
-	return stripChars(heading, LINK_STRIP_CHARS);
-}
-
-/** 标题/块引用解析：测试只需要标题这一支，按 Obsidian 的规范化规则匹配。 */
+/** 标题/块引用解析：测试只需要标题这一支，按缓存里的标题原文精确匹配。 */
 export function resolveSubpath(
 	cache: { headings?: { heading: string }[] },
 	subpath: string
 ): { heading: string } | null {
-	const parts = subpath.split("#").filter((part) => part !== "");
-	if (parts.length !== 1) return null;
-	const target = stripHeading(parts[0] ?? "").toLowerCase();
-	const heading = cache.headings?.find(
-		(item) => stripHeading(item.heading).toLowerCase() === target
-	);
+	const name = subpath.startsWith("#") ? subpath.slice(1) : subpath;
+	const heading = cache.headings?.find((item) => item.heading === name);
 	return heading === undefined ? null : heading;
 }
 
