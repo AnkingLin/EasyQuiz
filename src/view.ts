@@ -91,6 +91,12 @@ function anchoredOptions(question: QuizQuestion): AnchoredOption[] {
  */
 export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): Promise<void> {
 	const card = ctx.el.createDiv({ cls: "easy-quiz-card" });
+	// 阅读视图里没有行号可跳，只能找到渲染出来的题卡再滚过去；
+	// 数据块渲染的卡片带上题目标和块行号，刷题窗口就不用猜。
+	if (ctx.blockLine !== undefined && ctx.blockLine !== null) {
+		card.dataset.quizId = question.id;
+		card.dataset.quizLine = String(ctx.blockLine);
+	}
 	if (!question.ok) {
 		renderDiagnostics(question, card);
 		return;

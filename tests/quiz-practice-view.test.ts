@@ -1026,6 +1026,51 @@ test("刷题页：题目卡片右上方提供打开原题笔记的编辑按钮",
 	);
 });
 
+test("刷题页：阅读视图下打开原题笔记会滚动到题卡", async () => {
+	const harness = buildHarness([{ file: fakeFile("题库/甲.md"), source: BANK_A }], true);
+	await openPicker(harness, "题库/甲.md");
+	await startSession(harness);
+
+	const file = harness.service.fileAtPath("题库/甲.md");
+	assert(file !== null, "缺少源文件");
+	const card = testWindow.document.createElement("div");
+	card.className = "easy-quiz-card";
+	card.dataset.quizId = "a1";
+	card.dataset.quizLine = "9";
+	let scrolled = false;
+	card.scrollIntoView = () => {
+		scrolled = true;
+	};
+	const wrapper = testWindow.document.createElement("div");
+	wrapper.appendChild(card);
+	let movedCursor = false;
+	const leaf = {
+		view: {
+			file,
+			getMode: () => "preview",
+			previewMode: { containerEl: wrapper },
+			editor: {
+				setCursor: () => {
+					movedCursor = true;
+				},
+			},
+		},
+	};
+	(harness.view as unknown as { app: unknown }).app = {
+		workspace: {
+			getLeavesOfType: (type: string) => (type === "markdown" ? [leaf] : []),
+			getLeaf: () => leaf,
+			setActiveLeaf: async () => undefined,
+		},
+	};
+
+	click(find(harness.view, "button.easy-quiz-card__edit"));
+	await flush();
+
+	assertEqual(scrolled, true, "阅读视图应把题卡滚进视野");
+	assertEqual(movedCursor, false, "阅读视图没有编辑器，不应去动光标");
+});
+
 test("刷题页：源笔记已经打开时切到那个标签页，而不是再开一个", async () => {
 	const harness = buildHarness([{ file: fakeFile("题库/甲.md"), source: BANK_A }], true);
 	await openPicker(harness, "题库/甲.md");

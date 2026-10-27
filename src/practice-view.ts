@@ -1490,6 +1490,15 @@ export class PracticeView extends ItemView {
 			// `revealLeaf` 要 1.7.2，而插件最低支持 1.4.0；普通标签页用 setActiveLeaf
 			// 就能切过去，和点击链接的观感一致。
 			this.app.workspace.setActiveLeaf(leaf, { focus: true });
+			if (this.isReadingMode(leaf)) {
+				// 阅读视图没有可以放光标的编辑器：找到这道题在预览里渲染出的
+				// 卡片，滚过去。刚打开的笔记可能还没渲染完，等一帧再试一次。
+				if (this.scrollPreviewToQuestion(leaf, question)) return;
+				window.setTimeout(() => {
+					if (!this.scrollPreviewToQuestion(leaf, question)) this.revealLine(leaf, line);
+				}, 60);
+				return;
+			}
 			this.revealLine(leaf, line);
 		} catch (error) {
 			new Notice(
@@ -1500,6 +1509,47 @@ export class PracticeView extends ItemView {
 		}
 	}
 
+	/** 这个标签页是不是阅读视图（没有编辑器、只能按渲染出来的元素定位）。 */
+	private isReadingMode(leaf: WorkspaceLeaf): boolean {
+		const view = leaf.view as unknown as { getMode?: () => string };
+		return view.getMode?.() === "preview";
+	}
+
+	/**
+	 * 在阅读视图里把这道题的题卡滚到视野中间。
+	 *
+	 * 数据块渲染出的题卡带着题目 id 与块行号；找不到时退回标题元素。
+	 * 返回是否真的找到了目标。
+	 */
+	private scrollPreviewToQuestion(leaf: WorkspaceLeaf, question: QuizQuestion | undefined): boolean {
+		const view = leaf.view as unknown as { previewMode?: { containerEl?: HTMLElement } };
+		const root = view.previewMode?.containerEl;
+		if (root === undefined) return false;
+		const cards = Array.from(root.querySelectorAll<HTMLElement>(".easy-quiz-card"));
+		const id = question?.id;
+		const blockLine = question?.blockLine;
+		let target = cards.find(
+			(card) =>
+				blockLine !== null &&
+				blockLine !== undefined &&
+				card.dataset.quizLine === String(blockLine) &&
+				(id === undefined || card.dataset.quizId === id)
+		);
+		if (target === undefined && id !== undefined) {
+			target = cards.find((card) => card.dataset.quizId === id);
+		}
+		if (target === undefined) {
+			const heading = (question?.title ?? "").trim();
+			if (heading !== "") {
+				target = Array.from(root.querySelectorAll<HTMLElement>("[data-heading]")).find(
+					(element) => (element.getAttribute("data-heading") ?? "").trim() === heading
+				);
+			}
+		}
+		target?.scrollIntoView({ block: "center" });
+		return target !== undefined;
+	}
+
 	/** 某个标签页里打开的笔记路径；不是 Markdown 标签页时返回 null。 */
 	private leafPath(leaf: WorkspaceLeaf): string | null {
 		const view = leaf.view as unknown as { file?: { path?: string } | null };
@@ -1507,8 +1557,8 @@ export class PracticeView extends ItemView {
 	}
 
 	/**
-	 * 把光标/阅读位置移到指定行。源码与实时预览走编辑器；阅读模式没有编辑器，
-	 * 用预览模式的 `applyScroll`。两种情况都用文件内的行号。
+	 * 把光标移到指定行。阅读视图不走这里：`previewMode.applyScroll()` 收的是
+	 * 像素滚动量而不是行号，传行号只会滚到几乎顶部的位置。
 	 */
 	private revealLine(leaf: WorkspaceLeaf, line: number): void {
 		const view = leaf.view as unknown as {
@@ -1516,8 +1566,7 @@ export class PracticeView extends ItemView {
 				setCursor: (position: { line: number; ch: number }) => void;
 				scrollIntoView?: (range: { from: { line: number; ch: number }; to: { line: number; ch: number } }, center?: boolean) => void;
 			};
-			previewMode?: { applyScroll?: (line: number) => void };
-			currentMode?: { applyScroll?: (line: number) => void };
+
 		};
 		const position = { line, ch: 0 };
 		if (view.editor !== undefined) {
@@ -1525,8 +1574,6 @@ export class PracticeView extends ItemView {
 			view.editor.scrollIntoView?.({ from: position, to: position }, true);
 			return;
 		}
-		const mode = view.previewMode ?? view.currentMode;
-		mode?.applyScroll?.(line);
 	}
 
 	/** 切到队列里的某一题。 */
