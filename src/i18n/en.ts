@@ -112,7 +112,11 @@ export const en = {
 	"whatsNew.clearRecords":
 		"New Clear records buttons on the question and the bank reset attempts and history. The command palette can also start a round for the current bank.",
 	"whatsNew.referenceById":
-		"Reference a question from any note by writing its id as inline code, and the card is rendered in place — the old ![[bank#stem]] embed still works.",
+		"Reference a question from any note by writing its id as inline code, and the card is rendered in place.",
+	"whatsNew.nativeEmbeds":
+		"![[...]] embeds are no longer intercepted: images and section embeds render exactly as Obsidian does, and questions are referenced with their id as inline code.",
+	"whatsNew.cardTitleLink":
+		"In notes, a question card's title and pencil open the question's bank note at its heading, so the card itself is the way back to the source.",
 	"whatsNew.noteJumpFix":
 		"The card's edit button now opens the question's heading like a backlink: the cursor lands on the heading in edit mode, reading view scrolls there with the native highlight, and an already-open tab is reused.",
 	"whatsNew.staleHintOff":
@@ -129,8 +133,6 @@ export const en = {
 	"diagnostic.parseFailed": "Parse failed: {error}",
 	"diagnostic.blockOutsideStem":
 		"This block is not under any stem heading, so it cannot be rendered as a question. Move it under a heading.",
-	"diagnostic.embedNotFound":
-		"That heading exists, but no answerable question could be parsed from it. Check the question's data block.",
 
 	// -----------------------------------------------------------------------
 	// 题卡

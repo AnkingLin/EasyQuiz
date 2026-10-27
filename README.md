@@ -438,16 +438,15 @@ skeletons are guaranteed to parse.
 
 ## How do I reference a question in another note?
 
-There are two ways, and both render the question as a **real, answerable card** right where you write it.
-
-### Reference it by question id (recommended)
-
 Give the question an `id` in its bank file (if omitted, one is derived from the stem heading — an explicit
 id is clearer), then reference it with **inline code** from any note:
 
 ```markdown
 This week: `tcp-handshake`
 ```
+
+The question renders as a **real, answerable card** right where you write it; click the card's title or the
+pencil to open the question's bank note at its heading.
 
 - Only a code span that is **exactly one question id** counts as a reference. Ordinary code, fenced code
   blocks and code inside headings are left alone.
@@ -457,23 +456,9 @@ This week: `tcp-handshake`
   and attempts are still written back to the question's own bank note.
 - Handy for assembling a review note, handout or mock exam without copying question text.
 
-### Embed it by stem heading
-
-Embedding by stem heading works the same way:
-
-```markdown
-![[计算机网络/第三章#TCP 建立连接需要几次握手？]]
-```
-
-- The subpath is the **stem heading text, with the trailing `^[[[]]]` knowledge link left out**.
-- A subpath that does not name a stem heading is left completely alone, so ordinary embeds such as
-  `![[Some note#Some section]]` keep behaving exactly as Obsidian renders them.
-- Block references (`![[bank#^block-id]]`) and footnote references are not questions and are also left alone.
-
-Both forms are deliberately **not** Obsidian's built-in heading embed. Two reasons: a plain embed would show
-the option list and the raw `quiz` data block instead of a card, and Obsidian's heading lookup normalises
-punctuation — which the trailing `^[[[knowledge link]]]` derails, making it silently fall back to rendering
-the **entire** bank file. EasyQuiz recognises these references itself and replaces them with a card.
+EasyQuiz **does not intercept `![[...]]` embeds**: images and section embeds keep Obsidian's native
+rendering. Embedding a bank section (`![[bank#stem heading]]`) shows that section as Obsidian normally
+would — heading, options and the raw data block — not a card.
 
 ## How do I practise a whole question bank?
 
@@ -629,6 +614,11 @@ appears for Markdown question banks; multi-selections and other files are left a
 3. Reload Obsidian and enable the plugin under **Settings → Community plugins**.
 
 ## What's new
+
+### 1.1.2
+
+- `![[...]]` embeds are no longer intercepted: images and sections render exactly as Obsidian renders them, and questions are referenced with their id as inline code.
+- In notes, a question card's title and pencil open the bank note at the question, so the card is also the way back to the source.
 
 ### 1.1.1
 

@@ -14,7 +14,6 @@
 /* ========================================================== 设计变量 */
 
 .easy-quiz-block,
-.easy-quiz-embed,
 .easy-quiz-card,
 .easy-quiz-practice {
 	/* 间距：全部是 4 的倍数，节奏稳定 */
@@ -48,15 +47,8 @@
 
 /* `![[题库#题目]]` 改造成的容器：它取代了 Obsidian 的嵌入块，因此这里自己承担
    "嵌入块"该有的外边距；内层仍然是标准的题卡。 */
-.easy-quiz-embed {
-	margin: var(--eqq-3) 0;
-}
 
 /* 嵌入的题卡不再叠一层外框：外面已经是笔记里的一个块，重复描边会显得很闷。 */
-.easy-quiz-embed > .easy-quiz-card {
-	border-color: var(--eqq-line);
-	background: var(--eqq-surface-2);
-}
 
 /* ========================================================== 题卡 */
 
@@ -113,6 +105,15 @@
 }
 
 /* 右上角的编辑按钮：跳到题库里这道题所在的标题行。 */
+.easy-quiz-card__title.is-link {
+	cursor: pointer;
+}
+
+.easy-quiz-card__title.is-link:hover,
+.easy-quiz-card__title.is-link:focus-visible {
+	text-decoration: underline;
+}
+
 .easy-quiz-card__edit {
 	flex: none;
 	--icon-size: var(--icon-s, 16px);

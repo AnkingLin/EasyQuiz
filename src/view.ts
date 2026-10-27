@@ -115,7 +115,24 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 	const header = card.createDiv({ cls: "easy-quiz-card__header" });
 	header.createSpan({ cls: "easy-quiz-card__type", text: typeLabel(question.type) });
 	// 数据块里写了 `question:` 时用它代替标题作为题面标题（标题仍用于锚定题目边界）。
-	header.createSpan({ cls: "easy-quiz-card__title", text: question.displayTitle ?? question.title });
+	const title = header.createSpan({
+		cls: "easy-quiz-card__title",
+		text: question.displayTitle ?? question.title,
+	});
+	// 笔记里的题卡（数据块、id 引用）没有刷题窗口的导航栏，标题本身就是回到原题的入口。
+	if (ctx.onOpenSource !== undefined) {
+		title.addClass("is-link");
+		title.setAttribute("role", "link");
+		title.setAttribute("tabindex", "0");
+		title.setAttribute("aria-label", t("practice.session.openNote"));
+		title.setAttribute("title", t("practice.session.openNote"));
+		title.addEventListener("click", () => ctx.onOpenSource?.());
+		title.addEventListener("keydown", (event) => {
+			if (event.key !== "Enter" && event.key !== " ") return;
+			event.preventDefault();
+			ctx.onOpenSource?.();
+		});
+	}
 	header.createSpan({
 		cls: `easy-quiz-card__stats${question.stale && ctx.showStaleHint !== false ? " is-stale" : ""}`,
 		text: formatStats(question),

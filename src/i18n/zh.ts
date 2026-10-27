@@ -88,7 +88,9 @@ export const zh: MessageTable = {
 	"whatsNew.stemTighter": "题面从各题型的目标段向上取：紧邻的一段属于题面，再往上只有表格上下的强制空行才继续跨过，遇到普通空行就停下。配对题只识别最近的一张表，问答题的 callout 与上面的段一起显示。题面按 Obsidian 的 Markdown 渲染（容器带 markdown-rendered），表格样式与笔记预览一致。",
 	"whatsNew.distractorReroll": "每次作答后干扰项都会重新抽取，复盘时看到的是作答当时那一组。",
 	"whatsNew.clearRecords": "题目卡片和题库列表新增“清除记录”按钮，可以清掉本题或整个题库的作答记录；命令面板也能直接为当前题库开始一轮。",
-	"whatsNew.referenceById": "题目引用改用「题目id」：在任意笔记里用内联代码写题目 id，就地渲染成题卡，不必再写 `![[题库#题面]]`；旧写法继续兼容。",
+	"whatsNew.referenceById": "题目引用改用「题目id」：在任意笔记里用内联代码写题目 id，就地渲染成题卡。",
+	"whatsNew.nativeEmbeds": "不再接管 `![[...]]` 嵌入：图片、笔记小节都按 Obsidian 原生方式渲染；题目引用只用「题目id」内联代码。",
+	"whatsNew.cardTitleLink": "笔记里的题卡也能回到原题：点标题或右上角的铅笔，直接打开题目所在的题库笔记并定位到题面。",
 	"whatsNew.noteJumpFix": "题卡右上角的「编辑」按钮像反向链接一样跳到题目标题：编辑模式光标落在标题行，阅读视图滚动到标题并显示原生高亮，已打开的标签页会复用。",
 	"whatsNew.staleHintOff": "「题面已变更」提示可以在设置里关闭；在题卡上点「关闭提示」会直接关掉这个设置，所有题卡的警告色一起恢复。",
 	"whatsNew.navRight": "「清除本题记录」移到导航右侧、和跳题输入框同一组，不再贴着提交区，避免误触。",
@@ -100,7 +102,6 @@ export const zh: MessageTable = {
 	"diagnostic.fileNotFound": "找不到文件，无法渲染题目。",
 	"diagnostic.parseFailed": "解析失败：{error}",
 	"diagnostic.blockOutsideStem": "这个数据块不属于任何题面标题，无法渲染为题目。请把它放到某个标题之下。",
-	"diagnostic.embedNotFound": "找到了这个标题，但没能从它下面解析出可作答的题目。请检查该题的数据块。",
 
 	// -----------------------------------------------------------------------
 	// 题卡

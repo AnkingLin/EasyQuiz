@@ -341,15 +341,9 @@ This week: `tcp-handshake`
   knowledge-point link still points at the knowledge note.
 - Prefer referencing over copying: copies drift, references cannot.
 
-Embedding by stem heading works too, and is what older notes may use:
-
-```markdown
-![[计算机网络/传输层#TCP 建立连接需要几次握手？]]
-```
-
-- The subpath must be the **stem heading text with the trailing `^[[[]]]` knowledge link left out**.
-- A subpath that does not match a stem heading is ignored, so ordinary `![[note#section]]` embeds keep
-  Obsidian's normal behaviour.
+A card rendered from an id reference is also a link: its title and pencil open the bank note at the
+question. The plugin **does not intercept `![[...]]` embeds** — images and section embeds keep Obsidian's
+native rendering, so do not write embeds expecting a card.
 
 ## Fields you must never write by hand
 

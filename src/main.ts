@@ -12,19 +12,20 @@ import {
 	Plugin,
 	PluginSettingTab,
 	Setting,
+	stripHeadingForLink,
 	TFile,
 } from "obsidian";
 import type { WorkspaceLeaf } from "obsidian";
+
+/**
+ * 题卡内部不再套题卡：题面渲染时会再跑一遍后处理器，
+ * 若题面里又写了题目引用就会无限递归，用 DOM 位置直接掐断。
+ */
+function isInsideQuizCard(el: HTMLElement): boolean {
+	return el.closest(".easy-quiz-card") !== null;
+}
 import { BlankMarkerMode, ParsedQuizFile, QuizQuestion } from "./types";
 import { DEFAULT_SETTINGS, QuizService, RuntimeSettings } from "./runtime";
-import {
-	claimEmbedHost,
-	findEmbeddedQuestion,
-	isInsideQuizCard,
-	looksLikeQuestionRef,
-	matchesQuestionHeading,
-	splitEmbedSrc,
-} from "./embed";
 import { LanguagePreference, LANGUAGE_PREFERENCES, setLanguage, resolveLanguage, t } from "./i18n";
 import { renderQuizCard } from "./view";
 import { insertQuestionAtCursor, InsertQuestionOptions } from "./insert-modal";
@@ -93,11 +94,9 @@ export default class EasyQuizPlugin extends Plugin {
 			}
 		);
 
-		// 题目嵌入：`![[题库#题目]]` 直接在笔记里渲染成可作答的题卡。
-		// Obsidian 自己的 embed 处理发生在**所有后处理器之后**（见 publish 的 postProcess），
-		// 因此这里要排在默认顺序之前，先把 embed 换成题卡，别让 Obsidian 把选项列表和数据块
-		// 原样渲染出来。sortOrder 为负值即排在默认（0）之前。
-		this.registerMarkdownPostProcessor((el, ctx) => this.renderEmbeds(el, ctx), -10);
+		// 题目引用：`` `题目id` `` 内联代码在笔记里就地渲染成可作答的题卡。
+		// 原生嵌入 `![[...]]` 一律交给 Obsidian 自己渲染，插件不接管。
+		this.registerMarkdownPostProcessor((el, ctx) => this.renderReferences(el, ctx), -10);
 
 		// 题目被编辑后，阅读视图里的数据块不会自动重渲染，需要手动刷新一次。
 		// 刷题窗口同样缓存了解析结果，一并标脏。
@@ -417,6 +416,7 @@ export default class EasyQuizPlugin extends Plugin {
 			blankMarker: this.settings.blankMarker,
 			showStaleHint: this.settings.showStaleHint,
 			onDismissStaleHint: () => this.dismissStaleHint(),
+			onOpenSource: () => void this.openQuestionSource(file, question),
 			// MarkdownRenderer 需要一个 Component 承载生命周期；交给渲染上下文托管。
 			addRenderChild: (child) => post.addChild(child),
 			onSubmitted: () => this.refreshNotice(),
@@ -428,64 +428,25 @@ export default class EasyQuizPlugin extends Plugin {
 	}
 
 	// -----------------------------------------------------------------------
-	// 题目嵌入：![[题库#题目]]
+	// 题目引用：`题目id`
 	// -----------------------------------------------------------------------
 
 	/**
-	 * 把 `![[题库#题目]]` 的 embed 换成可作答的题卡。
+	 * 把内联代码 `` `题目id` `` 换成可作答的题卡。
 	 *
-	 * 时序是关键。Obsidian 渲染一条笔记时先跑完**所有**后处理器，然后才去加载
-	 * `internal-embed` 元素里的嵌入内容；因此本处理器用负的 sortOrder 排在最前，
-	 * 并且**同步地**把命中的 embed 从 DOM 里换掉。若不这样，Obsidian 会先把题库文件
-	 * 的原文（选项列表 + `quiz` 数据块）整段渲染出来，用户会看到一闪而过的源码；
-	 * 而标题对不上时它更会退化成渲染**整份**题库文件。
-	 *
-	 * 判定分两层，逐层收窄，宁可放过也不误伤：
-	 *   1. 同步：子路径像不像一道题（非空、非 `#^块` / `#[^脚注]`），目标文件是不是题库，
-	 *      以及 `metadataCache` 里是否存在**同级**的、标题文本相同的题面标题。
-	 *      任何一条不满足就**原样留着**，交给 Obsidian 的常规渲染——
-	 *      普通笔记的 `![[笔记#小节]]` 因此完全不受影响。
-	 *   2. 异步：真的解析出这道题才填进题卡。解析不出就写一句诊断，而不是留一片空白。
+	 * 只处理整段内联代码——围栏代码块、标题里的代码与普通行内代码都保持原样。
+	 * 笔记里的 `![[...]]` 原生嵌入完全不受影响：插件不再接管任何 embed。
 	 */
-	private renderEmbeds(el: HTMLElement, post: MarkdownPostProcessorContext): Promise<void> | void {
-		const embeds = Array.from(el.querySelectorAll<HTMLElement>(".internal-embed:not(.is-loaded)"));
-		// 新版引用：整段内联代码就是一个题目 id。只处理行内代码，围栏代码块原样保留。
+	private renderReferences(
+		el: HTMLElement,
+		post: MarkdownPostProcessorContext
+	): Promise<void> | void {
 		const codes = Array.from(el.querySelectorAll<HTMLElement>("code")).filter(
 			(code) => code.closest("pre") === null && code.closest("h1, h2, h3, h4, h5, h6") === null
 		);
-		if (embeds.length === 0 && codes.length === 0) return;
+		if (codes.length === 0) return;
 
 		const jobs: Promise<void>[] = [];
-		for (const embed of embeds) {
-			// 一张卡里不再套题卡：题卡渲染题面时会再跑一遍后处理器，若不拦住，
-			// 题面里引用自己的 `![[题库#题目]]` 会让渲染无限递归下去。
-			if (isInsideQuizCard(embed)) continue;
-
-			const src = embed.getAttribute("src");
-			if (src === null || src.trim() === "") continue;
-
-			const target = splitEmbedSrc(src);
-			if (target.path === "" || !looksLikeQuestionRef(target.subpath)) continue;
-
-			const targetFile = this.app.metadataCache.getFirstLinkpathDest(target.path, post.sourcePath);
-			if (targetFile === null || !this.service.isQuizFile(targetFile)) continue;
-			const headings = this.app.metadataCache.getFileCache(targetFile)?.headings ?? [];
-			if (
-				!matchesQuestionHeading(
-					target.subpath,
-					headings,
-					this.settings.headingLevels,
-					this.settings.headingMode
-				)
-			) continue;
-
-			// 同步认领：就地把它改造成题卡容器。Obsidian 的 embed 加载随后找的是
-			// `.internal-embed:not(.is-loaded)`，类名已被摘掉，因此不会再把这
-			// 份题库的原文渲染一遍。边界与理由见 `claimEmbedHost`。
-			const host = claimEmbedHost(embed);
-			jobs.push(this.fillEmbeddedQuestion(host, targetFile, target.subpath, post));
-		}
-
 		for (const code of codes) {
 			// 题卡内部不再套题卡，否则题面里引用自己会无限递归。
 			if (isInsideQuizCard(code)) continue;
@@ -496,53 +457,6 @@ export default class EasyQuizPlugin extends Plugin {
 		if (jobs.length === 0) return;
 		// 返回 Promise 会被 Obsidian 收进渲染的 promises 里等待，题卡因此不会晚于整页出现。
 		return Promise.all(jobs).then(() => undefined);
-	}
-
-	/**
-	 * 把题目渲染进上面认领好的容器。
-	 *
-	 * 找不到题目时给出诊断而不是静默留白：能走到这里说明标题确实存在，解析不出题目
-	 * 本身就是作者需要知道的信息（多半是数据块写坏了）。不可作答的题由
-	 * `renderQuizCard` 自己渲染成诊断卡片，因此这里只处理「题都找不到」。
-	 */
-	private async fillEmbeddedQuestion(
-		host: HTMLElement,
-		file: TFile,
-		subpath: string,
-		post: MarkdownPostProcessorContext
-	): Promise<void> {
-		let parsed: ParsedQuizFile;
-		try {
-			parsed = await this.service.parseFile(file);
-		} catch (error) {
-			host.createDiv({
-				cls: "easy-quiz-card is-diagnostic",
-				text: t("diagnostic.parseFailed", {
-					error: error instanceof Error ? error.message : String(error),
-				}),
-			});
-			return;
-		}
-
-		const question = findEmbeddedQuestion(parsed, subpath);
-		if (question === null) {
-			host.createDiv({ cls: "easy-quiz-card is-diagnostic", text: t("diagnostic.embedNotFound") });
-			return;
-		}
-
-		await renderQuizCard(question, {
-			app: this.app,
-			service: this.service,
-			file,
-			el: host,
-			blockLine: question.blockLine ?? undefined,
-			blankMarker: this.settings.blankMarker,
-			showStaleHint: this.settings.showStaleHint,
-			onDismissStaleHint: () => this.dismissStaleHint(),
-			// MarkdownRenderer 需要一个 Component 承载生命周期；交给渲染上下文托管。
-			addRenderChild: (child) => post.addChild(child),
-			onSubmitted: () => this.refreshNotice(),
-		});
 	}
 
 	/**
@@ -584,9 +498,31 @@ export default class EasyQuizPlugin extends Plugin {
 			blankMarker: this.settings.blankMarker,
 			showStaleHint: this.settings.showStaleHint,
 			onDismissStaleHint: () => this.dismissStaleHint(),
+			onOpenSource: () => void this.openQuestionSource(file, question),
 			addRenderChild: (child) => post.addChild(child),
 			onSubmitted: () => this.refreshNotice(),
 		});
+	}
+
+	/**
+	 * 打开题目所在的题库笔记，并用标题子路径定位到题面（阅读视图里是原生高亮）。
+	 *
+	 * 阅读视图里的题卡、引用卡也走这里：没有刷题窗口时，卡片右上角的铅笔就是
+	 * 回到原题的入口。
+	 */
+	private async openQuestionSource(file: TFile, question: QuizQuestion): Promise<void> {
+		const cached = this.app.metadataCache?.getFileCache?.(file)?.headings?.find(
+			(item) => item.position.start.line === question.line
+		)?.heading;
+		const heading = stripHeadingForLink(cached ?? question.title).trim();
+		const link = heading === "" ? file.path : `${file.path}#${heading}`;
+		try {
+			await this.app.workspace.openLinkText(link, file.path, false);
+		} catch (error) {
+			new Notice(t("practice.session.openNoteFailed", {
+				error: error instanceof Error ? error.message : String(error),
+			}));
+		}
 	}
 
 	/** 查一处引用：优先当前笔记，其次整个 vault 里唯一的那一道。 */

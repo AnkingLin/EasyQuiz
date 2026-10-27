@@ -14,6 +14,7 @@ import "./quiz-match-board.test";
 import "./quiz-insert.test";
 import "./quiz-insert-modal.test";
 import "./quiz-match-dom.test";
+import "./quiz-card-source-link.test";
 import "./quiz-choice-dom.test";
 import "./quiz-choice-shuffle.test";
 import "./quiz-stem-split.test";
@@ -25,7 +26,6 @@ import "./quiz-placement.test";
 import "./quiz-skill-doc.test";
 import "./quiz-styles.test";
 import "./quiz-i18n.test";
-import "./quiz-embed.test";
 import "./quiz-reference.test";
 import "./quiz-whats-new.test";
 
