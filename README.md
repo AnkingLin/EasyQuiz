@@ -618,6 +618,11 @@ appears for Markdown question banks; multi-selections and other files are left a
 
 ## What's new
 
+### 1.1.5
+
+- **Filter by error rate.** Practice settings have a new **Error rate** dropdown: only questions whose error rate is at least the chosen threshold (10%–100%) are drawn, and questions you have never attempted stay out.
+- **End round on the right.** The **End round** button now sits at the right of the practice page's title row.
+
 ### 1.1.4
 
 - **The stem is plain text again.** A card's title no longer opens the source note; the pencil in the header is the one way back.

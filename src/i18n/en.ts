@@ -123,6 +123,10 @@ export const en = {
 		"Opening a question's source note now always lands on the question: the card reveals its line after opening, so headings that carry a knowledge link no longer leave you at the top of the note.",
 	"whatsNew.listStartup":
 		"The question-bank list waits for Obsidian to finish indexing at startup and rescans by itself, so it no longer opens empty.",
+	"whatsNew.errorRateFilter":
+		"Practice settings now filter by error rate: only questions whose error rate is at least the value you pick are drawn, and questions you have never attempted stay out.",
+	"whatsNew.endRoundRight":
+		"The End round button now sits at the right of the practice page's title row.",
 	"whatsNew.noteJumpFix":
 		"The card's edit button now opens the question's heading like a backlink: the cursor lands on the heading in edit mode, reading view scrolls there with the native highlight, and an already-open tab is reused.",
 	"whatsNew.staleHintOff":

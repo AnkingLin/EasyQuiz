@@ -94,6 +94,8 @@ export const zh: MessageTable = {
 	"whatsNew.plainStem": "题面标题恢复成普通文本，误点不会再跳走；回源笔记只用右上角的铅笔。",
 	"whatsNew.jumpReveal": "打开源笔记后一定会落在题面：题卡会在打开后按题目所在行定位，标题带知识点链接时也不会停在笔记顶部。",
 	"whatsNew.listStartup": "题库列表在启动时会等 Obsidian 建好索引并自动重扫，不再打开成空列表。",
+	"whatsNew.errorRateFilter": "刷题设置新增「错误率」筛选：只抽错误率不低于所选值的题，没做过的题没有错误率，不会入选。",
+	"whatsNew.endRoundRight": "刷题页的「结束本轮」移到标题行右侧。",
 	"whatsNew.noteJumpFix": "题卡右上角的「编辑」按钮像反向链接一样跳到题目标题：编辑模式光标落在标题行，阅读视图滚动到标题并显示原生高亮，已打开的标签页会复用。",
 	"whatsNew.staleHintOff": "「题面已变更」提示可以在设置里关闭；在题卡上点「关闭提示」会直接关掉这个设置，所有题卡的警告色一起恢复。",
 	"whatsNew.navRight": "「清除本题记录」移到导航右侧、和跳题输入框同一组，不再贴着提交区，避免误触。",
