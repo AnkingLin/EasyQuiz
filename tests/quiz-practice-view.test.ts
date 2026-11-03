@@ -84,6 +84,52 @@ const BANK_B = [
 	"```",
 ].join("\n");
 
+/**
+ * 带不同错误率的题库：75% / 0% / 未作答。
+ *
+ * 错误率 = 答错次数 / 作答次数，用来验证设置页的「错误率」筛选。
+ */
+const BANK_RATES = [
+	"---",
+	"quiz: true",
+	"---",
+	"",
+	"## 经常做错",
+	"",
+	"- 甲 ^a",
+	"- 乙 ^b",
+	"",
+	"```quiz",
+	"id: often-wrong",
+	"type: single",
+	"answer: a",
+	"stats: { attempts: 4, correct: 1, lastResult: wrong }",
+	"```",
+	"",
+	"## 一直做对",
+	"",
+	"- 甲 ^a",
+	"- 乙 ^b",
+	"",
+	"```quiz",
+	"id: always-right",
+	"type: single",
+	"answer: a",
+	"stats: { attempts: 5, correct: 5, lastResult: correct }",
+	"```",
+	"",
+	"## 还没做过",
+	"",
+	"- 甲 ^a",
+	"- 乙 ^b",
+	"",
+	"```quiz",
+	"id: untried",
+	"type: single",
+	"answer: a",
+	"```",
+].join("\n");
+
 interface FakeFile {
 	path: string;
 	basename: string;
@@ -572,6 +618,47 @@ test("只刷错题：有错题记录时只抽出答错过的题", async () => {
 	assertEqual(at(harness.renders, 0, "缺少渲染").question.id, "a2", "抽到的应是答错过的那道题");
 });
 
+test("错误率筛选：只保留错误率不低于所选值的题", async () => {
+	const harness = buildHarness([{ file: fakeFile("题库/错误率.md"), source: BANK_RATES }]);
+	await openPicker(harness, "题库/错误率.md");
+
+	// 默认「不限错误率」：三道题都进候选，包括没做过的那道。
+	assert(textOf(harness.view).includes("符合当前条件 3 题"), "默认应保留全部题目");
+	assert(textOf(harness.view).includes("错误率"), "设置页应有一项错误率筛选");
+	const select = find(harness.view, "select[data-action='error-rate']", "缺少错误率筛选") as HTMLSelectElement;
+	assertEqual(select.value, "0", "默认选中「不限错误率」");
+	const labels = Array.from(select.options).map((option) => option.textContent ?? "");
+	assertEqual(labels.length, 11, "错误率应有「不限」加 10%–100% 十个档位");
+	assert(labels.includes("不限错误率"), `应有「不限错误率」档（实际：${labels.join(" / ")}）`);
+	assert(labels.includes("≥ 70%"), `应有 70% 档（实际：${labels.join(" / ")}）`);
+
+	// 75% 的那道入选；0% 与未作答（没有错误率）的题都被筛掉。
+	select.value = "70";
+	change(select);
+	await flush();
+	assert(textOf(harness.view).includes("符合当前条件 1 题"), "只应留下错误率 75% 的那道题");
+	assert(textOf(harness.view).includes("这一轮将刷 1 题"), "计划题数应随错误率变化");
+
+	await startSession(harness);
+	assertEqual(harness.renders.length, 1, "这一轮只应有一道题");
+	assertEqual(at(harness.renders, 0, "缺少渲染").question.id, "often-wrong", "抽到的应是错误率最高的那道题");
+});
+
+test("错误率筛选：阈值 100% 只留每次都错的题", async () => {
+	const harness = buildHarness([{ file: fakeFile("题库/错误率.md"), source: BANK_RATES }]);
+	await openPicker(harness, "题库/错误率.md");
+
+	const select = find(harness.view, "select[data-action='error-rate']", "缺少错误率筛选") as HTMLSelectElement;
+	select.value = "100";
+	change(select);
+	await flush();
+
+	// 这份题库里没有 100% 错误的题：候选为 0，开始按钮应禁用。
+	assert(textOf(harness.view).includes("符合当前条件 0 题"), "没有每次都错的题时应为 0 题");
+	const start = find(harness.view, "button[data-action='start-session']", "缺少开始按钮") as HTMLButtonElement;
+	assert(start.disabled, "没有候选题时开始按钮应禁用");
+});
+
 test("刷题设置：移除选中的文件后回到空状态", async () => {
 	const harness = standardHarness();
 	await openPicker(harness, "题库/甲.md");
@@ -813,6 +900,17 @@ test("结束本轮：直接给出成绩单", async () => {
 
 	assert(textOf(harness.view).includes("本轮结果"), "结束本轮应跳到成绩单");
 	assert(textOf(harness.view).includes("已作答 0"), "没有作答时统计为 0");
+});
+
+test("结束本轮：按钮在标题行最右侧，不与标题挤在一起", async () => {
+	const harness = standardHarness();
+	await openPicker(harness, "题库/甲.md");
+	await startSession(harness);
+
+	const end = find(harness.view, "button[data-action='end-session']", "缺少结束本轮按钮");
+	const toolbar = end.closest(".easy-quiz-practice__toolbar.is-compact");
+	assert(toolbar !== null, "结束本轮应放在标题行的紧凑工具条里");
+	assertEqual(toolbar?.previousElementSibling?.tagName, "H3", "工具条应紧跟在标题之后");
 });
 
 /** 驱动设置行上的开关（设置页上只有一个开关：打乱顺序）。 */

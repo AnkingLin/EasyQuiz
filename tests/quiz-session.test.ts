@@ -16,6 +16,7 @@ import { ParsedQuizFile, QUIZ_TYPES } from "../src/types";
 import {
 	buildSession,
 	DEFAULT_SESSION_CONFIG,
+	errorRateOf,
 	FileSummary,
 	filterQuestions,
 	ParsedMap,
@@ -134,6 +135,27 @@ function single(title: string, id: string, lastResult: "correct" | "wrong" | nul
 /** 把若干题面拼成一份完整的题库文件。 */
 function quizSource(blocks: string[]): string {
 	return ["---", "quiz: true", "---", "", ...blocks].join("\n");
+}
+
+/** 一道带指定作答数据（次数 / 答对次数）的单选题；`attempts` 为 0 时不写 stats。 */
+function scored(title: string, id: string, attempts: number, correct: number): string {
+	const lines = [
+		`## ${title}`,
+		"",
+		"- 甲 ^a",
+		"- 乙 ^b",
+		"",
+		"```quiz",
+		`id: ${id}`,
+		"type: single",
+		"answer: a",
+	];
+	if (attempts > 0) {
+		const lastResult = correct >= attempts ? "correct" : "wrong";
+		lines.push(`stats: { attempts: ${attempts}, correct: ${correct}, lastResult: ${lastResult} }`);
+	}
+	lines.push("```", "");
+	return lines.join("\n");
 }
 
 const pathA = "题库/甲.md";
@@ -309,6 +331,61 @@ test("筛选：types 为空表示不限题型", () => {
 	assert(unrestricted.length > onlySingle.length, "不限题型时应保留更多题");
 });
 
+test("错误率：按作答次数与答对次数计算，没有记录时为 null", () => {
+	const questions = parse(
+		quizSource([
+			scored("半错", "half", 4, 2),
+			scored("全错", "all-wrong", 3, 0),
+			scored("全对", "all-correct", 5, 5),
+			scored("没做过", "untried", 0, 0),
+		])
+	).questions;
+
+	assertEqual(errorRateOf(at(questions, 0)), 0.5, "4 次错 2 次应为 50%");
+	assertEqual(errorRateOf(at(questions, 1)), 1, "3 次全错应为 100%");
+	assertEqual(errorRateOf(at(questions, 2)), 0, "5 次全对应为 0%");
+	assertEqual(errorRateOf(at(questions, 3)), null, "没有作答记录时没有错误率");
+
+	// 数据块是手写 YAML：答对数不可能超过作答次数，读入时夹回去，错误率不会变成负数。
+	const inconsistent = parse(quizSource([scored("记录写多了", "over", 2, 5)])).questions;
+	assertEqual(errorRateOf(at(inconsistent, 0)), 0, "答对数超过作答次数时按 0% 处理");
+});
+
+test("筛选：minErrorRate 只保留达到阈值的题，未作答的题不会入选", () => {
+	const questions = parse(
+		quizSource([
+			scored("错误率 50%", "half", 4, 2),
+			scored("错误率 100%", "all-wrong", 3, 0),
+			scored("错误率 0%", "all-correct", 5, 5),
+			scored("没做过", "untried", 0, 0),
+		])
+	).questions;
+
+	const atLeast50 = filterQuestions(questions, {
+		types: [],
+		includeBroken: false,
+		wrongOnly: false,
+		minErrorRate: 50,
+	});
+	assertEqual(atLeast50.map((question) => question.id).join(","), "half,all-wrong", "错误率恰好等于阈值也应入选");
+
+	const atLeast60 = filterQuestions(questions, {
+		types: [],
+		includeBroken: false,
+		wrongOnly: false,
+		minErrorRate: 60,
+	});
+	assertEqual(atLeast60.map((question) => question.id).join(","), "all-wrong", "低于阈值的题被筛掉");
+
+	const unrestricted = filterQuestions(questions, {
+		types: [],
+		includeBroken: false,
+		wrongOnly: false,
+		minErrorRate: 0,
+	});
+	assertEqual(unrestricted.length, 4, "0 表示不按错误率筛选，未作答的题也保留");
+});
+
 // ---------------------------------------------------------------------------
 // buildSession
 // ---------------------------------------------------------------------------
@@ -378,6 +455,32 @@ test("组卷：wrongOnly 在任何模式下都只保留答错的题", () => {
 	const entries = buildSession(config, buildMap(), seededRandom(4));
 	assertEqual(entries.length, 2, "只有两道答错的题");
 	assert(entries.every((entry) => entry.id === "a2" || entry.id === "b1"), "只应包含答错的题");
+});
+
+test("组卷：错误率阈值在任何模式下都参与筛选", () => {
+	const map: ParsedMap = new Map<string, ParsedQuizFile>();
+	map.set(
+		"题库/错误率.md",
+		parse(
+			quizSource([
+				scored("错误率 50%", "half", 4, 2),
+				scored("错误率 100%", "all-wrong", 3, 0),
+				scored("错误率 0%", "all-correct", 5, 5),
+				scored("没做过", "untried", 0, 0),
+			]),
+			"题库/错误率.md"
+		)
+	);
+
+	const half = buildSession({ ...DEFAULT_SESSION_CONFIG, mode: "order", minErrorRate: 50 }, map);
+	assertEqual(half.map(ref).join(","), "题库/错误率.md#half,题库/错误率.md#all-wrong", "顺序模式应按错误率筛题");
+
+	const random = buildSession(
+		{ ...DEFAULT_SESSION_CONFIG, mode: "random", randomCount: 0, minErrorRate: 100 },
+		map,
+		seededRandom(7)
+	);
+	assertEqual(random.map(ref).join(","), "题库/错误率.md#all-wrong", "随机模式也只从符合错误率的题里抽");
 });
 
 test("组卷：默认不带降级题，includeBroken 时才进队列", () => {

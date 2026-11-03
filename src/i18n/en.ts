@@ -283,6 +283,11 @@ export const en = {
 	"practice.picker.typeDesc":
 		"No type ticked means all types; the number in brackets is how many answerable questions the selected files hold.",
 	"practice.picker.typeLabel": "{label} ({count})",
+	"practice.picker.errorRateName": "Error rate",
+	"practice.picker.errorRateDesc":
+		"Keep only questions whose error rate is at least the selected value; unanswered questions have no error rate and are left out.",
+	"practice.picker.errorRateAny": "Any error rate",
+	"practice.picker.errorRateOption": "≥ {rate}%",
 	"practice.picker.shuffleName": "Shuffle",
 	"practice.picker.shuffleDesc":
 		"Shuffles the question order and the choice options; the columns of a matching question are always shuffled.",

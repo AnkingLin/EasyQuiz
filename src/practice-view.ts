@@ -3,7 +3,7 @@
  *
  * 1. **题库列表**：按文件路径列出 vault 里所有题库文件，逐份给出题量、
  *    可作答数、需要修正的提示以及正确率——"文件路径 + 数据"在同一行里看完。
- * 2. **刷题设置**：选定文件后挑题型与抽题方式（顺序 / 定量随机 / 只刷错题），
+ * 2. **刷题设置**：选定文件后挑题型、错误率与抽题方式（顺序 / 定量随机 / 只刷错题），
  *    并在开始前就把"这一轮会有多少题"算给用户看。
  * 3. **刷题**：一次只呈现一道题，提交后原地复盘，再用「下一题」推进，走完给出成绩。
  *
@@ -60,6 +60,18 @@ const MODE_HINT_KEYS: Record<PracticeMode, MessageKey> = {
 
 /** 三个模式按这个顺序出现在按钮组里。 */
 const MODES: readonly PracticeMode[] = ["order", "random", "wrong"];
+
+/** 错误率筛选的可选阈值（百分比）；0 表示不限。 */
+const ERROR_RATE_STEPS: readonly number[] = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+
+/** 把任意外来值收敛到下拉框里存在的阈值上（旧工作区状态、手改配置都不会让下拉框变空）。 */
+function normalizeErrorRate(value: number): number {
+	let best = 0;
+	for (const rate of ERROR_RATE_STEPS) {
+		if (Math.abs(rate - value) < Math.abs(best - value)) best = rate;
+	}
+	return best;
+}
 
 /** 窗口只要求宿主提供设置与解析服务，因此不必 import 插件类（避免循环依赖）。 */
 export interface EasyQuizHost {
@@ -187,6 +199,7 @@ export class PracticeView extends ItemView {
 			picked: [...this.picked],
 			mode: this.config.mode,
 			randomCount: this.config.randomCount,
+			minErrorRate: this.config.minErrorRate,
 			// 搜索词与折叠状态属于"用户怎么看这份清单"，重建工作区时应当保留。
 			query: this.query,
 			folded: [...this.folded],
@@ -213,6 +226,10 @@ export class PracticeView extends ItemView {
 		const count = data["randomCount"];
 		if (typeof count === "number" && Number.isFinite(count)) {
 			this.config.randomCount = Math.max(0, Math.round(count));
+		}
+		const minErrorRate = data["minErrorRate"];
+		if (typeof minErrorRate === "number" && Number.isFinite(minErrorRate)) {
+			this.config.minErrorRate = normalizeErrorRate(Math.min(100, Math.max(0, minErrorRate)));
 		}
 		// 队列没有持久化：恢复到刷题页时退回设置页，避免出现空白的第三页。
 		if (this.page === 2) this.page = this.picked.length > 0 ? 1 : 0;
@@ -1129,10 +1146,11 @@ export class PracticeView extends ItemView {
 			});
 		}
 
-		// 三个设置行合成一张卡片：视觉上是一组"这一轮怎么抽题"的决定。
+		// 设置行合成一张卡片：视觉上是一组"这一轮怎么抽题"的决定。
 		const panel = body.createDiv({ cls: "easy-quiz-practice__panel" });
 		this.renderModeSetting(panel);
 		this.renderTypeSetting(panel);
+		this.renderErrorRateSetting(panel);
 		this.renderShuffleSetting(panel);
 		this.renderStartRow(body);
 		this.refreshCounts();
@@ -1203,6 +1221,38 @@ export class PracticeView extends ItemView {
 			});
 			label.createSpan({ text: t("practice.picker.typeLabel", { label: typeLabel(type), count: counts[type] }) });
 		}
+	}
+
+	/**
+	 * 按错误率筛选：只留错误率不低于所选阈值的题。
+	 *
+	 * 阈值放在下拉框里而不是输入框里：常见用法是"错误率过半"或"每次都错"，
+	 * 固定档位既不需要校验，也不会出现「0 到底是不限还是只看答过的题」的歧义——
+	 * 0 这档直接写作「不限」。所有选项共用同一句说明，窄屏下也只是一行。
+	 */
+	private renderErrorRateSetting(body: HTMLElement): void {
+		const setting = new Setting(body)
+			.setName(t("practice.picker.errorRateName"))
+			.setDesc(t("practice.picker.errorRateDesc"));
+		setting.settingEl.addClass("easy-quiz-practice__setting");
+
+		// 用原生 select 而不是 Setting.addDropdown：这里只需要一组固定档位，
+		// 直接建元素既省一层包装，也让「当前值 → 选项」的对应关系一目了然。
+		const select = setting.controlEl.createEl("select", { cls: "dropdown" });
+		select.dataset["action"] = "error-rate";
+		select.setAttribute("aria-label", t("practice.picker.errorRateName"));
+		for (const rate of ERROR_RATE_STEPS) {
+			const option = select.createEl("option", {
+				text: rate === 0 ? t("practice.picker.errorRateAny") : t("practice.picker.errorRateOption", { rate }),
+			});
+			option.value = String(rate);
+		}
+		select.value = String(normalizeErrorRate(this.config.minErrorRate));
+		select.addEventListener("change", () => {
+			const parsed = Number.parseInt(select.value, 10);
+			this.config.minErrorRate = Number.isNaN(parsed) ? 0 : normalizeErrorRate(parsed);
+			this.refreshCounts();
+		});
 	}
 
 	private renderShuffleSetting(body: HTMLElement): void {

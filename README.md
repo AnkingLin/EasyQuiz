@@ -494,6 +494,8 @@ Decide how to draw this round, and see **how many questions it will actually ask
 - **In order** — every candidate, in file order.
 - **Random sample** — shuffle and take N (0 or empty = everything).
 - **Only wrong answers** — keep questions whose last attempt was wrong.
+- **Error rate** — keep questions whose error rate is at least the selected value (e.g. "≥ 50%");
+  questions you have never attempted have no error rate and stay out.
 - **Question types** — any subset; nothing ticked means all types.
 - **Shuffle** — randomise question order and choice-option order. Option order is derived from the round's
   seed, so it stays put while you review an answer or step between questions, and only re-shuffles when a
@@ -512,6 +514,7 @@ same service, so records are written back exactly as in reading view:
 ![The practice page: progress bar, a multiple-choice question, and navigation](docs/assets/en/window-practice.png)
 
 - **Peek** reveals the answer without scoring it.
+- **End round** at the right of the title row settles the round with the current progress and shows the results.
 - **Open note** in the card header jumps to the question in its bank and puts the cursor on its heading;
   when the note is already open, that tab is reused.
 - **Clear question records** on the practice page resets only the current question's attempts and history;
@@ -662,7 +665,7 @@ Each version is announced once. Older releases are on [GitHub Releases](https://
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (429 cases)
+npm test           # bundle and run the test suite (436 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 npm run assets     # regenerate the screenshots and GIFs used by the READMEs
@@ -752,8 +755,8 @@ write-back, matching-board logic, question templates with their insertion positi
 (stems, options, explanations and matching cells rendered as Markdown, click-to-connect multi-column
 matching with shuffling, inline click-to-type blanks that grow with their content, short-answer
 self-assessment, and the clickable knowledge-point link), the practice window (question-bank list with
-per-file data plus search, folder folding and per-folder selection; practice settings with type/sampling
-filters and **Shuffle**; and the one-question-at-a-time round with in-place answer reveal and a final
+per-file data plus search, folder folding and per-folder selection; practice settings with type, error-rate and
+sampling filters plus **Shuffle**; and the one-question-at-a-time round with in-place answer reveal and a final
 report), inline-code question-id references that render an answerable card inside another note (its title
 and pencil open the bank note at the question), the file-explorer menu entry that jumps straight to a
 bank's practice settings, and the English/Chinese interface with its language setting. Question-bank edits

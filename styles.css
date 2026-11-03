@@ -722,6 +722,17 @@
 	gap: var(--eqq-2);
 }
 
+/*
+ * 刷题页标题行的工具条只有「结束本轮」一个按钮，放在标题右侧。
+ *
+ * 只给 `is-compact` 加 auto 外边距，不动通用工具条：列表页的工具条与标题
+ * 同处一行、需要左对齐（原因见上一条注释）；而这里换行后单独占一行时，
+ * 按钮贴右也正是想要的位置。
+ */
+.easy-quiz-practice__toolbar.is-compact {
+	margin-left: auto;
+}
+
 .easy-quiz-practice__loading,
 .easy-quiz-practice__totals {
 	font-size: var(--font-ui-smaller);
@@ -1444,11 +1455,11 @@
 	/*
 	 * 刷题页工具条只有「结束本轮」一个按钮，跟着列表页铺满整行会白占一行高度。
 	 * 收成贴着标题右侧的小按钮：`is-compact` 的特异性高于上面的 `width: 100%`。
+	 * 靠右由基准规则里的 `margin-left: auto` 负责，这里只管尺寸。
 	 */
 	.easy-quiz-practice__toolbar.is-compact {
 		flex: 0 0 auto;
 		width: auto;
-		margin-left: auto;
 	}
 
 	.easy-quiz-practice__toolbar.is-compact button {

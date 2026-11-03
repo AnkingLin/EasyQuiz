@@ -155,6 +155,20 @@ test("样式：工具条不靠 auto 外边距定位（换行后会凭空缩进�
 });
 
 /**
+ * 刷题页标题行只有「结束本轮」一个按钮，它应当贴在最右边。
+ *
+ * 这条规则只挂在 `is-compact` 上：列表页的工具条仍与标题左对齐（见上一条），
+ * 不能把 auto 外边距加到通用类上。
+ */
+test("样式：刷题页的「结束本轮」贴在标题行右侧", () => {
+	const block = anyRuleBlock(styles, ".easy-quiz-practice__toolbar.is-compact");
+	assert(
+		/margin-left:\s*auto/.test(block),
+		`紧凑工具条应靠 margin-left: auto 贴到右侧，实际：${block.trim()}`
+	);
+});
+
+/**
  * 窄屏下"换行占满整行"要用 `width: 100%` 而不是 `flex-basis: 100%`。
  *
  * 工具条既可能是行方向容器（页头）的子项，也可能是列方向容器（设置面板、成绩单）

@@ -154,6 +154,13 @@ export interface SessionConfig {
 	includeBroken: boolean;
 	/** 只保留上一次作答错误的题（wrong 模式）。 */
 	wrongOnly: boolean;
+	/**
+	 * 只保留错误率不低于该百分比的题（0 表示不按错误率筛选）。
+	 *
+	 * 错误率 = 答错次数 / 作答次数；没有作答记录的题没有错误率，
+	 * 因此在阈值大于 0 时不会入选。
+	 */
+	minErrorRate: number;
 	/** 打乱题序（random 模式恒为 true，由 buildSession 处理）。 */
 	shuffle: boolean;
 	/** 打乱选项顺序。 */
@@ -167,6 +174,7 @@ export const DEFAULT_SESSION_CONFIG: SessionConfig = {
 	types: [],
 	includeBroken: false,
 	wrongOnly: false,
+	minErrorRate: 0,
 	shuffle: false,
 	shuffleOptions: false,
 };
@@ -191,10 +199,28 @@ export interface QuestionFilter {
 	types: QuizType[];
 	includeBroken: boolean;
 	wrongOnly: boolean;
+	/** 最低错误率（百分比）；缺省或 0 表示不按错误率筛选。 */
+	minErrorRate?: number;
 }
 
-/** 按题型 / 是否降级 / 是否只留上次答错的题筛选。 */
+/**
+ * 题目的错误率（0–1）；没有作答记录时为 null。
+ *
+ * 记录是作者可编辑的 YAML，`correct` 有可能大于 `attempts`，因此先把答对数夹回
+ * `[0, attempts]`，错误率就不会算出负数。
+ */
+export function errorRateOf(question: QuizQuestion): number | null {
+	const attempts = question.stats.attempts;
+	if (!Number.isFinite(attempts) || attempts <= 0) return null;
+	const correct = Math.min(Math.max(0, question.stats.correct), attempts);
+	return (attempts - correct) / attempts;
+}
+
+/** 按题型 / 是否降级 / 是否只留上次答错的题 / 错误率筛选。 */
 export function filterQuestions(questions: readonly QuizQuestion[], filter: QuestionFilter): QuizQuestion[] {
+	const minErrorRate = Number.isFinite(filter.minErrorRate ?? 0)
+		? Math.min(100, Math.max(0, filter.minErrorRate ?? 0))
+		: 0;
 	const result: QuizQuestion[] = [];
 	for (const question of questions) {
 		// 降级题默认剔除；`type === null` 的题没有题型，只有显式带上降级题时才可能留下。
@@ -203,6 +229,11 @@ export function filterQuestions(questions: readonly QuizQuestion[], filter: Ques
 		// 空集合表示不限题型；没有任何题型的题（type === null）不会命中非空题型集合。
 		if (filter.types.length > 0 && (question.type === null || !filter.types.includes(question.type))) continue;
 		if (filter.wrongOnly && question.stats.lastResult !== "wrong") continue;
+		// 未作答的题没有错误率，设了阈值就不会入选；阈值按百分比比较，避免浮点误差。
+		if (minErrorRate > 0) {
+			const rate = errorRateOf(question);
+			if (rate === null || rate * 100 < minErrorRate) continue;
+		}
 		result.push(question);
 	}
 	return result;
@@ -227,6 +258,7 @@ export function buildSession(
 		types: config.types,
 		includeBroken: config.includeBroken,
 		wrongOnly: config.wrongOnly || config.mode === "wrong",
+		minErrorRate: config.minErrorRate,
 	};
 
 	const pool: QueueEntry[] = [];
