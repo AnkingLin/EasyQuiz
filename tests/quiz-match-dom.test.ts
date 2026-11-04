@@ -414,11 +414,14 @@ test("DOM：渲染题面时必须传入 Component（不能是 null）", async ()
 	}
 });
 
-test("DOM：题面为空时不调用 render（也就不会踩到 Component 缺失）", async () => {
+test("DOM：题面为空时不把空题面送进 render", async () => {
 	// 配对题的题面可能只剩表格，去掉表格后为空。
 	MarkdownRenderer.calls.length = 0;
 	await renderFullCard(parseTable(header3, rows3));
-	assertEqual(MarkdownRenderer.calls.length, 0, "题面为空时不应调用 render");
+	const stemCalls = MarkdownRenderer.calls.filter((call) =>
+		call.el.classList.contains("easy-quiz-card__body")
+	);
+	assertEqual(stemCalls.length, 0, "题面为空时不应调用 render");
 });
 
 test("DOM：未提供 Component 时插件会自己创建并交给渲染上下文", async () => {

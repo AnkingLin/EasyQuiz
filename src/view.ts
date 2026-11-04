@@ -112,14 +112,22 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 		return;
 	}
 
+	// Obsidian 要求传入承载生命周期的 Component：传 null 会直接抛错，
+	// 并使这一道题后续的渲染（包括题板）全部中断。
+	// 题目标题、题面、选项与解析都要渲染 Markdown，因此整张卡片共用一个，而不是各建一份。
+	const component = cardComponent(card, ctx);
+
 	const header = card.createDiv({ cls: "easy-quiz-card__header" });
 	header.createSpan({ cls: "easy-quiz-card__type", text: typeLabel(question.type) });
-	// 数据块里写了 `question:` 时用它代替标题作为题面标题（标题仍用于锚定题目边界）。
-	// 标题只是文本：回源笔记的入口是右上角的铅笔按钮，点标题不该带着整张卡跳走。
-	header.createSpan({
-		cls: "easy-quiz-card__title",
-		text: question.displayTitle ?? question.title,
-	});
+	/*
+	 * 数据块里写了 `question:` 时用它代替标题作为题面标题（标题仍用于锚定题目边界）。
+	 * 标题文字来自笔记里的分级标题，作者会写 `**加粗**`、`*斜体*`、行内代码；
+	 * 和题面一样交给 Obsidian 渲染，否则标记字符会原样显示在标题行上。
+	 * 标题不再承担跳转（回源笔记是右上角的铅笔），渲染出的链接仍按 Obsidian 的方式打开。
+	 */
+	const titleText = question.displayTitle ?? question.title;
+	const title = header.createSpan({ cls: "easy-quiz-card__title" });
+	await renderInlineMarkdown(title, titleText, ctx, component);
 	header.createSpan({
 		cls: `easy-quiz-card__stats${question.stale && ctx.showStaleHint !== false ? " is-stale" : ""}`,
 		text: formatStats(question),
@@ -162,11 +170,6 @@ export async function renderQuizCard(question: QuizQuestion, ctx: CardContext): 
 	}
 
 	const bodyEl = card.createDiv({ cls: "easy-quiz-card__body markdown-rendered" });
-
-	// Obsidian 要求传入承载生命周期的 Component：传 null 会直接抛错，
-	// 并使这一道题后续的渲染（包括题板）全部中断。
-	// 题面、选项与解析都要渲染 Markdown，因此整张卡片共用一个，而不是各建一份。
-	const component = cardComponent(card, ctx);
 
 	const stem = formatStem(question, ctx.blankMarker);
 	if (stem.trim() !== "") {
@@ -211,6 +214,31 @@ function cardComponent(card: HTMLElement, ctx: CardContext): Component {
 	const child = new MarkdownRenderChild(card);
 	ctx.addRenderChild?.(child);
 	return child;
+}
+
+/**
+ * 把作者写的 Markdown 渲染进一个原本只放纯文本的元素（目前是题目标题）。
+ *
+ * 直接渲染到目标元素里、失败时退回原文，和选项文本的做法一致：
+ * 标题是作者写的 Markdown，渲染失败也应该显示可读的原文，而不是空白。
+ * 单行文字同样会被渲染器包进 `<p>`，标题行的段落外边距由 styles.css 收掉，
+ * 否则标题会把题卡头部撑高、和右侧角标错位。
+ */
+async function renderInlineMarkdown(
+	target: HTMLElement,
+	markdown: string,
+	ctx: CardContext,
+	component: Component
+): Promise<void> {
+	if (markdown.trim() === "") return;
+	try {
+		await MarkdownRenderer.render(ctx.app, markdown, target, ctx.file.path, component);
+	} catch {
+		target.setText(markdown);
+		return;
+	}
+	// 什么都没渲染出来（例如测试替身、或渲染器静默失败）时退回原文：标题不能是空白的。
+	if (target.childNodes.length === 0) target.setText(markdown);
 }
 
 // ---------------------------------------------------------------------------

@@ -91,6 +91,13 @@
 	overflow-wrap: anywhere;
 }
 
+/* 标题按 Markdown 渲染（见 view.ts 的 renderInlineMarkdown）：单行标题也会被包进 <p>，
+   必须收掉段落外边距，否则标题行会被撑高、和右侧角标错位。
+   前缀 `.easy-quiz-card` 是为了压过笔记里 `.markdown-rendered p` 的段落间距。 */
+.easy-quiz-card .easy-quiz-card__title > p {
+	margin: 0;
+}
+
 .easy-quiz-card__stats,
 .easy-quiz-card__stats.is-stale {
 	flex: none;

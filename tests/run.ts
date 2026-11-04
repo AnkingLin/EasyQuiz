@@ -15,6 +15,7 @@ import "./quiz-insert.test";
 import "./quiz-insert-modal.test";
 import "./quiz-match-dom.test";
 import "./quiz-card-source-link.test";
+import "./quiz-card-title.test";
 import "./quiz-source-note.test";
 import "./quiz-choice-dom.test";
 import "./quiz-choice-shuffle.test";
