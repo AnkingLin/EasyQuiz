@@ -127,6 +127,8 @@ export const en = {
 		"Practice settings now filter by error rate: only questions whose error rate is at least the value you pick are drawn, and questions you have never attempted stay out.",
 	"whatsNew.endRoundRight":
 		"The End round button now sits at the right of the practice page's title row.",
+	"whatsNew.titleMarkdown":
+		"Question titles render as Markdown: bold, italics, inline code, links and formulas in the heading (or the data block's `question` field) display the way Obsidian renders them, instead of showing raw markers.",
 	"whatsNew.noteJumpFix":
 		"The card's edit button now opens the question's heading like a backlink: the cursor lands on the heading in edit mode, reading view scrolls there with the native highlight, and an already-open tab is reused.",
 	"whatsNew.staleHintOff":

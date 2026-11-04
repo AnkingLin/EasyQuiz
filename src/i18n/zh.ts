@@ -96,6 +96,7 @@ export const zh: MessageTable = {
 	"whatsNew.listStartup": "题库列表在启动时会等 Obsidian 建好索引并自动重扫，不再打开成空列表。",
 	"whatsNew.errorRateFilter": "刷题设置新增「错误率」筛选：只抽错误率不低于所选值的题，没做过的题没有错误率，不会入选。",
 	"whatsNew.endRoundRight": "刷题页的「结束本轮」移到标题行右侧。",
+	"whatsNew.titleMarkdown": "题目标题按 Markdown 渲染：标题里的加粗、斜体、行内代码、链接和公式都按 Obsidian 的规则显示，不再露出 `**` 这类标记；数据块的 `question` 字段同样生效。",
 	"whatsNew.noteJumpFix": "题卡右上角的「编辑」按钮像反向链接一样跳到题目标题：编辑模式光标落在标题行，阅读视图滚动到标题并显示原生高亮，已打开的标签页会复用。",
 	"whatsNew.staleHintOff": "「题面已变更」提示可以在设置里关闭；在题卡上点「关闭提示」会直接关掉这个设置，所有题卡的警告色一起恢复。",
 	"whatsNew.navRight": "「清除本题记录」移到导航右侧、和跳题输入框同一组，不再贴着提交区，避免误触。",

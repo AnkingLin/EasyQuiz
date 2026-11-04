@@ -296,7 +296,7 @@ tags:
 ### Anatomy of a question
 
 - A question spans from its stem heading to the **next heading of the same or higher level**.
-- The heading text is the question title; end it with `^[[[]]]` to record the source knowledge point.
+- The heading text is the question title; end it with `^[[[]]]` to record the source knowledge point. Inline Markdown in the heading — bold, italics, inline code — renders through Obsidian just like the stem.
 - The `quiz` block is **required**: the question type comes from its `type` field.
 - Put the data block at the end of the question, or right after the heading — both are equivalent.
 
@@ -336,7 +336,7 @@ below).
 | `score` | no | Points, default 1. |
 | `stats` | no | **Written by the plugin**: `attempts` / `correct` / `lastResult` / `lastAt`. |
 | `rev` | no | **Written by the plugin**: stem hash, used to detect edits. |
-| `question` | no | Replaces the heading text on the card; the heading still supplies the `id` and the knowledge link. |
+| `question` | no | Replaces the heading text on the card (rendered as Markdown, like the heading); the heading still supplies the `id` and the knowledge link. |
 | `distractors` | no | Choice questions only: `distractors: 2` adds 2 decoys, or `distractors: { count: 2, pool: [ ... ] }` names the candidate pool. Redrawn after every attempt; review shows the set used for that answer. |
 
 `stats` and `rev` are maintained automatically — **authors never write them**.
@@ -617,6 +617,10 @@ appears for Markdown question banks; multi-selections and other files are left a
 3. Reload Obsidian and enable the plugin under **Settings → Community plugins**.
 
 ## What's new
+
+### 1.1.6
+
+- **Question titles render as Markdown.** Bold, italics, inline code, links and formulas in a heading (or the data block's `question` field) now display the way Obsidian renders them, instead of showing raw markers.
 
 ### 1.1.5
 
