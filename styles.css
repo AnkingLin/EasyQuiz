@@ -881,6 +881,18 @@
 	box-shadow: none;
 }
 
+/*
+ * 对勾居中：Obsidian 用绝对定位的 `::after` 画勾，位置写死为 -1px、宽高取
+ * `--checkbox-size`。只要主题、缩放或窄屏样式把勾选框放大，对勾仍按原来的
+ * 尺寸贴在左上角，看起来就左偏（也会上偏）。这里不再做边框补偿，改为按
+ * 盒子的中线定位：盒子多大，勾都落在正中间。
+ */
+.easy-quiz-practice input[type="checkbox"]:checked::after {
+	top: 50%;
+	inset-inline-start: 50%;
+	transform: translate(-50%, -50%);
+}
+
 .easy-quiz-practice__group.is-folded .easy-quiz-practice__folder-caret {
 	transform: rotate(-90deg);
 }
