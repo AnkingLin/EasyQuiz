@@ -1402,11 +1402,11 @@ test("启动恢复：首屏扫描期间元数据就绪的刷新不会丢，列�
 	await resolving;
 	await flush();
 
-	assertEqual(
-		visibleFiles(harness.view).join(","),
-		"题库/首屏甲.md,题库/首屏乙.md",
-		"首屏期间收到的刷新应在渲染结束后补做，而不是被丢掉"
-	);
+	// 两个文件在列表里的先后取决于运行环境的排序区域设置，这里只验证"都在"。
+	const files = visibleFiles(harness.view);
+	assertEqual(files.length, 2, "首屏期间收到的刷新应在渲染结束后补做，而不是被丢掉");
+	assert(files.includes("题库/首屏甲.md"), "首屏刷新后应包含甲");
+	assert(files.includes("题库/首屏乙.md"), "首屏刷新后应补齐新出现的乙");
 });
 
 test("列表勾选：全选与清空只更新勾选，不重建工具条、不丢滚动位置", async () => {
