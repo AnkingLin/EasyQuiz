@@ -231,6 +231,7 @@ export const en = {
 	"practice.mode.randomHint": "Draw a random sample from the candidates; empty or 0 means all of them.",
 	"practice.mode.wrongHint": "Only questions whose last attempt was wrong. With no records the round is empty.",
 	"practice.renderFailed": "The practice window failed to render: {error}",
+	"practice.loading": "Loading…",
 	"practice.list.heading": "Question-bank files",
 	"practice.list.hint":
 		"Every question-bank file in the vault, listed by path with its data. Search to narrow the list, fold a folder with its header, and tick several files to practise them in one round.",

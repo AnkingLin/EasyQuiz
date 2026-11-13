@@ -1208,3 +1208,332 @@ test("刷题页：缓存里没有标题时退回普通标题", async () => {
 
 	assertEqual(links[0], "题库/甲.md#单选题甲", "没有缓存标题时应使用题目标题");
 });
+
+// ---------------------------------------------------------------------------
+// 启动恢复与刷新：Obsidian 先 onOpen、再 setState，状态必须先于首次渲染生效
+// ---------------------------------------------------------------------------
+
+/** Obsidian 恢复工作区时视图能用到的最小 app。 */
+function startupApp(): unknown {
+	const ref = { offref: (): void => undefined };
+	return {
+		workspace: {
+			on: () => ref,
+			trigger: () => undefined,
+			getLeavesOfType: () => [],
+		},
+		metadataCache: {
+			on: () => ref,
+			getFileCache: () => null,
+		},
+		vault: { getMarkdownFiles: () => [] },
+	};
+}
+
+/**
+ * 模拟 Obsidian 恢复一个已经打开的刷题窗口：先 `onOpen`，随后才交回缓存状态。
+ *
+ * 这个顺序是 Obsidian 的固定行为（`WorkspaceLeaf.setViewState` 里先 `open()`、
+ * 再 `setState()`），而不是测试为了复现 bug 编出来的。
+ */
+async function restoreView(harness: Harness, state: Record<string, unknown>): Promise<void> {
+	const view = harness.view as unknown as { app: unknown };
+	view.app = startupApp();
+	await harness.view.onOpen();
+	await harness.view.setState(state, {});
+	await flush();
+}
+
+function refreshList(view: PracticeView): Promise<void> {
+	return (view as unknown as { refreshList: () => Promise<void> }).refreshList();
+}
+
+test("启动恢复：缓存页在首次渲染前生效，设置页不会被画成题库列表", async () => {
+	const harness = standardHarness();
+	await restoreView(harness, { page: 1, picked: ["题库/甲.md"], mode: "random", randomCount: 2 });
+
+	assert(textOf(harness.view).includes("刷题设置"), "缓存页是设置页时，首屏就该是设置页");
+	assert(textOf(harness.view).includes("题库/甲.md（可作答 3）"), "恢复的选中题库应参与设置页");
+	assert(textOf(harness.view).includes("这一轮将刷 2 题"), "恢复的抽题方式与数量应生效");
+	assert(
+		find(harness.view, "[data-action='goto-step'][data-step='0']") !== null,
+		"设置页应允许回到题库列表"
+	);
+	assertEqual(
+		findAll(harness.view, ".easy-quiz-practice__file").length,
+		0,
+		"设置页不该同时画出一份题库列表"
+	);
+});
+
+test("启动恢复：缓存页是刷题页时退回设置页，而不是停在列表", async () => {
+	const harness = standardHarness();
+	await restoreView(harness, { page: 2, picked: ["题库/甲.md"] });
+
+	// 队列不会持久化，恢复时第三页没有内容可画，只能退回设置页（picked 非空）。
+	assert(textOf(harness.view).includes("刷题设置"), "有选中文件时应退回设置页");
+	assertEqual(findAll(harness.view, ".easy-quiz-practice__file").length, 0, "不应显示题库列表");
+});
+
+test("启动恢复：先恢复状态再渲染，不先扫一遍整个题库", async () => {
+	const harness = standardHarness();
+	const calls: string[] = [];
+	const original = harness.service.parseFile;
+	harness.service.parseFile = async (file) => {
+		calls.push(file.path);
+		return original(file);
+	};
+
+	const view = harness.view as unknown as { app: unknown };
+	view.app = startupApp();
+	await harness.view.onOpen();
+
+	assertEqual(calls.length, 0, "onOpen 只搭空壳，不应扫描整个题库");
+	await harness.view.setState({ page: 1, picked: ["题库/甲.md"] }, {});
+	await flush();
+
+	assertEqual(calls.join(","), "题库/甲.md", "只应解析恢复页真正用到的题库");
+});
+
+test("启动恢复：搜索词在首次渲染就生效", async () => {
+	const harness = standardHarness();
+	await restoreView(harness, { page: 0, query: "乙" });
+
+	assertEqual(visibleFiles(harness.view).join(","), "题库/子目录/乙.md", "首屏应已按搜索词过滤");
+	assert(textOf(harness.view).includes("匹配到 1 个题库文件"), "应显示匹配数");
+});
+
+test("启动恢复：列表页的勾选与底部按钮按缓存状态恢复", async () => {
+	const harness = standardHarness();
+	await restoreView(harness, { page: 0, picked: ["题库/甲.md"] });
+
+	const check = find(
+		harness.view,
+		"input[data-action='pick-file'][data-path='题库/甲.md']",
+		"缺少甲的勾选框"
+	) as HTMLInputElement;
+	assert(check.checked, "恢复的选中项应在首屏就勾上");
+	assert(textOf(harness.view).includes("已选 1 份"), "底部操作条应显示恢复的份数");
+	const start = find(harness.view, "button[data-action='to-picker']", "缺少进入设置按钮") as HTMLButtonElement;
+	assert(!start.disabled, "有选中文件时进入设置按钮应可用");
+});
+
+test("启动恢复：恢复后的按钮作用于对应页面（全选不会跳到设置页）", async () => {
+	const harness = standardHarness();
+	await restoreView(harness, { page: 1, picked: ["题库/甲.md"] });
+
+	click(find(harness.view, "button[data-action='goto-list']", "缺少返回题库列表按钮"));
+	await flush();
+	assertEqual(visibleFiles(harness.view).length, 2, "应回到题库列表");
+
+	click(find(harness.view, "button[data-action='select-all']", "缺少全选按钮"));
+	await flush();
+	assert(textOf(harness.view).includes("已选 2 份"), "全选应作用于列表");
+	assertEqual(
+		findAll(harness.view, "button[data-action='start-session']").length,
+		0,
+		"全选不应把窗口跳到设置页"
+	);
+});
+
+test("启动恢复：没有收到 setState 时仍应自己画出列表", async () => {
+	const harness = standardHarness();
+	(harness.view as unknown as { app: unknown }).app = startupApp();
+	await harness.view.onOpen();
+	// onOpen 之后 Obsidian 一定会补一次 setState；这里等一拍，验证兜底渲染不会让窗口空着。
+	await new Promise((resolve) => testWindow.setTimeout(resolve, 0));
+	await flush();
+
+	assertEqual(visibleFiles(harness.view).length, 2, "收不到状态时也应把列表画出来");
+});
+
+test("状态恢复：正在进行的一轮不会被补发的状态踢回设置页", async () => {
+	const harness = standardHarness();
+	await openPicker(harness, "题库/甲.md");
+	await startSession(harness);
+	assert(textOf(harness.view).includes("第 1 / 3 题"), "应已经进入刷题页");
+
+	// 再次聚焦窗口时 Obsidian 会补一次 setState；缓存里的 page 2 没有队列可恢复，
+	// 但视图自己的一轮还在，不能因此把用户踢回设置页。
+	await harness.view.setState({}, {});
+	await harness.view.setState({ page: 2, picked: ["题库/甲.md"] }, {});
+	await flush();
+
+	assert(textOf(harness.view).includes("第 1 / 3 题"), "进行中的一轮应留在刷题页");
+	assertEqual(
+		findAll(harness.view, "button[data-action='start-session']").length,
+		0,
+		"不应被切回刷题设置页"
+	);
+});
+
+test("启动恢复：首屏扫描期间元数据就绪的刷新不会丢，列表随后补齐", async () => {
+	const harness = standardHarness();
+	const bankA = fakeFile("题库/首屏甲.md", 1_700_000_000_000);
+	const bankB = fakeFile("题库/首屏乙.md", 1_700_000_400_000);
+	harness.service.listQuizFiles = () => [bankA];
+
+	// 第一次解析卡住，模拟首屏扫描还没结束。
+	const gate: { release: () => void } = { release: () => undefined };
+	const waiting = new Promise<void>((resolve) => {
+		gate.release = resolve;
+	});
+	let first = true;
+	harness.service.parseFile = async (file) => {
+		if (first) {
+			first = false;
+			await waiting;
+		}
+		return parseQuizFile(BANK_A, file.path, options);
+	};
+
+	(harness.view as unknown as { app: unknown }).app = startupApp();
+	await harness.view.onOpen();
+	const rendering = harness.view.setState({ page: 0 }, {});
+	await flush();
+
+	// 首屏还在扫描时元数据缓存建好了：多出了一份题库，触发一次刷新。
+	harness.service.listQuizFiles = () => [bankA, bankB];
+	const resolving = refreshList(harness.view);
+	await flush();
+
+	gate.release();
+	await rendering;
+	await resolving;
+	await flush();
+
+	assertEqual(
+		visibleFiles(harness.view).join(","),
+		"题库/首屏甲.md,题库/首屏乙.md",
+		"首屏期间收到的刷新应在渲染结束后补做，而不是被丢掉"
+	);
+});
+
+test("列表勾选：全选与清空只更新勾选，不重建工具条、不丢滚动位置", async () => {
+	const harness = standardHarness();
+	await harness.view.activate();
+
+	const root = find(harness.view, ".easy-quiz-practice");
+	const toolbar = find(harness.view, ".easy-quiz-practice__toolbar");
+	const search = find(harness.view, "input[data-action='search']") as HTMLInputElement;
+	search.value = "甲";
+	search.dispatchEvent(new testWindow.Event("input", { bubbles: true }));
+	root.scrollTop = 120;
+
+	click(find(harness.view, "button[data-action='select-all']", "缺少全选按钮"));
+	await flush();
+
+	assert(find(harness.view, ".easy-quiz-practice") === root, "列表顶层的滚动容器应保持不变");
+	assert(find(harness.view, ".easy-quiz-practice__toolbar") === toolbar, "工具条不应被重建");
+	assert(find(harness.view, "input[data-action='search']") === search, "搜索框不应被换掉");
+	assertEqual(root.scrollTop, 120, "滚动位置应保留");
+	assert(textOf(harness.view).includes("已选 1 份"), "应只选中搜索结果里的那一份");
+
+	click(find(harness.view, "button[data-action='clear-selection']", "缺少清空按钮"));
+	await flush();
+	assert(textOf(harness.view).includes("已选 0 份"), "清空后选中份数应归零");
+	assert(find(harness.view, ".easy-quiz-practice__toolbar") === toolbar, "清空也不应重建工具条");
+});
+
+test("列表搜索：清空搜索只重画清单，不重建搜索框", async () => {
+	const harness = standardHarness();
+	await harness.view.activate();
+	search(harness.view, "甲");
+
+	const toolbar = find(harness.view, ".easy-quiz-practice__toolbar");
+	const input = find(harness.view, "input[data-action='search']") as HTMLInputElement;
+	click(find(harness.view, "button[data-action='clear-search']", "缺少清空搜索按钮"));
+	await flush();
+
+	assert(find(harness.view, ".easy-quiz-practice__toolbar") === toolbar, "工具条不应被重建");
+	assert(find(harness.view, "input[data-action='search']") === input, "搜索框不应被换掉");
+	assertEqual(input.value, "", "搜索框应被清空");
+	assertEqual(visibleFiles(harness.view).length, 2, "清空后应恢复全部文件");
+});
+
+test("列表折叠：全部折叠/展开只重画清单，不重建工具条", async () => {
+	const harness = standardHarness();
+	await harness.view.activate();
+	const toolbar = find(harness.view, ".easy-quiz-practice__toolbar");
+
+	click(find(harness.view, "button[data-action='fold-all']", "缺少全部折叠按钮"));
+	await flush();
+	assert(find(harness.view, ".easy-quiz-practice__toolbar") === toolbar, "折叠不应重建工具条");
+	assertEqual(visibleFiles(harness.view).length, 0, "全部折叠后不应有文件行");
+
+	click(find(harness.view, "button[data-action='unfold-all']", "缺少全部展开按钮"));
+	await flush();
+	assert(find(harness.view, ".easy-quiz-practice__toolbar") === toolbar, "展开也不应重建工具条");
+	assertEqual(visibleFiles(harness.view).length, 2, "全部展开后文件应回来");
+});
+
+test("列表刷新：文件改动后原地更新，只重解析改动的文件且不出现扫描占位", async () => {
+	const harness = standardHarness();
+	await harness.view.activate();
+
+	const toolbar = find(harness.view, ".easy-quiz-practice__toolbar");
+	const totals = find(harness.view, ".easy-quiz-practice__totals");
+	const files = find(harness.view, ".easy-quiz-practice__files");
+
+	const calls: string[] = [];
+	const originalParse = harness.service.parseFile;
+	const updated = BANK_A.replace(
+		"```quiz\nid: a1\ntype: single\nanswer: a",
+		"```quiz\nid: a1\ntype: single\nanswer: a\nstats: { attempts: 2, correct: 2, lastResult: correct }"
+	);
+	harness.service.parseFile = async (file) => {
+		calls.push(file.path);
+		if (file.path === "题库/甲.md") return parseQuizFile(updated, file.path, options);
+		return originalParse(file);
+	};
+
+	// 文件修改时间保持不变：列表应靠"脏路径"增量重解析，而不是整库重扫。
+	harness.view.markStale("题库/甲.md");
+	await refreshList(harness.view);
+	await flush();
+
+	assertEqual(calls.join(","), "题库/甲.md", "只应重解析被改动的题库");
+	assert(find(harness.view, ".easy-quiz-practice__toolbar") === toolbar, "工具条应保持不变");
+	assert(find(harness.view, ".easy-quiz-practice__totals") === totals, "汇总行应原地更新");
+	assert(find(harness.view, ".easy-quiz-practice__files") === files, "清单容器应保持不变");
+	assertEqual(findAll(harness.view, ".easy-quiz-practice__loading").length, 0, "不应出现扫描占位");
+	assert((totals.textContent ?? "").includes("已作答 2 次"), "汇总应反映改动后的记录");
+});
+
+test("列表刷新：从空状态变为有题库时会重新画出完整列表", async () => {
+	const harness = buildHarness([]);
+	await harness.view.activate();
+	assert(textOf(harness.view).includes("没有找到题库文件"), "初始应是空状态");
+
+	const added = fakeFile("题库/新增.md", 1_700_000_300_000);
+	harness.service.listQuizFiles = () => [added];
+	harness.service.parseFile = async (file) => parseQuizFile(BANK_A, file.path, options);
+	await refreshList(harness.view);
+	await flush();
+
+	assertEqual(visibleFiles(harness.view).join(","), "题库/新增.md", "新出现的题库应画进列表");
+	assert(textOf(harness.view).includes("1 个题库文件"), "汇总应更新");
+});
+
+test("列表刷新：只有修改时间变了的题库才重新解析", async () => {
+	const harness = standardHarness();
+	await harness.view.activate();
+
+	const calls: string[] = [];
+	const originalParse = harness.service.parseFile;
+	harness.service.parseFile = async (file) => {
+		calls.push(file.path);
+		return originalParse(file);
+	};
+	// 甲的修改时间变了，乙没有：扫描应只重解析甲。
+	harness.service.listQuizFiles = () => [
+		fakeFile("题库/甲.md", 1_700_000_500_000),
+		fakeFile("题库/子目录/乙.md", 1_700_000_100_000),
+	];
+
+	await refreshList(harness.view);
+	await flush();
+
+	assertEqual(calls.join(","), "题库/甲.md", "没变的题库应复用已有解析结果");
+	assertEqual(visibleFiles(harness.view).length, 2, "两份题库都仍在列表里");
+});

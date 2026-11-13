@@ -353,7 +353,8 @@ export default class EasyQuizPlugin extends Plugin {
 	private refreshPreviews(file: TFile, force = false): void {
 		// 题目内容可能变了，id → 题目的索引也随之失效。
 		this.referenceIndex = null;
-		for (const view of this.practiceViews()) view.markStale();
+		// 只把改过的那一份标脏：刷题窗口的列表刷新因此只需重解析它。
+		for (const view of this.practiceViews()) view.markStale(file.path);
 		for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
 			const view = leaf.view;
 			if (!(view instanceof MarkdownView)) continue;
@@ -545,7 +546,7 @@ export default class EasyQuizPlugin extends Plugin {
 		if (!setLanguage(resolveLanguage(this.settings.language, languageSources()))) return;
 		const views = this.practiceViews();
 		for (const view of views) {
-			view.markStale();
+			// 只换文案，不动解析结果：列表可以直接复用缓存，避免切语言时整库重扫。
 			void view.render();
 		}
 		// 侧边栏标签页的标题由 Obsidian 缓存，`getDisplayText()` 换了语言它不会自己重画；

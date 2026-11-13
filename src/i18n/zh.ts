@@ -193,6 +193,7 @@ export const zh: MessageTable = {
 	"practice.mode.randomHint": "从候选题里随机抽出指定数量，留空或填 0 表示全部。",
 	"practice.mode.wrongHint": "只抽上一次作答错误的题。没有记录时这一轮会是空的。",
 	"practice.renderFailed": "刷题窗口渲染失败：{error}",
+	"practice.loading": "正在载入…",
 	"practice.list.heading": "题库文件",
 	"practice.list.hint": "按文件路径列出 vault 里的题库文件及其数据。可以用搜索缩小范围、点文件夹标题折叠，勾选多份可以合并成一轮练习。",
 	"practice.list.scanning": "正在扫描题库…",

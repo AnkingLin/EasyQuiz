@@ -131,6 +131,31 @@ export class PracticeView extends ItemView {
 	private scanSignature: string | null = null;
 	/** 正在进行的扫描；重复进入列表页时共用同一个结果。 */
 	private scanInFlight: Promise<FileEntry[]> | null = null;
+	/** 被改动过的题库文件；列表刷新时只重解析它们。 */
+	private dirtyPaths = new Set<string>();
+	/** 列表页是否已经画出完整结构（工具条 / 汇总 / 清单 / 页脚）。 */
+	private listPainted = false;
+	/** 汇总行；刷新列表时就地改文字，不重建整页。 */
+	private totalsEl: HTMLElement | null = null;
+	/** 后台刷新列表的任务；新的刷新请求合并成一次。 */
+	private listRefreshTask: Promise<void> | null = null;
+	private listRefreshQueued = false;
+	/** 列表还没画好时收到刷新请求：等这一轮渲染结束后补一次。 */
+	private listRefreshDeferred = false;
+
+	/** 视图已经打开（`onOpen` 跑过）。 */
+	private opened = false;
+	/** 视图已关闭；异步渲染不应再往 `contentEl` 里写。 */
+	private closed = false;
+	/** 是否已经画过至少一次页面内容。 */
+	private initialRenderDone = false;
+	/** `onOpen` 之后等缓存状态的那一拍；收不到 `setState` 时兜底渲染。 */
+	private initialFallback: number | null = null;
+	/** 串行化的整页渲染：重画过程中再来的请求合并到当前这轮之后。 */
+	private renderTask: Promise<void> | null = null;
+	private renderQueued = false;
+	/** 上一次整页渲染对应的页面；同页重画时保留滚动位置。 */
+	private renderedPage: Page | null = null;
 
 	/** 刷题会话。 */
 	private queue: QueueEntry[] = [];
@@ -207,39 +232,103 @@ export class PracticeView extends ItemView {
 	}
 
 	async setState(state: unknown, _result: unknown): Promise<void> {
-		if (typeof state !== "object" || state === null) return;
-		const data = state as Record<string, unknown>;
-		const page = data["page"];
-		if (page === 0 || page === 1 || page === 2) this.page = page;
-		const picked = data["picked"];
-		if (Array.isArray(picked)) {
-			this.picked = picked.filter((item): item is string => typeof item === "string");
-		}
-		const query = data["query"];
-		if (typeof query === "string") this.query = query;
-		const folded = data["folded"];
-		if (Array.isArray(folded)) {
-			this.folded = new Set(folded.filter((item): item is string => typeof item === "string"));
-		}
-		const mode = data["mode"];
-		if (mode === "order" || mode === "random" || mode === "wrong") this.config.mode = mode;
-		const count = data["randomCount"];
-		if (typeof count === "number" && Number.isFinite(count)) {
-			this.config.randomCount = Math.max(0, Math.round(count));
-		}
-		const minErrorRate = data["minErrorRate"];
-		if (typeof minErrorRate === "number" && Number.isFinite(minErrorRate)) {
-			this.config.minErrorRate = normalizeErrorRate(Math.min(100, Math.max(0, minErrorRate)));
-		}
-		// 队列没有持久化：恢复到刷题页时退回设置页，避免出现空白的第三页。
-		if (this.page === 2) this.page = this.picked.length > 0 ? 1 : 0;
+		const changed = this.applyState(state);
+		this.clearInitialFallback();
+		// Obsidian 正常是 `onOpen` 在前、`setState` 在后；万一顺序反过来，等视图打开再画。
+		if (!this.opened) return;
+		/*
+		 * 首屏必须等缓存状态就位后再画。
+		 *
+		 * `WorkspaceLeaf.setViewState` 的固定顺序是先 `open()`（触发 `onOpen`）、
+		 * 再 `setState()`。此前 `onOpen` 里直接渲染列表，随后 `setState` 只改内部页码
+		 * 而不重画：用户看到的是题库列表，`this.page` 却已经是设置页/刷题页，
+		 * 列表上的按钮于是按别的页面响应（例如点「全选」会跳到刷题设置）。
+		 */
+		if (!this.initialRenderDone || changed) await this.render();
 	}
 
-	/** 命令/丝带打开窗口时调用：回到题库列表并重新扫描。 */
+	/** 把视图状态读进字段，返回是否有任何一项真的变了。 */
+	private applyState(state: unknown): boolean {
+		if (typeof state !== "object" || state === null) return false;
+		const data = state as Record<string, unknown>;
+		let changed = false;
+
+		const page = data["page"];
+		if (page === 0 || page === 1 || page === 2) {
+			if (this.page !== page) {
+				this.page = page;
+				changed = true;
+			}
+		}
+
+		const picked = data["picked"];
+		if (Array.isArray(picked)) {
+			const next = picked.filter((item): item is string => typeof item === "string");
+			if (!sameStrings(this.picked, next)) {
+				this.picked = next;
+				changed = true;
+			}
+		}
+
+		const query = data["query"];
+		if (typeof query === "string" && query !== this.query) {
+			this.query = query;
+			changed = true;
+		}
+
+		const folded = data["folded"];
+		if (Array.isArray(folded)) {
+			const next = new Set(folded.filter((item): item is string => typeof item === "string"));
+			if (!sameSet(this.folded, next)) {
+				this.folded = next;
+				changed = true;
+			}
+		}
+
+		const mode = data["mode"];
+		if ((mode === "order" || mode === "random" || mode === "wrong") && mode !== this.config.mode) {
+			this.config.mode = mode;
+			changed = true;
+		}
+
+		const count = data["randomCount"];
+		if (typeof count === "number" && Number.isFinite(count)) {
+			const next = Math.max(0, Math.round(count));
+			if (next !== this.config.randomCount) {
+				this.config.randomCount = next;
+				changed = true;
+			}
+		}
+
+		const minErrorRate = data["minErrorRate"];
+		if (typeof minErrorRate === "number" && Number.isFinite(minErrorRate)) {
+			const next = normalizeErrorRate(Math.min(100, Math.max(0, minErrorRate)));
+			if (next !== this.config.minErrorRate) {
+				this.config.minErrorRate = next;
+				changed = true;
+			}
+		}
+
+		// 队列没有持久化：恢复到刷题页时退回设置页，避免出现空白的第三页。
+		// 但视图里已经有一轮在进行时不能踢走它——`setViewState` 也会给已打开的
+		// 视图补一次状态（例如命令再次聚焦窗口），那时队列是活的。
+		if (this.page === 2 && this.queue.length === 0) {
+			this.page = this.picked.length > 0 ? 1 : 0;
+			changed = true;
+		}
+		return changed;
+	}
+
+	/** 命令/丝带打开窗口时调用：回到题库列表并核对数据。 */
 	async activate(): Promise<void> {
+		this.clearInitialFallback();
+		const wasList = this.page === 0 && this.initialRenderDone;
 		this.page = 0;
-		this.entries = null;
-		this.stale = true;
+		if (wasList) {
+			// 已经停在列表：只核对并就地更新数据，不重建工具条与滚动位置。
+			await this.refreshList();
+			return;
+		}
 		await this.render();
 	}
 
@@ -252,8 +341,7 @@ export class PracticeView extends ItemView {
 	async openPickerFor(path: string): Promise<void> {
 		this.picked = [path];
 		this.page = 1;
-		this.entries = null;
-		this.stale = true;
+		this.markStale(path);
 		await this.render();
 	}
 
@@ -265,13 +353,17 @@ export class PracticeView extends ItemView {
 	async practiceFile(path: string): Promise<void> {
 		this.picked = [path];
 		this.page = 1;
-		this.entries = null;
-		this.stale = true;
+		this.markStale(path);
 		await this.loadParsed(true);
 		await this.startSession();
 	}
 
 	async onOpen(): Promise<void> {
+		this.opened = true;
+		this.closed = false;
+		this.initialRenderDone = false;
+		this.renderedPage = null;
+
 		// 从别的标签页切回来时文件可能已经被改过。列表页先核对一次缓存指纹，
 		// 过期就自己重扫，而不是让用户再点一次「重新扫描」才能看到正常的列表。
 		this.registerEvent(
@@ -281,40 +373,54 @@ export class PracticeView extends ItemView {
 			})
 		);
 		// 启动时 Obsidian 先恢复布局、再建元数据缓存：那一刻所有笔记都还没有
-		// frontmatter，整个 vault 会被当成空库。缓存建好后自己再扫一次。
+		// frontmatter，整个 vault 会被当成空库。缓存建好后自己再核对一次。
 		const cache = this.app.metadataCache;
 		if (typeof cache?.on === "function") {
 			this.registerEvent(
 				cache.on("resolved", () => {
 					if (this.page !== 0) return;
-					this.stale = true;
-					this.entries = null;
-					void this.render();
+					// 首屏可能恰好还在扫描：`refreshList` 会把它记成一次延后刷新。
+					void this.refreshList();
 				})
 			);
 		}
-		await this.render();
+
+		/*
+		 * 先搭骨架、再等缓存状态。
+		 *
+		 * `WorkspaceLeaf.setViewState` 固定先 `open()`（触发 `onOpen`）再 `setState()`；
+		 * 若在这里直接渲染，列表会先按第一页画一遍，随后 `setState` 只改内部页码、
+		 * 不重画 DOM，用户看到的页面与按钮实际作用的页面就会错位。
+		 * 因此首屏内容一律由 `setState` 驱动，这里只放一块不会闪白的占位。
+		 */
+		const body = this.ensureShell();
+		this.renderSteps();
+		body.createDiv({ cls: "easy-quiz-practice__loading", text: t("practice.loading") });
+
+		// 正常路径下 `setState` 会在当前微任务之后立即到达并清掉这颗定时器。
+		// 兜底：万一视图是被直接 `open()` 出来的（没有缓存状态可恢复），也要自己画出来。
+		this.initialFallback = window.setTimeout(() => {
+			this.initialFallback = null;
+			if (this.closed || this.initialRenderDone) return;
+			void this.render();
+		}, 0);
 	}
 
 	/** 本视图重新成为活动标签页时调用：只在列表页核对缓存，刷题页不打扰当前进度。 */
 	private async refreshOnActivate(): Promise<void> {
 		if (this.page !== 0) return;
-		if (this.entries === null || this.stale || this.currentSignature() !== this.scanSignature) {
-			this.stale = true;
-			this.entries = null;
-			await this.render();
-		}
+		await this.refreshList();
 	}
 
 	/** 当前题库文件集合的指纹：路径 + 修改时间。文件增删或编辑都会让它变化。 */
 	private currentSignature(): string {
-		return this.host.service
-			.listQuizFiles()
-			.map((file) => `${file.path}\u0000${file.stat.mtime}`)
-			.join("\n");
+		return fileSignature(this.host.service.listQuizFiles());
 	}
 
 	async onClose(): Promise<void> {
+		this.closed = true;
+		this.opened = false;
+		this.clearInitialFallback();
 		this.releaseCard();
 		this.contentEl.empty();
 		this.rootEl = null;
@@ -326,12 +432,33 @@ export class PracticeView extends ItemView {
 		this.startEl = null;
 		this.footerTextEl = null;
 		this.matchedEl = null;
+		this.totalsEl = null;
+		this.listPainted = false;
+		this.listRefreshDeferred = false;
+		this.renderedPage = null;
 	}
 
-	/** 宿主声明题库数据可能已变化：下次渲染前重新解析。 */
-	markStale(): void {
+	/** 清掉 `onOpen` 里那颗"等状态"的兜底定时器。 */
+	private clearInitialFallback(): void {
+		if (this.initialFallback === null) return;
+		window.clearTimeout(this.initialFallback);
+		this.initialFallback = null;
+	}
+
+	/**
+	 * 宿主声明题库数据可能已变化：下次渲染前重新解析。
+	 *
+	 * 传入具体路径时只标记该文件（`vault` 事件知道改的是哪一份），列表刷新因此
+	 * 只需重解析它；不传路径表示整份缓存都不可信（例如解析设置变了）。
+	 */
+	markStale(path?: string): void {
 		this.stale = true;
+		if (typeof path === "string" && path !== "") {
+			this.dirtyPaths.add(path);
+			return;
+		}
 		this.entries = null;
+		this.dirtyPaths.clear();
 	}
 
 	// -----------------------------------------------------------------------
@@ -344,26 +471,46 @@ export class PracticeView extends ItemView {
 		for (const child of this.cardComponents.splice(0)) this.removeChild(child);
 	}
 
-	/** 重画整个窗口；页面切换、数据刷新都走这一个入口。 */
-	async render(): Promise<void> {
+	/**
+	 * 重画整个窗口；页面切换、数据刷新都走这一个入口。
+	 *
+	 * 同一时刻只跑一轮：重画过程中再来的请求合并成"结束前再来一次"。启动时
+	 * 状态恢复、元数据就绪、切回标签页可能在同一帧里先后要求重画，若各自清空
+	 * `contentEl`，就会看到空白闪动，甚至把用户刚点出来的页面冲掉。
+	 */
+	render(): Promise<void> {
+		this.renderQueued = true;
+		if (this.renderTask === null) {
+			this.renderTask = (async () => {
+				try {
+					while (this.renderQueued) {
+						this.renderQueued = false;
+						await this.performRender();
+					}
+				} finally {
+					this.renderTask = null;
+				}
+			})();
+		}
+		return this.renderTask;
+	}
+
+	private async performRender(): Promise<void> {
+		if (this.closed) return;
+
 		// 每次重画都重新取一遍设置，设置页改动后无需重开窗口。
 		this.host.service.updateSettings(this.host.settings);
 
-		const content = this.contentEl;
+		const body = this.ensureShell();
+		const pageChanged = this.renderedPage !== this.page;
 		this.releaseCard();
-		content.empty();
-
-		this.rootEl = content.createDiv({ cls: "easy-quiz-practice" });
-		this.navEl = this.rootEl.createDiv({ cls: "easy-quiz-practice__steps" });
-		this.bodyEl = this.rootEl.createDiv({ cls: "easy-quiz-practice__body" });
-		this.progressEl = null;
-		this.cardHost = null;
-		this.countEl = null;
-		this.startEl = null;
-		this.footerTextEl = null;
-		this.matchedEl = null;
-
+		body.empty();
+		this.clearPageRefs();
+		this.listPainted = false;
+		this.renderedPage = this.page;
 		this.renderSteps();
+		// 换页时回到顶部；同页重画（语言切换等）保留读者的滚动位置。
+		if (pageChanged && this.rootEl !== null) this.rootEl.scrollTop = 0;
 
 		try {
 			if (this.page === 0) await this.renderList();
@@ -379,6 +526,49 @@ export class PracticeView extends ItemView {
 				}),
 			});
 		}
+		this.initialRenderDone = true;
+		// 首屏渲染期间收到过"数据可能已变"的通知（元数据建好、切回标签页）：
+		// 现在页面已经在了，补做一次就地刷新，避免首屏停在半旧的列表上。
+		if (this.listRefreshDeferred) {
+			this.listRefreshDeferred = false;
+			try {
+				await this.refreshList();
+			} catch (error) {
+				// 补做刷新失败不该让首屏渲染变成一次 rejected promise；数据仍会在下次刷新时重试。
+				console.error("EasyQuiz: could not refresh the practice list", error);
+			}
+		}
+	}
+
+	/**
+	 * 保证窗口骨架存在，返回页面内容的容器。
+	 *
+	 * 骨架只建一次：后续重画只换 `body` 里的内容，步骤条、滚动容器和主题背景
+	 * 都保持原节点，避免整页重建时的高度跳变与滚动位置丢失。
+	 */
+	private ensureShell(): HTMLElement {
+		let root = this.rootEl;
+		if (root === null || root.parentElement !== this.contentEl) {
+			this.contentEl.empty();
+			root = this.contentEl.createDiv({ cls: "easy-quiz-practice" });
+			this.rootEl = root;
+			this.navEl = root.createDiv({ cls: "easy-quiz-practice__steps" });
+			this.bodyEl = root.createDiv({ cls: "easy-quiz-practice__body" });
+		}
+		const body = this.bodyEl ?? root.createDiv({ cls: "easy-quiz-practice__body" });
+		this.bodyEl = body;
+		return body;
+	}
+
+	/** 页面级引用只对当前这一屏有效，换页或重画时必须一起清掉。 */
+	private clearPageRefs(): void {
+		this.progressEl = null;
+		this.cardHost = null;
+		this.countEl = null;
+		this.startEl = null;
+		this.footerTextEl = null;
+		this.matchedEl = null;
+		this.totalsEl = null;
 	}
 
 	/** 顶部的三步指示，同时充当"往回走一步"的入口。 */
@@ -491,40 +681,90 @@ export class PracticeView extends ItemView {
 		return started;
 	}
 
-	/** 扫描 vault 里的题库文件并逐份解析；结果缓存在 `entries` 里。 */
+	/**
+	 * 扫描 vault 里的题库文件；结果缓存在 `entries` 里。
+	 *
+	 * 默认按"每份文件的修改时间"做增量：只有新增、删除或改动过的文件会被重新解析，
+	 * 其余条目直接复用。设置变更等无法定位到单份文件的情况（`markStale()` 不带路径）
+	 * 会先清空 `entries`，于是自然走整库重扫。
+	 */
 	private async runScan(): Promise<FileEntry[]> {
 		const files = await this.quizFiles();
-		const signature = files.map((file) => `${file.path}\u0000${file.stat.mtime}`).join("\n");
-		// 缓存仍然有效需要同时满足：没被标记过期，且文件集合与修改时间都没变。
-		// 只凭 `stale` 判断会漏掉「窗口在后台时文件被别人改了」的情形。
-		if (this.entries !== null && !this.stale && signature === this.scanSignature) return this.entries;
+		const signature = fileSignature(files);
+		const cached = this.entries;
+		// 缓存仍然有效需要同时满足：没被标记过期、没有待重解析的文件，且文件集合与
+		// 修改时间都没变。只凭 `stale` 判断会漏掉「窗口在后台时文件被别人改了」的情形。
+		if (
+			cached !== null &&
+			!this.stale &&
+			this.dirtyPaths.size === 0 &&
+			signature === this.scanSignature
+		) {
+			return cached;
+		}
+
+		// 扫描期间新来的改动不能被这次扫描的完成状态覆盖：先取走，结束时看还有没有剩下的。
+		const dirty = new Set(this.dirtyPaths);
+		this.dirtyPaths.clear();
+		// stale 但没有具体路径 = 解析设置变了：所有条目都不可信。
+		const forceAll = this.stale && dirty.size === 0;
+
+		const previous = new Map<string, FileEntry>();
+		for (const entry of cached ?? []) previous.set(entry.file.path, entry);
 
 		const entries: FileEntry[] = [];
+		let reparsed = 0;
 		for (const file of files) {
-			try {
-				const parsed = await this.host.service.parseFile(file);
-				entries.push({
-					file,
-					summary: summarizeFile(parsed, file.path, file.stat.mtime),
-					parsed,
-					error: null,
-				});
-			} catch (error) {
-				// 单份文件解析失败不能拖垮整个列表：给出错误摘要，题量按 0 计。
-				entries.push({
-					file,
-					summary: summarizeFile(emptyParse(), file.path, file.stat.mtime),
-					parsed: null,
-					error: error instanceof Error ? error.message : String(error),
-				});
+			const entry = previous.get(file.path);
+			// `summary.mtime` 是上一次解析开始时的快照；与当前 mtime 不同就重解析。
+			const reusable =
+				!forceAll &&
+				entry !== undefined &&
+				!dirty.has(file.path) &&
+				entry.summary.mtime === file.stat.mtime;
+			if (reusable) {
+				entries.push(entry);
+				continue;
 			}
+			entries.push(await this.parseEntry(file));
+			reparsed += 1;
+		}
+
+		// 一份都没重解析、文件集合也没变：保留原数组，列表不用重画。
+		if (cached !== null && reparsed === 0 && entries.length === cached.length) {
+			this.scanSignature = signature;
+			if (this.dirtyPaths.size === 0) this.stale = false;
+			return cached;
 		}
 
 		entries.sort((first, second) => first.file.path.localeCompare(second.file.path));
 		this.entries = entries;
-		this.stale = false;
 		this.scanSignature = signature;
+		if (this.dirtyPaths.size === 0) this.stale = false;
 		return entries;
+	}
+
+	/** 解析一份题库文件；失败只影响它自己那一行，不拖垮整个列表。 */
+	private async parseEntry(file: TFile): Promise<FileEntry> {
+		// 先记下开始解析时的修改时间：读取/解析期间文件若又被改，下一次扫描还能看出差异。
+		const mtime = file.stat.mtime;
+		try {
+			const parsed = await this.host.service.parseFile(file);
+			return {
+				file,
+				summary: summarizeFile(parsed, file.path, mtime),
+				parsed,
+				error: null,
+			};
+		} catch (error) {
+			// 单份文件解析失败不能拖垮整个列表：给出错误摘要，题量按 0 计。
+			return {
+				file,
+				summary: summarizeFile(emptyParse(), file.path, mtime),
+				parsed: null,
+				error: error instanceof Error ? error.message : String(error),
+			};
+		}
 	}
 
 	/**
@@ -577,24 +817,43 @@ export class PracticeView extends ItemView {
 		if (body === null) return;
 
 		this.heading(t("practice.list.heading"), t("practice.list.hint"));
-		const loading = body.createDiv({ cls: "easy-quiz-practice__loading", text: t("practice.list.scanning") });
 
-		const entries = await this.scan();
-		loading.detach();
-		// 扫描是异步的：期间用户可能已经切页，避免覆盖新页面。
-		if (this.page !== 0 || this.bodyEl !== body) return;
+		if (this.entries === null) {
+			const loading = body.createDiv({ cls: "easy-quiz-practice__loading", text: t("practice.list.scanning") });
+			const entries = await this.scan();
+			loading.detach();
+			// 扫描是异步的：期间用户可能已经切页，避免覆盖新页面。
+			if (this.page !== 0 || this.bodyEl !== body) return;
+			this.paintList(body, entries);
+			return;
+		}
 
+		// 已有扫描结果：先按旧数据把列表画出来，再在后台核对一次。
+		// 这样切回列表页、文件改动后的刷新都不会先闪一段"正在扫描"的空白。
+		this.paintList(body, this.entries);
+		if (
+			this.stale ||
+			this.dirtyPaths.size > 0 ||
+			this.currentSignature() !== this.scanSignature
+		) {
+			void this.refreshList();
+		}
+	}
+
+	/** 把列表页的完整结构画进 body（调用方负责先放好页头）。 */
+	private paintList(body: HTMLElement, entries: FileEntry[]): void {
 		// 文件被删除后，选中项要跟着清掉，否则设置页会算不出候选。
 		const alive = new Set(entries.map((entry) => entry.file.path));
 		this.picked = this.picked.filter((path) => alive.has(path));
 
 		if (entries.length === 0) {
+			this.listPainted = true;
 			this.renderEmpty(body);
 			return;
 		}
 
 		this.renderListToolbar(body, entries);
-		body.createDiv({
+		this.totalsEl = body.createDiv({
 			cls: "easy-quiz-practice__totals",
 			text: this.totalsText(summarizeAll(entries.map((entry) => entry.summary))),
 		});
@@ -606,6 +865,92 @@ export class PracticeView extends ItemView {
 		this.fillList(list);
 
 		this.renderListFooter(body);
+		this.listPainted = true;
+	}
+
+	/**
+	 * 后台核对列表数据；只在列表页生效，新的请求合并成一次。
+	 *
+	 * 刷新时不拆工具条、搜索框与滚动位置：扫描结果回来后只重画清单里的行，
+	 * 汇总行、匹配数与底部操作条就地更新。
+	 */
+	private refreshList(): Promise<void> {
+		const running = this.listRefreshTask;
+		if (running !== null) {
+			this.listRefreshQueued = true;
+			return running;
+		}
+		const task = (async () => {
+			do {
+				this.listRefreshQueued = false;
+				const body = this.bodyEl;
+				if (this.closed || this.page !== 0 || body === null) return;
+				if (!this.listPainted) {
+					// 首屏还没画好：这一轮完整重画会顺带完成扫描；等它结束再补刷新。
+					// 真实视图在 `setState` 交回缓存页之前不自己起渲染，否则会先画出
+					// 第一页、随后才应用状态，正是按钮"跳错页"的老问题。
+					if (this.renderTask !== null || (this.opened && !this.initialRenderDone)) {
+						this.listRefreshDeferred = true;
+					} else {
+						await this.render();
+					}
+					return;
+				}
+				const before = this.entries;
+				const wasStale = this.stale;
+				const entries = await this.scan();
+				if (this.closed || this.page !== 0 || this.bodyEl !== body) return;
+				// 扫描直接复用了缓存：没有任何变化，不要白白重画清单。
+				if (this.entries === before && !wasStale) return;
+				this.applyEntries(entries);
+			} while (this.listRefreshQueued);
+		})();
+		/*
+		 * 清理必须挂在赋值之后，不能写在 IIFE 自己的 finally 里：`!listPainted`
+		 * 那条分支不含 await，IIFE 会同步跑完，finally 先把字段清空、随后这行赋值
+		 * 又把已完成的 Promise 写回去——之后所有刷新请求都会被并进这个死任务。
+		 */
+		this.listRefreshTask = task;
+		const clear = (): void => {
+			if (this.listRefreshTask !== task) return;
+			this.listRefreshTask = null;
+			// 任务收尾的同一拍里如果又来了请求，循环已经来不及处理：再补跑一次。
+			if (this.listRefreshQueued) {
+				this.listRefreshQueued = false;
+				void this.refreshList();
+			}
+		};
+		void task.then(clear, clear);
+		return task;
+	}
+
+	/** 扫描结果回来后就地更新列表；结构与滚动位置保持不变。 */
+	private applyEntries(entries: FileEntry[]): void {
+		const body = this.bodyEl;
+		if (body === null) return;
+
+		const alive = new Set(entries.map((entry) => entry.file.path));
+		this.picked = this.picked.filter((path) => alive.has(path));
+
+		if (entries.length === 0) {
+			// 从"有题库"变成"一份都没有"：换成空状态说明，工具条随之撤掉。
+			body.empty();
+			this.clearPageRefs();
+			this.heading(t("practice.list.heading"), t("practice.list.hint"));
+			this.renderEmpty(body);
+			this.listPainted = true;
+			return;
+		}
+
+		// 之前是空状态（entries 为空）时没有工具条与清单：需要整页重画一次。
+		const list = body.querySelector<HTMLElement>(".easy-quiz-practice__files");
+		if (list === null || this.totalsEl === null) {
+			void this.render();
+			return;
+		}
+
+		this.totalsEl.setText(this.totalsText(summarizeAll(entries.map((entry) => entry.summary))));
+		this.redrawList();
 	}
 
 	/** 刷新"匹配到几份"那行：搜索时才显示，没有搜索词就藏起来。 */
@@ -650,8 +995,10 @@ export class PracticeView extends ItemView {
 		const clearSearch = this.button(toolbar, "clear-search", t("practice.search.clear"));
 		clearSearch.disabled = this.query === "";
 		clearSearch.addEventListener("click", () => {
+			// 只清列表，不重建工具条：搜索框、滚动位置和它上面的焦点都留在原地。
+			search.value = "";
 			this.setQuery("");
-			void this.render();
+			search.focus();
 		});
 
 		const { matched } = this.visible();
@@ -662,34 +1009,35 @@ export class PracticeView extends ItemView {
 			// 候选项在点击时才取：搜索词可能已经变过，渲染时算好的那份会过期。
 			const usable = this.visible().matched.filter((entry) => entry.summary.answerable > 0);
 			this.picked = [...new Set([...this.picked, ...usable.map((entry) => entry.file.path)])];
-			void this.render();
+			this.syncSelectionUi();
 		});
 
 		const clear = this.button(toolbar, "clear-selection", t("practice.toolbar.clear"));
 		clear.disabled = this.picked.length === 0;
 		clear.addEventListener("click", () => {
 			this.picked = [];
-			void this.render();
+			this.syncSelectionUi();
 		});
 
 		const foldAll = this.button(toolbar, "fold-all", t("practice.list.foldAll"));
 		foldAll.disabled = entries.length === 0;
 		foldAll.addEventListener("click", () => {
 			this.folded = new Set((this.entries ?? []).map((entry) => entry.summary.folder));
-			void this.render();
+			// 只重画清单：工具条、搜索框与页脚保持原节点，不闪一下再回来。
+			this.redrawList();
 		});
 
 		const unfoldAll = this.button(toolbar, "unfold-all", t("practice.list.unfoldAll"));
 		unfoldAll.disabled = this.folded.size === 0;
 		unfoldAll.addEventListener("click", () => {
 			this.folded = new Set();
-			void this.render();
+			this.redrawList();
 		});
 
 		const rescan = this.button(toolbar, "rescan", t("practice.toolbar.rescan"));
 		rescan.addEventListener("click", () => {
-			this.entries = null;
-			this.stale = true;
+			// 手动重扫是明确的"整份数据都别信了"，因此丢掉列表缓存并整页重画。
+			this.markStale();
 			void this.render();
 		});
 	}
@@ -792,7 +1140,7 @@ export class PracticeView extends ItemView {
 			this.picked = check.checked
 				? [...new Set([...this.picked, ...paths])]
 				: this.picked.filter((path) => !paths.includes(path));
-			this.redrawList();
+			this.syncSelectionUi();
 		});
 
 		const toggle = (): void => {
@@ -850,8 +1198,7 @@ export class PracticeView extends ItemView {
 		open.addEventListener("click", () => this.openSettings());
 		const rescan = this.button(empty, "rescan", t("practice.toolbar.rescan"));
 		rescan.addEventListener("click", () => {
-			this.entries = null;
-			this.stale = true;
+			this.markStale();
 			void this.render();
 		});
 	}
@@ -873,8 +1220,7 @@ export class PracticeView extends ItemView {
 			this.picked = check.checked
 				? [...new Set([...this.picked, summary.path])]
 				: this.picked.filter((path) => path !== summary.path);
-			row.toggleClass("is-picked", check.checked);
-			this.syncToolbar();
+			this.syncSelectionUi();
 		});
 
 		const main = row.createDiv({ cls: "easy-quiz-practice__file-main" });
@@ -951,6 +1297,26 @@ export class PracticeView extends ItemView {
 	private isButton(el: Element | null): el is HTMLButtonElement {
 		// jsdom / 测试环境不一定会挂全局 HTMLButtonElement，因此按能力判断而不是 instanceof。
 		return el !== null && typeof (el as { disabled?: unknown }).disabled === "boolean";
+	}
+
+	/**
+	 * 勾选状态变化后只同步 DOM，不重建列表。
+	 *
+	 * 全选 / 清空 / 整组勾选都走这里：搜索框、工具条、滚动位置和清单里的其他行
+	 * 都保持原节点，因此不会出现"点一下按钮整页闪一下、滚回顶部"。
+	 */
+	private syncSelectionUi(): void {
+		const picked = new Set(this.picked);
+		const rows = this.bodyEl?.querySelectorAll<HTMLElement>(".easy-quiz-practice__file") ?? null;
+		for (const row of Array.from(rows ?? [])) {
+			const check = row.querySelector<HTMLInputElement>("input[data-action='pick-file']");
+			const path = check?.dataset["path"];
+			if (check === null || path === undefined) continue;
+			const selected = picked.has(path);
+			if (check.checked !== selected) check.checked = selected;
+			row.toggleClass("is-picked", selected);
+		}
+		this.syncToolbar();
 	}
 
 	/** 勾选变化后就地更新底部操作条与各文件夹的整组勾选框。 */
@@ -1124,10 +1490,11 @@ export class PracticeView extends ItemView {
 			return;
 		}
 
+		// 页头先画：解析选中题库可能要走一次磁盘，期间窗口不至于只剩一块空白。
+		this.heading(t("practice.picker.heading"), t("practice.picker.hint"));
+
 		await this.loadParsed();
 		if (this.page !== 1 || this.bodyEl !== body) return;
-
-		this.heading(t("practice.picker.heading"), t("practice.picker.hint"));
 
 		const files = body.createDiv({ cls: "easy-quiz-practice__picked" });
 		for (const path of this.picked) {
@@ -1344,10 +1711,7 @@ export class PracticeView extends ItemView {
 			return;
 		}
 
-		// 本轮写回过记录：重新解析，成绩与题面才是最新的。
-		await this.loadParsed();
-		if (this.page !== 2 || this.bodyEl !== body) return;
-
+		// 页头、进度与卡片容器先画出来；重新解析期间只让卡片区显示一句"正在载入"。
 		const head = body.createDiv({ cls: "easy-quiz-practice__head" });
 		head.createEl("h3", { cls: "easy-quiz-practice__title", text: t("practice.title") });
 		const toolbar = head.createDiv({ cls: "easy-quiz-practice__toolbar is-compact" });
@@ -1360,6 +1724,12 @@ export class PracticeView extends ItemView {
 		this.progressEl = body.createDiv({ cls: "easy-quiz-practice__progress" });
 		this.cardHost = body.createDiv({ cls: "easy-quiz-practice__card" });
 		this.renderProgress();
+		this.cardHost.createDiv({ cls: "easy-quiz-practice__loading", text: t("practice.loading") });
+
+		// 本轮写回过记录：重新解析，成绩与题面才是最新的。
+		await this.loadParsed();
+		if (this.page !== 2 || this.bodyEl !== body) return;
+
 		await this.renderCard();
 	}
 
@@ -1719,4 +2089,29 @@ function emptyParse(): ParsedQuizFile {
 		questions: [],
 		warnings: [],
 	};
+}
+
+/** 两个字符串数组是否逐项相同（顺序也相同）。 */
+function sameStrings(first: readonly string[], second: readonly string[]): boolean {
+	if (first.length !== second.length) return false;
+	return first.every((item, index) => item === second[index]);
+}
+
+/** 两个字符串集合是否相同。 */
+function sameSet(first: ReadonlySet<string>, second: ReadonlySet<string>): boolean {
+	if (first.size !== second.size) return false;
+	for (const item of first) {
+		if (!second.has(item)) return false;
+	}
+	return true;
+}
+
+/**
+ * 题库文件集合的指纹：路径 + 修改时间。
+ *
+ * 增删文件会改变行数与路径；编辑文件会改变 mtime。列表缓存与一次扫描
+ * 结果因此能判断"还需不需要重解析"，避免每切一次标签页就整库重扫。
+ */
+function fileSignature(files: readonly { path: string; stat: { mtime: number } }[]): string {
+	return files.map((file) => `${file.path}\u0000${file.stat.mtime}`).join("\n");
 }

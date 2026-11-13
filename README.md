@@ -618,6 +618,12 @@ appears for Markdown question banks; multi-selections and other files are left a
 
 ## What's new
 
+### 1.1.8
+
+- **Reliable restore from a cached tab.** The practice window applies the saved page, selection and search term before its first paint, so the visible page and its buttons can no longer disagree — for example, a list that responds like the practice-settings page.
+- **Smoother loading and refreshing.** The window shell is built once instead of on every page change, and the bank list paints saved data first and then refreshes in place. Only changed files are parsed again; the toolbar, search box and scroll position stay put.
+- **Selection and folding act immediately.** Select all, clear, folder selection, clearing the search and collapse/expand all now update only the affected part of the list instead of rebuilding the page or jumping back to the top.
+
 ### 1.1.6
 
 - **Question titles render as Markdown.** Bold, italics, inline code, links and formulas in a heading (or the data block's `question` field) now display the way Obsidian renders them, instead of showing raw markers.
