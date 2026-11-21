@@ -223,6 +223,17 @@ test("配对：连错一条即判错，并给出缺少与多余", () => {
 	);
 });
 
+test("配对：history 记录用户实际连线，而不是标准答案", () => {
+	const question = questionOf(matchSource);
+	const first = at(question.boardPairs, 0);
+	const pairs = [{ left: first.left, right: first.right }];
+	const result = gradeAnswer(question, { kind: "match", pairs });
+	assertEqual(result.correct, false, "漏连应判错");
+	assert(Array.isArray(result.recorded), "记录应是数组");
+	assertEqual((result.recorded as string[]).length, 1, "只应记录用户连的那一条");
+	assertEqual((result.recorded as string[])[0], `${first.left}~${first.right}`, "记录应是实际连线");
+});
+
 test("配对：三列表格要 A-B 与 B-C 都连对", () => {
 	const question = questionOf(
 		[
@@ -565,4 +576,80 @@ test("清除记录：没有记录的题目不改动", () => {
 	const patch = planClear(block, writeBackOptions);
 	assertEqual(patch.applied, true, "合法 YAML 应可直接清除（内容相同）");
 	assertEqual(patch.content, block, "没有记录时逐字不变");
+});
+
+// ---------------------------------------------------------------------------
+// 行尾与时间戳：写回不能改坏未触及的内容
+// ---------------------------------------------------------------------------
+
+test("替换：CRLF 文件的行尾保持不变", () => {
+	const crlf = fullSource.replace(/\n/g, "\r\n");
+	const question = questionOf(crlf);
+	const next = replaceBlockInFile(
+		crlf,
+		question.blockLine!,
+		"type: single\nanswer: c\nstats: { attempts: 1, correct: 1 }"
+	);
+	assert(next !== null, "应能定位并替换");
+	assert(next!.includes("\r\n"), "应保留 CRLF");
+	assert(!/[^\r]\n/.test(next!), "不应出现裸 LF");
+	assert(next!.includes("## 下一题"), "后续题目应保留");
+});
+
+test("替换：只改动目标数据块，外部混合行尾逐字保留", () => {
+	const mixed = [
+		"## 题",
+		"",
+		"- 甲 ^a",
+		"- 乙 ^b",
+		"",
+		"```quiz",
+		"type: single",
+		"answer: a",
+		"```",
+		"",
+		"## 尾",
+		"结尾",
+	].join("\r\n");
+	const question = questionOf(mixed);
+	const next = replaceBlockInFile(
+		mixed,
+		question.blockLine!,
+		"type: single\nanswer: a\nstats: { attempts: 1, correct: 1 }"
+	);
+	assert(next !== null, "应能定位并替换");
+	assert(next!.startsWith("## 题\r\n\r\n- 甲 ^a"), "前缀应逐字保留");
+	assert(next!.includes("\r\n## 尾\r\n结尾"), "后缀应逐字保留");
+});
+
+test("写回方案：时间戳加引号后可原样读回", () => {
+	const question = questionOf(fullSource);
+	const at = "2026-11-21T12:34:56.789Z";
+	const stats: QuizStats = { attempts: 1, correct: 1, lastResult: "correct", lastAt: at };
+	const patch = planWriteBack(
+		question.blockSource!,
+		stats,
+		[historyEntry(at, "correct")],
+		"rev1",
+		writeBackOptions
+	);
+	assertEqual(patch.applied, true, `应可写入（原因：${patch.reason ?? "无"}）`);
+	assert(patch.content.includes(`lastAt: "${at}"`), "lastAt 应加引号");
+	assert(patch.content.includes(`at: "${at}"`), "history.at 应加引号");
+
+	const reparsed = parse(
+		[
+			"## 题",
+			"",
+			"- 甲 ^a",
+			"- 乙 ^b",
+			"",
+			"```quiz",
+			patch.content,
+			"```",
+		].join("\n")
+	);
+	const read = must(reparsed.questions[0], "应解析出题目");
+	assertEqual(read.stats.lastAt, at, "lastAt 应读回字符串");
+	assertEqual(read.history[0]?.at, at, "history.at 应读回字符串");
 });

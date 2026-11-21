@@ -16,8 +16,8 @@ const options: ParseOptions = {
 	deps: { parseYaml: (source) => yaml.load(source), hash: contentHash },
 };
 
-function parse(source: string): QuizQuestion {
-	const result = parseQuizFile(source, "题库/测试.md", options);
+function parse(source: string, extra: Partial<ParseOptions> = {}): QuizQuestion {
+	const result = parseQuizFile(source, "题库/测试.md", { ...options, ...extra });
 	return at(result.questions, 0, "未解析出题目");
 }
 
@@ -277,4 +277,110 @@ test("dropTables：只删除表格行", () => {
 	assert(!result.includes("|"), "表格行应删除");
 	assert(result.includes("题干。"), "题干应保留");
 	assert(result.includes("结尾。"), "表格后的正文应保留");
+});
+
+// ---------------------------------------------------------------------------
+// 空位映射：代码示例、混合标记与嵌套标记
+// ---------------------------------------------------------------------------
+
+test("填空题：行内代码里的标记不算空位，占位符不会落到代码里", () => {
+	const question = parse(
+		[
+			"---",
+			"quiz: true",
+			"---",
+			"",
+			"## 题",
+			"",
+			"行内示例 `==不是空位==`，正文里 ==是空位==。",
+			"",
+			"```quiz",
+			"type: blank",
+			"```",
+		].join("\n")
+	);
+	assertEqual(question.blanks.length, 1, "只应识别出一个空位");
+	assertEqual(question.blanks[0]?.anchor, "b1", "真实空位的锚点");
+	const stem = formatStem(question);
+	assert(stem.includes("`==不是空位==`"), `代码示例应原样保留（实际：${JSON.stringify(stem)}）`);
+	assert(stem.includes(`${BLANK_MARKER_PREFIX}b1`), "真实空位应替换成占位符");
+	assert(!stem.includes(`${BLANK_MARKER_PREFIX}b2`), "不应出现第二个占位符");
+	assertEqual(
+		(stem.match(new RegExp(BLANK_MARKER_PREFIX, "g")) ?? []).length,
+		1,
+		"占位符应只出现一次"
+	);
+});
+
+test("填空题：both 模式下两种标记按出现顺序对应", () => {
+	const question = parse(
+		[
+			"---",
+			"quiz: true",
+			"---",
+			"",
+			"## 题",
+			"",
+			"**加粗** 与 ==高亮== 都是空位。",
+			"",
+			"```quiz",
+			"type: blank",
+			"```",
+		].join("\n"),
+		{ blankMarker: "both" }
+	);
+	assertEqual(question.blanks.map((blank) => blank.anchor).join(","), "b1,b2", "两个空位");
+	const stem = formatStem(question, "both");
+	const first = stem.indexOf(`${BLANK_MARKER_PREFIX}b1`);
+	const second = stem.indexOf(`${BLANK_MARKER_PREFIX}b2`);
+	assert(first >= 0 && second > first, `b1 应在 b2 之前（实际：${JSON.stringify(stem)}）`);
+});
+
+test("填空题：嵌套标记只算一个空位，答案去掉装饰", () => {
+	const question = parse(
+		[
+			"---",
+			"quiz: true",
+			"---",
+			"",
+			"## 题",
+			"",
+			"答案是 ==**20**== 字节。",
+			"",
+			"```quiz",
+			"type: blank",
+			"```",
+		].join("\n"),
+		{ blankMarker: "both" }
+	);
+	assertEqual(question.blanks.length, 1, "嵌套标记只应算一个空位");
+	assertEqual(question.blanks[0]?.expected, "20", "答案应去掉加粗装饰");
+});
+
+test("选择题：题干上方的材料列表会显示在题面里", () => {
+	const question = parse(
+		[
+			"---",
+			"quiz: true",
+			"---",
+			"",
+			"## 题",
+			"",
+			"材料：",
+			"",
+			"- 材料一",
+			"- 材料二",
+			"",
+			"- 选项A ^a",
+			"- 选项B ^b",
+			"",
+			"```quiz",
+			"type: single",
+			"answer: a",
+			"```",
+		].join("\n")
+	);
+	const stem = formatStem(question);
+	assert(stem.includes("材料一"), `材料列表应保留（实际：${JSON.stringify(stem)}）`);
+	assert(stem.includes("材料二"), "材料列表应保留");
 });

@@ -145,7 +145,7 @@ function fakeService(correct: boolean) {
 		submissions,
 		submit: async (_file: unknown, id: string) => {
 			submissions.push(id);
-			return { correct, details: [{ correct, note: correct ? undefined : "Wrong" }], recorded: [] };
+			return { correct, details: [{ correct, note: correct ? undefined : "Wrong" }], recorded: [], written: true };
 		},
 	};
 }
@@ -396,7 +396,7 @@ function buildView(): PracticeView {
 		fileAtPath: () => file,
 		isQuizFile: () => true,
 		updateSettings: () => undefined,
-		submit: async () => ({ correct: true, details: [], recorded: [] }),
+		submit: async () => ({ correct: true, details: [], recorded: [], written: true }),
 	};
 	const host: EasyQuizHost = {
 		settings: {

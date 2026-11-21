@@ -62,7 +62,8 @@ tags:
 ```
 
 The body starts at the first heading that matches the configured **stem heading level** (default H2, one
-level per file). A question runs from its stem heading to the next heading of the same or higher level.
+level per file). A question runs from its stem heading to the next heading of the same or higher level —
+**any** such heading ends it, even one outside the configured level (for example a later `# Appendix`).
 A deeper heading is absorbed as a sub-heading **only if** a shallower heading appears later in the file.
 
 The **Stem heading matching** setting offers two modes:
@@ -97,6 +98,11 @@ anchors at all, options are numbered `a`, `b`, `c`… by position; with only som
 hidden from the card and only the anchored ones can be chosen. Anchors are what bind answer records to
 options, so write them when options may be reordered — inserting, deleting, or reordering an anchored
 option never misaligns records. Duplicate anchors still make the question unanswerable.
+
+The question `id` is derived from the heading text unless the data block sets one explicitly. It must be
+**unique within a file**: two identical headings (or two identical `id` values) disable the later question
+with an `id-duplicate` warning until it is renamed or given a unique `id`. This prevents an answer from being
+written into the wrong question.
 
 ## What the card shows as the stem
 
@@ -239,7 +245,10 @@ be answered, because there is no body to scan.
 
 - The marker follows the **Blank marker** setting: `==answer==` (default), `**answer**`, or both.
 - The blank anchor `^b1` is **optional**; unwritten anchors are numbered `b1`, `b2`, … by position, and
-  explicit and automatic anchors can be mixed. Write an anchor only to reference it from `blanks:`.
+  explicit and automatic anchors can be mixed. Automatic numbering only counts blanks without an anchor and
+  skips any `bN` already written explicitly. Write an anchor only to reference it from `blanks:`.
+- In **both** mode, `==…==` and `**…**` blanks keep their order in the document; nested markers such as
+  `==**20**==` count as one blank and the surrounding decoration is stripped before matching.
 - Markers inside code blocks and inline code are ignored, so `==like this==` is safe as prose example.
 - Rules: `{ accept: [...] }`, `{ ignoreCase: true }`, `{ regex: true }`; unlisted blanks are strict.
 

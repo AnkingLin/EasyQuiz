@@ -1,6 +1,6 @@
 {
 	"name": "easy-quiz",
-	"version": "1.1.8",
+	"version": "1.2.0",
 	"description": "An Obsidian plugin for markdown-native quiz practice.",
 	"main": "main.js",
 	"type": "module",
@@ -32,8 +32,5 @@
 		"tslib": "^2.8.1",
 		"typescript": "^5.8.3",
 		"typescript-eslint": "^8.59.1"
-	},
-	"allowScripts": {
-		"esbuild@0.25.5": true
 	}
 }

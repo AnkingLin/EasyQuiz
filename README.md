@@ -328,9 +328,9 @@ below).
 | Field | Required | Notes |
 |---|---|---|
 | `type` | **yes** | `single` / `multi` / `match` / `blank` / `essay`. The *only* thing that decides the type. |
-| `id` | no | Stable identifier; derived from the heading text (with the `^[[[]]]` knowledge link excluded) when omitted. |
+| `id` | no | Stable identifier; derived from the heading text (with the `^[[[]]]` knowledge link excluded) when omitted. Must be unique within a file: a duplicate id disables the later question until it is renamed or given a unique id. |
 | `answer` | type-dependent | `single`: `c`; `multi`: `[a, b]`; `blank` and `match` and `essay`: not used. |
-| `blanks` | no | Per-blank matching rules: `strict` / `ignoreCase` / `regex` / `accept`. Keys are blank anchors. |
+| `blanks` | no | Per-blank matching rules: `ignoreCase` / `regex` / `accept`. Keys are blank anchors; a blank without a rule uses strict matching (surrounding whitespace is ignored). |
 | `shuffle` | no | Shuffle this question's choice options. Default `false`; `match` is always shuffled. |
 | `explanation` | no | Explanation text, rendered as Markdown (bold, inline code, images, formulas). May also be written inline as a `> [!note]- 解析` callout. |
 | `score` | no | Points, default 1. |
@@ -362,8 +362,9 @@ only some, the unanchored options are hidden from the card. Write explicit ancho
 may be reordered and its records must stay attached to the same option.
 
 Matching tables do **not** use anchors: a `^id` in a table cell is literal text, and row-level anchors are
-unsupported. Match records are keyed by row-content hash plus row index, so editing a table marks the
-affected records as "stem changed" rather than silently discarding them.
+unsupported. Match records are keyed by the column index plus a hash of the cell text (not by row order), so
+reordering table rows keeps records attached; editing a cell marks the affected question as "stem changed"
+rather than silently discarding it.
 
 ### Matching details
 
@@ -618,11 +619,23 @@ appears for Markdown question banks; multi-selections and other files are left a
 
 ## What's new
 
+### 1.2.0
+
+- **Duplicate question ids are caught.** Two questions with the same title or `id` no longer silently share records: the later one is disabled with a clear warning until you set a unique `id` or rename the heading.
+- **Question boundaries follow the documented rule.** Any same-or-higher heading ends a question, even outside the configured stem level, so a later chapter or appendix can no longer replace a question's options. Lists and tables inside fenced code blocks are treated as content, not as the question's structure.
+- **Blank markers line up again.** Markers inside inline code stay code, mixed `==highlight==` / `**bold**` markers keep their original order, and nested markers count as one blank. A material list above the options is shown instead of being stripped.
+- **Sturdier write-back.** Timestamps are quoted, CRLF line endings are preserved, and a failed write is reported instead of being silently swallowed. The reading view keeps the review panel after you submit instead of refreshing it away.
+- **Safer inputs and state.** Settings in `data.json` are validated, `**/*.md` path globs also match root-level notes, and the practice window restores its type/wrong-only/shuffle filters. A pending submit can no longer be attributed to the next question, and match history stores the connections you actually made.
+
 ### 1.1.8
 
 - **Reliable restore from a cached tab.** The practice window applies the saved page, selection and search term before its first paint, so the visible page and its buttons can no longer disagree — for example, a list that responds like the practice-settings page.
 - **Smoother loading and refreshing.** The window shell is built once instead of on every page change, and the bank list paints saved data first and then refreshes in place. Only changed files are parsed again; the toolbar, search box and scroll position stay put.
 - **Selection and folding act immediately.** Select all, clear, folder selection, clearing the search and collapse/expand all now update only the affected part of the list instead of rebuilding the page or jumping back to the top.
+
+### 1.1.7
+
+- **List checkboxes stay centered.** The bank list's checkboxes are vertically centered at any row height.
 
 ### 1.1.6
 
@@ -670,6 +683,7 @@ Each version is announced once. Older releases are on [GitHub Releases](https://
 | The card appears but **Submit** does nothing | The question degraded (a warning is shown above the data block) | Fix what the warning names — usually `type`, a duplicate anchor, or a YAML error |
 | Editing a question leaves the old card on screen | Reading view does not re-render code blocks on its own | The plugin refreshes automatically; otherwise run **Refresh quiz view** |
 | Records stopped accumulating after a rename | The `id` was derived from the old heading text | Give the question an explicit `id`; records are keyed by file path + question id |
+| Two questions share records | Both headings derive the same `id` | Rename one heading or give it a unique `id`; the later question is disabled with a warning |
 | A `quiz` block is ignored entirely | It sits outside any heading that counts as a question | Move it under a stem heading |
 | The data block language was changed | The processor is registered at load time | Reload Obsidian |
 | Another plugin's `quiz` snippet stopped rendering | This plugin claimed the `quiz` block language | Change **Block language** in settings, then reload |
@@ -680,17 +694,19 @@ Each version is announced once. Older releases are on [GitHub Releases](https://
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (436 cases)
+npm test           # bundle and run the test suite (498 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 npm run assets     # regenerate the screenshots and GIFs used by the READMEs
 ```
 
-The suite has two layers:
+The suite has three layers:
 
-- **Pure logic** (`parser`, `stem`, `reference`, `grade`, `writeback`, `match-board`, `insert`, `session`): plain node, no DOM.
+- **Pure logic** (`parser`, `stem`, `reference`, `plain-text`, `grade`, `writeback`, `match-board`, `insert`, `session`, `settings`): plain node, no DOM. `tests/quiz-runtime.test.ts` drives the real write-back orchestration against an in-memory Vault, so `Vault.process`, concurrent submits, tag-detected banks and CRLF preservation are exercised instead of assumed.
 - **DOM** (`tests/quiz-match-dom.test.ts`, `tests/quiz-insert-modal.test.ts`, `tests/quiz-practice-view.test.ts`,
-  `tests/quiz-knowledge-link.test.ts`, `tests/quiz-file-menu.test.ts`, `tests/quiz-i18n.test.ts`):
+  `tests/quiz-knowledge-link.test.ts`, `tests/quiz-file-menu.test.ts`, `tests/quiz-i18n.test.ts`,
+  `tests/quiz-card-title.test.ts`, `tests/quiz-choice-dom.test.ts`, `tests/quiz-choice-shuffle.test.ts`,
+  `tests/quiz-placement.test.ts`, `tests/quiz-whats-new.test.ts`):
   renders the real card and board through `renderQuizCard` under jsdom and clicks its nodes, so click handling,
   line targets, per-column isolation, the `MarkdownRenderer` contract and the knowledge-point link are checked
   rather than assumed; the insert dialog is opened through `InsertQuestionModal` and its controls are driven;
@@ -699,6 +715,9 @@ The suite has two layers:
   its real event handlers.
   `tests/dom.ts` installs the Obsidian-style DOM helpers (`createDiv`, `addClass`, …) and
   `tests/obsidian-stub.ts` stands in for the type-only `obsidian` package.
+- **Styles and docs** (`tests/quiz-styles.test.ts`, `tests/quiz-skill-doc.test.ts`): the stylesheet is checked
+  as text for the review-highlight contrast rules, and the authoring guide's examples are executed through the
+  real parser and grader.
 
 `tests/quiz-skill-doc.test.ts` closes the loop between documentation and code: it reads
 `skills/easyquiz-authoring/SKILL.md`, extracts every marked example, and feeds it to the real parser and
@@ -727,7 +746,10 @@ goes to `docs/assets/<en|zh>/`, so each README shows its own interface language.
 ### Source layout
 
 ```
-src/main.ts          plugin entry: code-block processor, commands, view registration, settings tab
+src/main.ts          plugin entry: lifecycle, code-block processor, commands, view registration
+src/settings.ts      settings shape, defaults and validation (pure logic)
+src/settings-tab.ts  the settings page
+src/quiz-lookup.ts   data block → question mapping for the reading view (pure logic)
 src/parser.ts        question-bank parser (pure logic, no obsidian import)
 src/types.ts         question model and parse-result types
 src/stem.ts          stem preprocessing: strips what the interactive controls render (pure logic)
@@ -750,15 +772,16 @@ src/file-menu.ts     the file explorer menu entry that starts practising a bank
 src/labels.ts        question-type labels and default stem titles, shared by card/dialog/window (pure logic)
 src/i18n/            English/Chinese message tables and the language state (pure logic)
 skills/              agent-facing authoring spec (SKILL.md), examples verified by the test suite
-tests/               parser / stem / grading / write-back / insert / session tests, the window tests, a fixture
+tests/               parser / stem / grading / write-back / runtime / settings / lookup / insert / session tests, the window tests, a fixture
 tools/readme-assets/ README screenshot & GIF generator (see above)
 ```
 
 `parser` / `stem` / `reference` / `plain-text` / `grade` / `writeback` / `hash` / `match-board` / `insert` /
-`session` / `labels` / `i18n` deliberately do **not** import `obsidian`, so they run under plain Node;
-every Obsidian API dependency is confined to `runtime.ts`, `view.ts`, `practice-view.ts`,
-`source-note.ts`, `insert-modal.ts`, and `file-menu.ts`. That includes the message tables: they are plain
-objects, so the parser can produce a localized warning without touching the Obsidian API.
+`session` / `labels` / `settings` / `quiz-lookup` / `i18n` deliberately do **not** import `obsidian`, so they
+run under plain Node; every Obsidian API dependency is confined to `runtime.ts`, `view.ts`,
+`practice-view.ts`, `source-note.ts`, `insert-modal.ts`, `settings-tab.ts`, and `file-menu.ts`. That includes
+the message tables: they are plain objects, so the parser can produce a localized warning without touching
+the Obsidian API.
 
 The stem is rendered **without** the parts that get their own interactive control — the option list, the
 matching table, and the `==answer==` text are stripped so that nothing is displayed twice.
@@ -775,7 +798,10 @@ sampling filters plus **Shuffle**; and the one-question-at-a-time round with in-
 report), inline-code question-id references that render an answerable card inside another note (its title
 and pencil open the bank note at the question), the file-explorer menu entry that jumps straight to a
 bank's practice settings, and the English/Chinese interface with its language setting. Question-bank edits
-trigger a debounced reading-view refresh and invalidate the window's cached parsing.
+trigger a debounced reading-view refresh and invalidate the window's cached parsing. Also covered: unique
+question ids (duplicate titles or ids disable the later question), validated `data.json` settings, and the
+write-back orchestration against an in-memory Vault (concurrent submits, tag-discovered banks, CRLF
+preservation and quoted timestamps).
 
 Not yet implemented: batching of multiple write-backs into one file write, and statistics that span rounds
 (a mistake book, charts) beyond what the window computes for a single round.

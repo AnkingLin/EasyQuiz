@@ -20,11 +20,11 @@ id: tcp-handshake
 type: single
 answer: c
 explanation: 三次握手用于同步双方的初始序列号。
-stats: { attempts: 12, correct: 9, lastResult: correct, lastAt: 2025-01-01T10:00:00Z }
+stats: { attempts: 12, correct: 9, lastResult: correct, lastAt: "2025-01-01T10:00:00Z" }
 rev: stale-hash-for-test
 history:
-  - { at: 2025-01-01T10:00:00Z, result: correct, ms: 4200 }
-  - { at: 2025-01-01T09:58:11Z, result: wrong, answer: b, ms: 6100 }
+  - { at: "2025-01-01T10:00:00Z", result: correct, ms: 4200 }
+  - { at: "2025-01-01T09:58:11Z", result: wrong, answer: b, ms: 6100 }
 ```
 
 ## 下列哪些属于传输层协议？

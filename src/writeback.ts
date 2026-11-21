@@ -1,7 +1,7 @@
 /**
  * 写回做题记录（纯逻辑，不依赖 obsidian）。
  *
- * 方案约束（README §3）：记录只写在笔记内，因此必须
+ * 方案约束（见 README 的记录写回说明）：记录只写在笔记内，因此必须
  *   - 只改动数据块内的 `stats` / `history` / `rev`，其余内容逐字不动；
  *   - 写入前校验补丁结果，宁可写不进去也不写坏笔记；
  *   - 由调用方用 Vault.process 做原子读改写。
@@ -55,7 +55,8 @@ function formatStats(stats: QuizStats): string {
 		`attempts: ${stats.attempts}`,
 		`correct: ${stats.correct}`,
 		`lastResult: ${stats.lastResult ?? "null"}`,
-		`lastAt: ${stats.lastAt ?? "null"}`,
+		// 时间戳必须加引号：YAML 1.1 解析器会把裸 ISO 时间读成 Date，而解析器只接受字符串。
+		`lastAt: ${stats.lastAt === null ? "null" : JSON.stringify(stats.lastAt)}`,
 	];
 	return `stats: { ${parts.join(", ")} }`;
 }
@@ -65,7 +66,8 @@ function formatHistory(history: HistoryEntry[]): string {
 		return "history: []";
 	}
 	const lines = history.map((entry) => {
-		const parts = [`at: ${entry.at}`, `result: ${entry.result}`];
+		// `at` 与 `lastAt` 同理：加引号后 YAML 1.1 / 1.2 的解析结果都是字符串。
+		const parts = [`at: ${JSON.stringify(entry.at)}`, `result: ${entry.result}`];
 		if (entry.answer !== undefined) {
 			parts.push(`answer: ${JSON.stringify(entry.answer)}`);
 		}
@@ -206,6 +208,37 @@ export function planWriteBack(
 }
 
 /**
+ * 按原文件的行尾切分文本，同时保留每行自己的行尾。
+ *
+ * 写回只应替换数据块内层的内容，其他行的字节必须原样保留，因此不能先把全文
+ * 归一化成 `\n` 再拼回去（那会把 CRLF 笔记整体改成 LF）。
+ */
+function splitLinesWithEndings(text: string): { lines: string[]; endings: string[] } {
+	const lines: string[] = [];
+	const endings: string[] = [];
+	let start = 0;
+	for (let index = 0; index < text.length; index++) {
+		const char = text[index];
+		if (char !== "\r" && char !== "\n") continue;
+		const eol = char === "\r" && text[index + 1] === "\n" ? "\r\n" : char;
+		lines.push(text.slice(start, index));
+		endings.push(eol);
+		index += eol.length - 1;
+		start = index + 1;
+	}
+	lines.push(text.slice(start));
+	endings.push("");
+	return { lines, endings };
+}
+
+/** 数据块新行使用的行尾：优先跟随开围栏行，其次跟随文件的第一处行尾。 */
+function blockEol(endings: readonly string[], blockLine: number): string {
+	const opening = endings[blockLine];
+	if (opening !== undefined && opening !== "") return opening;
+	return endings.find((ending) => ending !== "") ?? "\n";
+}
+
+/**
  * 在整份文件文本中替换数据块内容。
  *
  * @param fileText 文件全文。
@@ -219,7 +252,8 @@ export function replaceBlockInFile(
 	newBlockSource: string,
 	blockLanguage = "quiz"
 ): string | null {
-	const lines = fileText.replace(/\r\n?/g, "\n").split("\n");
+	// 围栏分析用去掉行尾的行内容；重组时再按原行尾逐行拼回。
+	const { lines, endings } = splitLinesWithEndings(fileText);
 	if (blockLine < 0 || blockLine >= lines.length) return null;
 
 	const fences = analyzeFences(lines);
@@ -238,7 +272,17 @@ export function replaceBlockInFile(
 		if (fence.kind === "open") break;
 	}
 
-	const before = lines.slice(0, blockLine + 1);
-	const after = lines.slice(closeLine);
-	return [...before, ...newBlockSource.split("\n"), ...after].join("\n");
+	const before = lines
+		.slice(0, blockLine + 1)
+		.map((line, index) => line + (endings[index] ?? ""))
+		.join("");
+	const after = lines
+		.slice(closeLine)
+		.map((line, index) => line + (endings[closeLine + index] ?? ""))
+		.join("");
+	const eol = blockEol(endings, blockLine);
+	const closed = closeLine < lines.length;
+	const inner =
+		newBlockSource === "" ? "" : newBlockSource.split("\n").join(eol) + (closed ? eol : "");
+	return before + inner + after;
 }

@@ -1363,7 +1363,8 @@
 	color: var(--text-muted);
 }
 
-.easy-quiz-card__review-list {
+.easy-quiz-card__review-list,
+.easy-quiz-card__review-answer-list {
 	margin: 0;
 	padding-left: 1.2em;
 	display: flex;

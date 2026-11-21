@@ -1,7 +1,7 @@
 /**
  * 解析器测试。
  *
- * 覆盖：文件识别、五种题型的正常路径、以及 README §2.6 的全部降级路径。
+ * 覆盖：文件识别、五种题型的正常路径、以及 README 里列出的全部降级路径。
  * 断言基于「能观察到的行为」（ok / type / 结构 / 提示码），不依赖实现细节；
  * 每个降级用例使用独立的小题库，避免用例之间因下标耦合而互相影响。
  */
@@ -122,7 +122,9 @@ test("单选题：插件写入的 stats / history 被读回", () => {
 	assertEqual(question.stats.attempts, 12, "attempts");
 	assertEqual(question.stats.correct, 9, "correct");
 	assertEqual(question.stats.lastResult, "correct", "lastResult");
+	assertEqual(question.stats.lastAt, "2025-01-01T10:00:00Z", "lastAt 应读回字符串");
 	assertEqual(question.history.length, 2, "history 条数");
+	assertEqual(at(question.history, 0).at, "2025-01-01T10:00:00Z", "history.at 应读回字符串");
 	assertEqual(at(question.history, 1).answer, "b", "第二次作答答案");
 	assertEqual(at(question.history, 1).ms, 6100, "第二次作答耗时");
 });
@@ -473,7 +475,8 @@ test("填空题：显式锚点与自动编号可以混用", () => {
 	const question = questionOf(
 		["---", "quiz: true", "---", "", "## 题", "", "==甲== ^first 与 ==乙== 和 ==丙==。", "", "```quiz", "type: blank", "```"].join("\n")
 	);
-	assertEqual(question.blanks.map((blank) => blank.anchor).join(","), "first,b2,b3", "显式锚点保留，其余自动编号");
+	// 自动编号只给没写锚点的空位计数，且避开已经显式使用的锚点。
+	assertEqual(question.blanks.map((blank) => blank.anchor).join(","), "first,b1,b2", "显式锚点保留，其余自动编号");
 });
 
 test("填空题：**加粗** 也可作为标记（bold 模式）", () => {
@@ -558,7 +561,7 @@ test("问答题：没有列表或表格的正文也是合法题面", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 降级路径（README §2.6）
+// 降级路径（README 的「降级」一节）
 // ---------------------------------------------------------------------------
 
 const choice = ["- 选项甲 ^a", "- 选项乙 ^b"];
@@ -895,4 +898,296 @@ test("代码块内的 # 不被当作题面标题", () => {
 test("frontmatter 未闭合时给出提示但不崩溃", () => {
 	const result = parse(["---", "quiz: true", "", "## 题", "", "```quiz", "type: essay", "```"].join("\n"));
 	assert(result.warnings.some((warning) => warning.code === "file"), "应提示 frontmatter 未闭合");
+});
+
+// ---------------------------------------------------------------------------
+// 重复 id、标题边界与代码围栏
+// ---------------------------------------------------------------------------
+
+test("重复标题派生的 id 会让后面的题降级，而不是静默串题", () => {
+	const result = parse(
+		[
+			"## 单选题",
+			"",
+			"- 甲 ^a",
+			"- 乙 ^b",
+			"",
+			"```quiz",
+			"type: single",
+			"answer: a",
+			"```",
+			"",
+			"## 单选题",
+			"",
+			"- 丙 ^a",
+			"- 丁 ^b",
+			"",
+			"```quiz",
+			"type: single",
+			"answer: b",
+			"```",
+		].join("\n")
+	);
+	assertEqual(result.questions.length, 2, "两道题都应出现在解析结果里");
+	assertEqual(result.questions[0]?.id, result.questions[1]?.id, "相同标题应派生出相同 id");
+	assertEqual(result.questions[0]?.ok, true, "第一道仍可作答");
+	assertEqual(result.questions[1]?.ok, false, "第二道应降级");
+	assert(
+		hasWarning(must(result.questions[1], "应有第二题"), "id-duplicate"),
+		`应提示 id 重复（warnings=${warnCodes(must(result.questions[1], "应有第二题"))}）`
+	);
+	assertEqual(result.questions[1]?.answer, null, "降级题不应暴露答案");
+});
+
+test("显式重复 id 同样降级", () => {
+	const result = parse(
+		[
+			"## 甲",
+			"",
+			"```quiz",
+			"id: q1",
+			"type: essay",
+			"```",
+			"",
+			"## 乙",
+			"",
+			"```quiz",
+			"id: q1",
+			"type: essay",
+			"```",
+		].join("\n")
+	);
+	assertEqual(result.questions[0]?.ok, true, "第一道应保留");
+	assertEqual(result.questions[1]?.ok, false, "第二道应降级");
+});
+
+test("题目范围：层级范围之外的更高级标题也是边界", () => {
+	const result = parse(
+		[
+			"## Q1",
+			"",
+			"- 甲 ^a",
+			"- 乙 ^b",
+			"",
+			"```quiz",
+			"type: single",
+			"answer: a",
+			"```",
+			"",
+			"# 附录",
+			"附录说明：",
+			"- 其他一",
+			"- 其他二",
+		].join("\n")
+	);
+	assertEqual(result.questions.length, 1, "附录标题不应成为题目");
+	const question = must(result.questions[0], "应有 Q1");
+	assertEqual(question.options.map((option) => option.text).join(","), "甲,乙", "选项应来自 Q1 自己的列表");
+	assert(!question.body.includes("其他一"), `附录内容不应进入题面（实际：${JSON.stringify(question.body)}）`);
+});
+
+test("代码示例里的列表不会被当成选项", () => {
+	const question = first(
+		[
+			"## Q",
+			"",
+			"- 甲 ^a",
+			"- 乙 ^b",
+			"",
+			"```text",
+			"- x",
+			"- y",
+			"```",
+			"",
+			"```quiz",
+			"type: single",
+			"answer: a",
+			"```",
+		].join("\n")
+	);
+	assertEqual(question.ok, true, `应解析成功（warnings=${warnCodes(question)}）`);
+	assertEqual(question.options.map((option) => option.text).join(","), "甲,乙", "选项应来自真实列表");
+	assert(!question.supplementText?.includes("```text"), "代码围栏不应被撕成补充内容");
+});
+
+test("4 空格缩进的围栏不是数据块", () => {
+	const question = first(
+		[
+			"## Q",
+			"",
+			"- 甲 ^a",
+			"- 乙 ^b",
+			"",
+			"    ```quiz",
+			"    type: essay",
+			"    ```",
+			"",
+			"```quiz",
+			"type: single",
+			"answer: a",
+			"```",
+		].join("\n")
+	);
+	assertEqual(question.type, "single", "应使用真正的数据块");
+	assertEqual(question.blockSource, "type: single\nanswer: a", "缩进示例不应被读取");
+});
+
+test("循环 YAML 锚点不会让整份文件解析失败", () => {
+	let result: ParsedQuizFile | null = null;
+	let threw = false;
+	try {
+		result = parse(
+			[
+				"## 甲",
+				"",
+				"- 甲一 ^a",
+				"- 甲二 ^b",
+				"",
+				"```quiz",
+				"type: single",
+				"answer: &a [*a]",
+				"```",
+				"",
+				"## 乙",
+				"",
+				"```quiz",
+				"type: essay",
+				"```",
+			].join("\n")
+		);
+	} catch {
+		threw = true;
+	}
+	assertEqual(threw, false, "循环锚点不应抛出异常");
+	if (result === null) throw new Error("应有解析结果");
+	const questions = result.questions;
+	assertEqual(questions[1]?.ok, true, "同文件的其它题目仍应可作答");
+	assertEqual(questions[0]?.ok, false, "循环 answer 的题应降级");
+});
+
+test("有正常题目时，游离的数据块仍会给出提示", () => {
+	const result = parse(
+		[
+			"## Q",
+			"",
+			"```quiz",
+			"type: essay",
+			"```",
+			"",
+			"# 附录",
+			"",
+			"```quiz",
+			"type: essay",
+			"```",
+		].join("\n")
+	);
+	assert(
+		result.warnings.some((warning) => warning.code === "file"),
+		`应提示游离数据块（warnings=${result.warnings.map((warning) => warning.code).join(",")}）`
+	);
+});
+
+test("表格：转义的竖线留在单元格里", () => {
+	const question = first(
+		[
+			"## 配对",
+			"",
+			"| 协议 | 端口 |",
+			"| --- | --- |",
+			"| HTTP\\|HTTPS | 443 |",
+			"| SSH | 22 |",
+			"",
+			"```quiz",
+			"type: match",
+			"```",
+		].join("\n")
+	);
+	assertEqual(question.ok, true, `应解析成功（warnings=${warnCodes(question)}）`);
+	const firstColumn = must(question.board[0], "应有第一列");
+	assert(
+		firstColumn.items.some((item) => item.text === "HTTP|HTTPS"),
+		`单元格应保留转义竖线（实际：${firstColumn.items.map((item) => item.text).join(",")}）`
+	);
+});
+
+test("表格：分隔行只有一个连字符时也识别", () => {
+	const question = first(
+		[
+			"## 配对",
+			"",
+			"| 左 | 右 |",
+			"| - | - |",
+			"| 甲 | 1 |",
+			"| 乙 | 2 |",
+			"",
+			"```quiz",
+			"type: match",
+			"```",
+		].join("\n")
+	);
+	assertEqual(question.ok, true, `应解析成功（warnings=${warnCodes(question)}）`);
+	assertEqual(question.boardPairs.length, 2, "两行应产生两条连线");
+	assert(
+		question.board.every((column) => column.items.every((item) => item.text !== "-")),
+		"分隔行不应变成题板条目"
+	);
+});
+
+test("选择题：嵌套列表项不参与选项编号", () => {
+	const question = first(
+		[
+			"## Q",
+			"",
+			"- 甲 ^a",
+			"  - 甲的说明",
+			"- 乙 ^b",
+			"- 丙 ^c",
+			"",
+			"```quiz",
+			"type: single",
+			"answer: c",
+			"```",
+		].join("\n")
+	);
+	assertEqual(question.options.length, 3, "只应有三个顶层选项");
+	assertEqual(question.options.map((option) => option.text).join(","), "甲,乙,丙", "子项不应变成选项");
+	assertEqual(question.ok, true, `answer c 应指向丙（warnings=${warnCodes(question)}）`);
+});
+
+test("frontmatter：块标量里缩进的 --- 不提前结束", () => {
+	const result = parse(
+		[
+			"---",
+			"note: |",
+			"  ---",
+			"quiz: true",
+			"---",
+			"",
+			"## 题",
+			"",
+			"```quiz",
+			"type: essay",
+			"```",
+		].join("\n")
+	);
+	assertEqual(result.fileIsQuiz, true, "应识别为题库文件");
+	assertEqual(result.questions.length, 1, "应解析出题目");
+});
+
+test("frontmatter：BOM 不影响识别", () => {
+	const result = parse(
+		["\uFEFF---", "quiz: true", "---", "", "## 题", "", "```quiz", "type: essay", "```"].join("\n")
+	);
+	assertEqual(result.fileIsQuiz, true, "带 BOM 的文件也应识别为题库");
+});
+
+test("标题：ATX 闭合井号不属于标题文字", () => {
+	const question = first(["## 标题 ##", "", "```quiz", "type: essay", "```"].join("\n"));
+	assertEqual(question.title, "标题", "闭合井号应去掉");
+});
+
+test("标题：闭合井号后的知识点链接仍能识别", () => {
+	const question = first(["## 标题 ^[[[笔记#小节]]] ##", "", "```quiz", "type: essay", "```"].join("\n"));
+	assertEqual(question.title, "标题", "标题文字");
+	assertEqual(question.knowledgeLink, "笔记#小节", "知识点链接");
 });

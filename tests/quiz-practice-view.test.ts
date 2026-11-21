@@ -185,7 +185,7 @@ function buildHarness(files: { file: FakeFile; source: string }[], realCard = fa
 			submitted.push({ path: file.path, id });
 			// 约定：a2 判错，其余判对，方便断言进度与成绩单。
 			const correct = id !== "a2";
-			return { correct, details: [{ correct }], recorded: [] };
+			return { correct, details: [{ correct }], recorded: [], written: true };
 		},
 	};
 	const host: EasyQuizHost = {
@@ -807,7 +807,7 @@ test("下一题：换题重画并把进度推到第二题", async () => {
 	const harness = standardHarness();
 	await openPicker(harness, "题库/甲.md");
 	await startSession(harness);
-	at(harness.renders, 0, "缺少第一次渲染").ctx.onSubmitted?.({ correct: true, details: [], recorded: [] });
+	at(harness.renders, 0, "缺少第一次渲染").ctx.onSubmitted?.({ correct: true, details: [], recorded: [], written: true });
 	await flush();
 
 	click(find(harness.view, "button[data-action='next-question']", "缺少下一题按钮"));
@@ -823,7 +823,7 @@ test("上一题：回到已经答过的题时直接进入复盘态", async () =>
 	const harness = standardHarness();
 	await openPicker(harness, "题库/甲.md");
 	await startSession(harness);
-	at(harness.renders, 0, "缺少第一次渲染").ctx.onSubmitted?.({ correct: true, details: [], recorded: [] });
+	at(harness.renders, 0, "缺少第一次渲染").ctx.onSubmitted?.({ correct: true, details: [], recorded: [], written: true });
 	await flush();
 	click(find(harness.view, "button[data-action='next-question']", "缺少下一题按钮"));
 	await flush();
@@ -838,7 +838,7 @@ test("清除本题记录：位于右侧操作组，与查看解析分开", async
 	const harness = standardHarness();
 	await openPicker(harness, "题库/甲.md");
 	await startSession(harness);
-	at(harness.renders, 0, "缺少第一次渲染").ctx.onSubmitted?.({ correct: true, details: [], recorded: [] });
+	at(harness.renders, 0, "缺少第一次渲染").ctx.onSubmitted?.({ correct: true, details: [], recorded: [], written: true });
 	await flush();
 
 	const clear = find(harness.view, "button[data-action='clear-question-records']", "缺少清除本题记录按钮");
@@ -866,15 +866,15 @@ test("走完最后一题给出成绩单，并可以只重做错题", async () =>
 	await startSession(harness);
 
 	// 三道题：第一题答对，后两题答错，然后看成绩单。
-	at(harness.renders, 0, "缺少第 1 题").ctx.onSubmitted?.({ correct: true, details: [], recorded: [] });
+	at(harness.renders, 0, "缺少第 1 题").ctx.onSubmitted?.({ correct: true, details: [], recorded: [], written: true });
 	await flush();
 	click(find(harness.view, "button[data-action='next-question']", "缺少下一题按钮"));
 	await flush();
-	at(harness.renders, 1, "缺少第 2 题").ctx.onSubmitted?.({ correct: false, details: [], recorded: [] });
+	at(harness.renders, 1, "缺少第 2 题").ctx.onSubmitted?.({ correct: false, details: [], recorded: [], written: true });
 	await flush();
 	click(find(harness.view, "button[data-action='next-question']", "缺少下一题按钮"));
 	await flush();
-	at(harness.renders, 2, "缺少第 3 题").ctx.onSubmitted?.({ correct: false, details: [], recorded: [] });
+	at(harness.renders, 2, "缺少第 3 题").ctx.onSubmitted?.({ correct: false, details: [], recorded: [], written: true });
 	await flush();
 
 	click(find(harness.view, "button[data-action='next-question']", "缺少查看本轮结果按钮"));
@@ -975,7 +975,7 @@ test("打乱顺序：同一轮内每一题拿到的种子相同", async () => {
 	driveToggle(harness.view, true);
 	await startSession(harness);
 
-	at(harness.renders, 0, "缺少渲染").ctx.onSubmitted?.({ correct: true, details: [], recorded: [] });
+	at(harness.renders, 0, "缺少渲染").ctx.onSubmitted?.({ correct: true, details: [], recorded: [], written: true });
 	await flush();
 	click(find(harness.view, "button[data-action='next-question']", "缺少下一题按钮"));
 	await flush();
@@ -1536,4 +1536,91 @@ test("列表刷新：只有修改时间变了的题库才重新解析", async ()
 
 	assertEqual(calls.join(","), "题库/甲.md", "没变的题库应复用已有解析结果");
 	assertEqual(visibleFiles(harness.view).length, 2, "两份题库都仍在列表里");
+});
+
+test("刷题页：提交未完成时切题，成绩仍记在原来那道题上", async () => {
+	const harness = buildHarness([{ file: fakeFile("题库/甲.md"), source: BANK_A }], true);
+	await openPicker(harness, "题库/甲.md");
+	await startSession(harness);
+
+	const deferred: { resolve: ((result: GradeResult) => void) | null } = { resolve: null };
+	harness.service.submit = () =>
+		new Promise<GradeResult>((resolve) => {
+			deferred.resolve = resolve;
+		});
+
+	click(find(harness.view, ".easy-quiz-card__option", "缺少选项"));
+	const submit = find(harness.view, ".easy-quiz-card__actions button", "缺少提交按钮");
+	click(submit);
+	await flush();
+	// 提交还挂着；导航按钮仍可点。
+	click(find(harness.view, "button[data-action='next-question']", "缺少下一题按钮"));
+	await flush();
+	deferred.resolve?.({ correct: true, details: [], recorded: [], written: true });
+	await flush();
+
+	const state = harness.view as unknown as {
+		results: (boolean | null)[];
+		cursor: number;
+	};
+	assertEqual(state.cursor, 1, "应停在第二题");
+	assertEqual(state.results[0], true, "第一题的成绩应记在它自己身上");
+	assertEqual(state.results[1], null, "第二题不应继承第一题的结果");
+
+	// 回到第一题：应是复盘态且角标按写回结果更新。
+	click(find(harness.view, "button[data-action='prev-question']", "缺少上一题按钮"));
+	await flush();
+	assert(textOf(harness.view).includes("1/1"), `第一题角标应为 1/1（实际：${textOf(harness.view)}）`);
+});
+
+test("工作区恢复：模式、题型与打乱开关一并恢复", async () => {
+	const harness = standardHarness();
+	const view = harness.view as unknown as {
+		setState: (state: unknown, result: unknown) => Promise<void>;
+		getState: () => Record<string, unknown>;
+		config: { mode: string; wrongOnly: boolean; types: string[]; shuffleOptions: boolean };
+	};
+	await view.setState(
+		{
+			page: 1,
+			picked: ["题库/甲.md"],
+			mode: "wrong",
+			types: ["single"],
+			shuffleOptions: true,
+			randomCount: 5,
+		},
+		null
+	);
+	assertEqual(view.config.mode, "wrong", "模式应恢复");
+	assertEqual(view.config.wrongOnly, true, "wrongOnly 应与 mode 同步");
+	assertEqual(view.config.types.join(","), "single", "题型筛选应恢复");
+	assertEqual(view.config.shuffleOptions, true, "打乱开关应恢复");
+	const state = view.getState();
+	assertEqual((state["types"] as string[]).join(","), "single", "getState 应保存题型");
+});
+
+test("刷题设置：已勾选但当前题库没有的题型仍可取消", async () => {
+	const harness = buildHarness([
+		{ file: fakeFile("题库/甲.md"), source: BANK_A },
+		{ file: fakeFile("题库/乙.md"), source: BANK_B },
+	]);
+	await openPicker(harness, "题库/甲.md");
+	await flush();
+	const blankOnA = root(harness.view).querySelector<HTMLInputElement>(
+		"input[data-action='pick-type'][data-type='blank']"
+	);
+	assert(blankOnA !== null, "甲库应有填空题复选框");
+	blankOnA!.checked = true;
+	blankOnA!.dispatchEvent(new testWindow.Event("change"));
+	await flush();
+
+	// 换到没有填空题的乙库：题型仍勾选，但必须允许取消（否则会锁死）。
+	await openPicker(harness, "题库/乙.md");
+	await flush();
+	const blankOnB = root(harness.view).querySelector<HTMLInputElement>(
+		"input[data-action='pick-type'][data-type='blank']"
+	);
+	assert(blankOnB !== null, "乙库也应有填空题复选框");
+	assertEqual(blankOnB!.checked, true, "该题型仍处于勾选状态");
+	assertEqual(blankOnB!.disabled, false, "已勾选的题型必须能取消");
 });

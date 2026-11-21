@@ -1,5 +1,4 @@
 import {
-	App,
 	debounce,
 	Editor,
 	MarkdownFileInfo,
@@ -10,22 +9,14 @@ import {
 	Notice,
 	Platform,
 	Plugin,
-	PluginSettingTab,
-	Setting,
 	TFile,
 } from "obsidian";
 import type { WorkspaceLeaf } from "obsidian";
-
-/**
- * 题卡内部不再套题卡：题面渲染时会再跑一遍后处理器，
- * 若题面里又写了题目引用就会无限递归，用 DOM 位置直接掐断。
- */
-function isInsideQuizCard(el: HTMLElement): boolean {
-	return el.closest(".easy-quiz-card") !== null;
-}
-import { BlankMarkerMode, ParsedQuizFile, QuizQuestion } from "./types";
-import { DEFAULT_SETTINGS, QuizService, RuntimeSettings } from "./runtime";
-import { LanguagePreference, LANGUAGE_PREFERENCES, setLanguage, resolveLanguage, t } from "./i18n";
+import { ParsedQuizFile, QuizQuestion } from "./types";
+import { QuizService } from "./runtime";
+import { parseSettingsSignature, sanitizeSettings } from "./settings";
+import type { RuntimeSettings } from "./settings";
+import { setLanguage, resolveLanguage, t } from "./i18n";
 import { renderQuizCard } from "./view";
 import { insertQuestionAtCursor, InsertQuestionOptions } from "./insert-modal";
 import { registerFileMenu } from "./file-menu";
@@ -40,8 +31,18 @@ import {
 import type { PracticePlacement } from "./practice-placement";
 import { PRACTICE_VIEW_TYPE, PracticeView } from "./practice-view";
 import { openQuestionSource } from "./source-note";
+import { findQuestion } from "./quiz-lookup";
 import { shouldAnnounce, whatsNewFor } from "./whats-new";
+import { EasyQuizSettingTab } from "./settings-tab";
 import { WhatsNewModal } from "./whats-new-modal";
+
+/**
+ * 题卡内部不再套题卡：题面渲染时会再跑一遍后处理器，
+ * 若题面里又写了题目引用就会无限递归，用 DOM 位置直接掐断。
+ */
+function isInsideQuizCard(el: HTMLElement): boolean {
+	return el.closest(".easy-quiz-card") !== null;
+}
 
 /**
  * 界面语言的候选来源，按可信度排序。
@@ -73,12 +74,22 @@ export default class EasyQuizPlugin extends Plugin {
 	private whatsNewSeen: string | null = null;
 	/** `` `题目id` `` 引用索引；题库文件变动时清空，下次渲染重建。 */
 	private referenceIndex: Map<string, QuestionReferenceTarget[]> | null = null;
+	/** 正在构建的引用索引；同一轮渲染里多个引用共用一次整库扫描。 */
+	private referenceIndexTask: Promise<Map<string, QuestionReferenceTarget[]>> | null = null;
+	/** 索引代数：构建期间失效的旧结果不能再写回缓存。 */
+	private referenceGeneration = 0;
+	/** 插件自己刚写回的文件 → 时间戳；跳过由此触发的预览重渲染，保住复盘。 */
+	private selfWrites = new Map<string, number>();
+	/** 上次保存时与解析有关的设置指纹；变化时让缓存与已渲染题卡失效。 */
+	private lastParseSignature = "";
 
 	async onload() {
 		await this.loadSettings();
 		// 语言要先定下来：下面的命令名、丝带提示、设置页文案都要用当前语言。
 		this.applyLanguage();
-		this.service = new QuizService(this.app, this.settings);
+		this.service = new QuizService(this.app, this.settings, undefined, (file) => {
+			this.noteSelfWrite(file.path);
+		});
 
 		// 刷题窗口：题库列表 / 刷题设置 / 刷题三个页面都在这个自定义视图里。
 		this.registerView(PRACTICE_VIEW_TYPE, (leaf) => {
@@ -111,6 +122,17 @@ export default class EasyQuizPlugin extends Plugin {
 				if (file instanceof TFile && this.isQuizPath(file.path)) refresh(file);
 			})
 		);
+		// 元数据缓存就绪前建立的引用索引可能是空表：缓存建好后清掉并重画一次，
+		// 否则启动时已打开的笔记会一直把 `` `题目id` `` 当成普通代码。
+		this.registerEvent(
+			this.app.metadataCache.on("resolved", () => {
+				this.invalidateReferences();
+				this.refreshNotes();
+			})
+		);
+		// 删除/重命名题库文件后，已有引用与刷题窗口的缓存都要失效。
+		this.registerEvent(this.app.vault.on("delete", () => this.handleVaultChange()));
+		this.registerEvent(this.app.vault.on("rename", () => this.handleVaultChange()));
 
 		this.addCommand({
 			id: "refresh-quiz-view",
@@ -229,7 +251,11 @@ export default class EasyQuizPlugin extends Plugin {
 		);
 	}
 
-	onunload() {}
+	onunload() {
+		// 索引/写回标记只是内存缓存；显式释放，避免重新加载后残留大对象。
+		this.invalidateReferences();
+		this.selfWrites.clear();
+	}
 
 	/**
 	 * 更新后提示一次这一版的改动。
@@ -352,9 +378,12 @@ export default class EasyQuizPlugin extends Plugin {
 	 */
 	private refreshPreviews(file: TFile, force = false): void {
 		// 题目内容可能变了，id → 题目的索引也随之失效。
-		this.referenceIndex = null;
+		this.invalidateReferences();
 		// 只把改过的那一份标脏：刷题窗口的列表刷新因此只需重解析它。
 		for (const view of this.practiceViews()) view.markStale(file.path);
+		// 写回本身也会触发 modify/changed。此时整页重渲染会把刚显示的复盘与作答
+		// 一起抹掉，因此插件自己写过的文件只更新缓存，不动阅读视图。
+		if (!force && this.wasSelfWrite(file.path)) return;
 		for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
 			const view = leaf.view;
 			if (!(view instanceof MarkdownView)) continue;
@@ -362,6 +391,28 @@ export default class EasyQuizPlugin extends Plugin {
 			if (!force && view.getMode() !== "preview") continue;
 			view.previewMode.rerender(true);
 		}
+	}
+
+	/** 记录一次插件自己的写回；短时间内的文件变更事件据此跳过整页重渲染。 */
+	private noteSelfWrite(path: string): void {
+		const now = Date.now();
+		this.selfWrites.set(path, now);
+		if (this.selfWrites.size <= 50) return;
+		for (const [key, at] of this.selfWrites) {
+			if (now - at > 10_000) this.selfWrites.delete(key);
+		}
+	}
+
+	private wasSelfWrite(path: string): boolean {
+		const at = this.selfWrites.get(path);
+		return at !== undefined && Date.now() - at < 2_000;
+	}
+
+	/** 题库文件被删除/重命名：引用索引与刷题窗口缓存一起失效。 */
+	private handleVaultChange(): void {
+		this.invalidateReferences();
+		for (const view of this.practiceViews()) view.markStale();
+		this.refreshNotes();
 	}
 
 	/** 渲染一个数据块：先解析整份文件，再把数据块对应到具体题目。 */
@@ -416,16 +467,17 @@ export default class EasyQuizPlugin extends Plugin {
 			blockLine: question.blockLine ?? undefined,
 			blankMarker: this.settings.blankMarker,
 			showStaleHint: this.settings.showStaleHint,
+			writeBackEnabled: this.settings.writeBackEnabled,
 			onDismissStaleHint: () => this.dismissStaleHint(),
 			onOpenSource: () => void openQuestionSource(this.app, file, question),
 			// MarkdownRenderer 需要一个 Component 承载生命周期；交给渲染上下文托管。
 			addRenderChild: (child) => post.addChild(child),
-			onSubmitted: () => this.refreshNotice(),
+			onSubmitted: (result) => this.refreshNotice(result.written),
 		});
 	}
 
-	private refreshNotice(): void {
-		new Notice(t("notice.recorded"));
+	private refreshNotice(written: boolean | undefined): void {
+		new Notice(t(written === false ? "notice.notSaved" : "notice.recorded"));
 	}
 
 	// -----------------------------------------------------------------------
@@ -498,10 +550,11 @@ export default class EasyQuizPlugin extends Plugin {
 			blockLine: question.blockLine ?? undefined,
 			blankMarker: this.settings.blankMarker,
 			showStaleHint: this.settings.showStaleHint,
+			writeBackEnabled: this.settings.writeBackEnabled,
 			onDismissStaleHint: () => this.dismissStaleHint(),
 			onOpenSource: () => void openQuestionSource(this.app, file, question),
 			addRenderChild: (child) => post.addChild(child),
-			onSubmitted: () => this.refreshNotice(),
+			onSubmitted: (result) => this.refreshNotice(result.written),
 		});
 	}
 
@@ -513,23 +566,47 @@ export default class EasyQuizPlugin extends Plugin {
 		return pickReference(hits, sourcePath);
 	}
 
-	/** 建立 id → 题目的索引；一次渲染期间复用，题库变动或设置变更时清空。 */
+	/**
+	 * 建立 id → 题目的索引；一次渲染期间复用，题库变动或设置变更时清空。
+	 *
+	 * 同一页里常有多处引用，它们会并行调用这里：缓存正在构建时复用同一个
+	 * Promise，避免为每个引用各扫一遍整库。
+	 */
 	private async referenceTargets(): Promise<Map<string, QuestionReferenceTarget[]>> {
 		const cached = this.referenceIndex;
 		if (cached !== null) return cached;
+		const running = this.referenceIndexTask;
+		if (running !== null) return running;
 
-		const banks: ReferenceBank[] = [];
-		for (const file of this.service.listQuizFiles()) {
-			try {
-				const parsed = await this.service.parseFile(file);
-				banks.push({ path: file.path, questions: parsed.questions });
-			} catch {
-				continue;
+		const generation = this.referenceGeneration;
+		const task = (async (): Promise<Map<string, QuestionReferenceTarget[]>> => {
+			const banks: ReferenceBank[] = [];
+			for (const file of this.service.listQuizFiles()) {
+				try {
+					const parsed = await this.service.parseFile(file);
+					banks.push({ path: file.path, questions: parsed.questions });
+				} catch {
+					continue;
+				}
 			}
-		}
-		const index = buildReferenceIndex(banks);
-		this.referenceIndex = index;
-		return index;
+			const index = buildReferenceIndex(banks);
+			// 构建期间设置/文件又变了：旧结果不再可信，也不能写回缓存。
+			if (generation === this.referenceGeneration) this.referenceIndex = index;
+			return index;
+		})();
+		this.referenceIndexTask = task;
+		const clear = (): void => {
+			if (this.referenceIndexTask === task) this.referenceIndexTask = null;
+		};
+		void task.then(clear, clear);
+		return task;
+	}
+
+	/** 让引用索引失效；下一次引用渲染会重建。 */
+	private invalidateReferences(): void {
+		this.referenceGeneration += 1;
+		this.referenceIndex = null;
+		this.referenceIndexTask = null;
 	}
 
 	/**
@@ -600,216 +677,31 @@ export default class EasyQuizPlugin extends Plugin {
 
 	async loadSettings() {
 		const stored = (await this.loadData()) as StoredData | null;
-		const { whatsNewSeen, ...settings } = stored ?? {};
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, settings);
+		const { whatsNewSeen, ...raw } = stored ?? {};
+		// data.json 可能被手工改坏：所有字段都在这里收敛回合法值，
+		// 避免坏类型一路走到 `isQuizFile` 或解析器里抛异常。
+		this.settings = sanitizeSettings(raw);
 		this.whatsNewSeen = typeof whatsNewSeen === "string" ? whatsNewSeen : null;
-		// data.json 可能被手工改坏：语言只认这三种取值，其余一律回到「跟随 Obsidian」，
-		// 否则设置页的下拉框会显示成空值。
-		if (!LANGUAGE_PREFERENCES.includes(this.settings.language)) {
-			this.settings.language = DEFAULT_SETTINGS.language;
-		}
+		this.lastParseSignature = parseSettingsSignature(this.settings);
 	}
 
 	async saveSettings() {
+		this.settings = sanitizeSettings(this.settings);
 		await this.saveData({ ...this.settings, whatsNewSeen: this.whatsNewSeen });
 		this.service?.updateSettings(this.settings);
-		// 题的解析方式可能随设置改变（标题匹配、空位标记），已建的引用索引不再可信。
-		this.referenceIndex = null;
+		// 题的解析方式可能随设置改变（标题层级、空位标记、路径通配符），
+		// 已建的引用索引与缓存都不再可信。
+		this.invalidateReferences();
+		const signature = parseSettingsSignature(this.settings);
+		if (signature === this.lastParseSignature) return;
+		this.lastParseSignature = signature;
+		for (const view of this.practiceViews()) view.markStale();
+		this.refreshNotes();
 	}
-}
-
-/** 把数据块对应到题目：优先用行号区间，其次用源码内容比对。 */
-export function findQuestion(
-	parsed: ParsedQuizFile,
-	section: { lineStart: number; lineEnd: number } | null,
-	source: string
-): QuizQuestion | null {
-	if (section) {
-		const inside = parsed.questions.filter(
-			(question) =>
-				question.blockLine !== null &&
-				question.blockLine >= section.lineStart &&
-				question.blockLine <= section.lineEnd
-		);
-		const first = inside[0];
-		if (first !== undefined) return first;
-	}
-	const normalized = source.trim();
-	const bySource = parsed.questions.filter(
-		(question) => question.blockSource !== null && question.blockSource.trim() === normalized
-	);
-	return bySource[0] ?? null;
 }
 
 /** 非题库文件中的数据块原样显示，避免把普通代码块吃掉。 */
 function renderPlainBlock(source: string, el: HTMLElement): void {
 	const pre = el.createEl("pre");
 	pre.createEl("code", { text: source });
-}
-
-class EasyQuizSettingTab extends PluginSettingTab {
-	plugin: EasyQuizPlugin;
-
-	constructor(app: App, plugin: EasyQuizPlugin) {
-		super(app, plugin);
-		this.plugin = plugin;
-	}
-
-	display(): void {
-		this.renderSettings();
-	}
-
-	/**
-	 * 画出全部设置项。
-	 *
-	 * 单独抽出来是因为语言切换后要就地重画这一页，而 `display` 在 Obsidian 1.13+
-	 * 已被标记为 deprecated（新 API 是声明式的 `getSettingDefinitions`），
-	 * 插件要兼容 1.4，因此只重画自己这一层、不去第二次调用它。
-	 */
-	private renderSettings(): void {
-		const { containerEl } = this;
-		containerEl.empty();
-
-		// 语言放在最前面：这一页其余文案就是按它渲染的。
-		new Setting(containerEl)
-			.setName(t("setting.language.name"))
-			.setDesc(t("setting.language.desc"))
-			.addDropdown((dropdown) =>
-				dropdown
-					.addOptions({
-						auto: t("setting.language.auto"),
-						// 语言名用各自的母语写法，方便对照识别。
-						en: "English",
-						zh: "中文",
-					})
-					.setValue(this.plugin.settings.language)
-					.onChange(async (value) => {
-						this.plugin.settings.language = value as LanguagePreference;
-						await this.plugin.saveSettings();
-						// 用户在改设置：笔记里已经渲染的题卡也要跟着换语言。
-						this.plugin.applyLanguage(true);
-						// 当前语言变了：设置页自己也要按新语言重画。
-						this.renderSettings();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName(t("setting.blockLanguage.name"))
-			.setDesc(t("setting.blockLanguage.desc"))
-			.addText((text) =>
-				text.setValue(this.plugin.settings.blockLanguage).onChange(async (value) => {
-					this.plugin.settings.blockLanguage = value.trim() || DEFAULT_SETTINGS.blockLanguage;
-					await this.plugin.saveSettings();
-				})
-			);
-
-		// 固定层级模式才有「几级标题」可言：自动模式按最近的带数据块标题识别，
-		// 这一项不再参与解析，留着只会让人以为它还在生效。
-		const headingLevelSetting = new Setting(containerEl)
-			.setName(t("setting.headingLevel.name"))
-			.setDesc(t("setting.headingLevel.desc"))
-			.addDropdown((dropdown) =>
-				dropdown
-					.addOptions({
-						"2": t("setting.headingLevel.h2"),
-						"3": "H3",
-						"4": "H4",
-					})
-					.setValue(String(this.plugin.settings.headingLevels[0]))
-					.onChange(async (value) => {
-						const level = Number(value);
-						this.plugin.settings.headingLevels = [level, level];
-						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName(t("setting.headingMode.name"))
-			.setDesc(t("setting.headingMode.desc"))
-			.addDropdown((dropdown) =>
-				dropdown
-					.addOptions({
-						level: t("setting.headingMode.level"),
-						auto: t("setting.headingMode.auto"),
-					})
-					.setValue(this.plugin.settings.headingMode)
-					.onChange(async (value) => {
-						this.plugin.settings.headingMode = value === "auto" ? "auto" : "level";
-						await this.plugin.saveSettings();
-						syncHeadingLevel();
-					})
-			);
-
-		const syncHeadingLevel = (): void => {
-			headingLevelSetting.settingEl.style.display =
-				this.plugin.settings.headingMode === "auto" ? "none" : "";
-		};
-		syncHeadingLevel();
-
-		new Setting(containerEl)
-			.setName(t("setting.pathGlobs.name"))
-			.setDesc(t("setting.pathGlobs.desc"))
-			.addTextArea((area) =>
-				area
-					.setValue(this.plugin.settings.pathGlobs.join("\n"))
-					.onChange(async (value) => {
-						this.plugin.settings.pathGlobs = value
-							.split("\n")
-							.map((line) => line.trim())
-							.filter((line) => line !== "");
-						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName(t("setting.writeBack.name"))
-			.setDesc(t("setting.writeBack.desc"))
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.writeBackEnabled).onChange(async (value) => {
-					this.plugin.settings.writeBackEnabled = value;
-					await this.plugin.saveSettings();
-				})
-			);
-
-		new Setting(containerEl)
-			.setName(t("setting.staleHint.name"))
-			.setDesc(t("setting.staleHint.desc"))
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.showStaleHint).onChange(async (value) => {
-					this.plugin.settings.showStaleHint = value;
-					await this.plugin.saveSettings();
-					this.plugin.refreshNotes();
-				})
-			);
-
-		new Setting(containerEl)
-			.setName(t("setting.blankMarker.name"))
-			.setDesc(t("setting.blankMarker.desc"))
-			.addDropdown((dropdown) =>
-				dropdown
-					.addOptions({
-						highlight: t("setting.blankMarker.highlight"),
-						bold: t("setting.blankMarker.bold"),
-						both: t("setting.blankMarker.both"),
-					})
-					.setValue(this.plugin.settings.blankMarker)
-					.onChange(async (value) => {
-						this.plugin.settings.blankMarker = value as BlankMarkerMode;
-						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName(t("setting.historyLimit.name"))
-			.setDesc(t("setting.historyLimit.desc"))
-			.addText((text) =>
-				text.setValue(String(this.plugin.settings.historyLimit)).onChange(async (value) => {
-					const limit = Number.parseInt(value, 10);
-					if (!Number.isNaN(limit) && limit >= 0) {
-						this.plugin.settings.historyLimit = limit;
-						await this.plugin.saveSettings();
-					}
-				})
-			);
-	}
 }

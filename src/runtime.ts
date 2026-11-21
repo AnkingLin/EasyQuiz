@@ -6,73 +6,63 @@
  */
 
 import { App, parseYaml, TFile } from "obsidian";
-import {
-	DEFAULT_BLANK_MARKER,
-	DEFAULT_BLOCK_LANGUAGE,
-	DEFAULT_HEADING_LEVELS,
-	DEFAULT_HEADING_MODE,
-	HeadingMode,
-	parseQuizFile,
-	ParseDependencies,
-} from "./parser";
+import { parseQuizFile, ParseDependencies } from "./parser";
 import { GradeResult, gradeAnswer, UserAnswer } from "./grade";
 import { contentHash } from "./hash";
-import { LanguagePreference, t } from "./i18n";
-import { DEFAULT_HISTORY_LIMIT, planClear, planWriteBack, replaceBlockInFile } from "./writeback";
-import { BlankMarkerMode, HistoryEntry, ParsedQuizFile, QuizQuestion, QuizStats } from "./types";
+import { t } from "./i18n";
+import { planClear, planWriteBack, replaceBlockInFile } from "./writeback";
+import { HistoryEntry, ParsedQuizFile, QuizQuestion, QuizStats } from "./types";
+import { DEFAULT_SETTINGS } from "./settings";
+import type { RuntimeSettings } from "./settings";
 
 export { contentHash };
+export { DEFAULT_SETTINGS };
+export type { RuntimeSettings };
 
 export const parserDeps: ParseDependencies = {
 	parseYaml: (source: string): unknown => parseYaml(source) as unknown,
 	hash: contentHash,
 };
 
-export interface RuntimeSettings {
-	/** 界面语言：`auto` 跟随 Obsidian，其余为强制指定。 */
-	language: LanguagePreference;
-	blockLanguage: string;
-	headingLevels: [number, number];
-	/** 题面标题的匹配方式：固定层级，或自动取「自己这一段里有数据块」的最近标题。 */
-	headingMode: HeadingMode;
-	/** 空位标记样式：`==高亮==` / `**加粗**` / 两者都识别。 */
-	blankMarker: BlankMarkerMode;
-	pathGlobs: string[];
-	historyLimit: number;
-	writeBackEnabled: boolean;
-	/** 是否在题卡上显示「题面已变更」提示。关掉后连"关闭提示"入口一起隐藏。 */
-	showStaleHint: boolean;
+/** 把 glob 片段里的普通字符转义成正则字面量。 */
+function escapeRegex(text: string): string {
+	return text.replace(/[.+^${}()|[\]\\]/g, "\\$&");
 }
-
-export const DEFAULT_SETTINGS: RuntimeSettings = {
-	language: "auto",
-	blockLanguage: DEFAULT_BLOCK_LANGUAGE,
-	headingLevels: DEFAULT_HEADING_LEVELS,
-	headingMode: DEFAULT_HEADING_MODE,
-	blankMarker: DEFAULT_BLANK_MARKER,
-	pathGlobs: [],
-	historyLimit: DEFAULT_HISTORY_LIMIT,
-	writeBackEnabled: true,
-	showStaleHint: true,
-};
 
 /** 把 `题库/**` 这类通配符编译为可复用的匹配器。 */
 export function compileGlob(glob: string): (path: string) => boolean {
 	const normalized = glob.trim().replace(/\\/g, "/").replace(/^\/+/, "");
 	if (normalized === "") return () => false;
-	const escaped = normalized
-		.split("/")
-		.map((segment) => {
-			if (segment === "**") return ".*";
-			return segment
-				.replace(/[.+^${}()|[\]\\]/g, "\\$&")
-				.replace(/\*/g, "[^/]*")
-				.replace(/\?/g, "[^/]");
-		})
-		.join("/");
-	// `题库/**` 应同时匹配「题库直下的文件」与「题库子目录里的文件」。
-	const pattern = `^${escaped.replace(/\/\.\*$/, "(?:/.*)?")}$`;
-	const regex = new RegExp(pattern);
+	let pattern = "^";
+	for (let index = 0; index < normalized.length; ) {
+		const char = normalized[index] ?? "";
+		if (char === "*" && normalized[index + 1] === "*") {
+			let end = index + 2;
+			while (normalized[end] === "*") end++;
+			if (normalized[end] === "/") {
+				// `**/` 匹配零级或更多级目录：`**/*.md` 也能命中根目录的 `a.md`。
+				pattern += "(?:[^/]+/)*";
+				index = end + 1;
+			} else {
+				pattern += ".*";
+				index = end;
+			}
+			continue;
+		}
+		if (char === "*") {
+			pattern += "[^/]*";
+			index++;
+			continue;
+		}
+		if (char === "?") {
+			pattern += "[^/]";
+			index++;
+			continue;
+		}
+		pattern += escapeRegex(char);
+		index++;
+	}
+	const regex = new RegExp(`${pattern}$`);
 	return (path: string) => regex.test(path.replace(/\\/g, "/"));
 }
 
@@ -80,10 +70,21 @@ export function compileGlob(glob: string): (path: string) => boolean {
  * 题库文件解析服务：给出「这个文件是不是题库」以及「解析出的题目」。
  */
 export class QuizService {
-	constructor(private app: App, private settings: RuntimeSettings) {}
+	/** 路径通配符只编译一次；设置变化时清空。 */
+	private globCache = new Map<string, (path: string) => boolean>();
+
+	constructor(
+		private app: App,
+		private settings: RuntimeSettings,
+		/** 解析依赖；测试可注入与 Obsidian 一致的 YAML 解析器。 */
+		private deps: ParseDependencies = parserDeps,
+		/** 写回成功后的回调（插件用来避免自己触发的预览刷新冲掉复盘）。 */
+		private onWriteBack?: (file: TFile) => void
+	) {}
 
 	updateSettings(settings: RuntimeSettings): void {
 		this.settings = settings;
+		this.globCache.clear();
 	}
 
 	/** 汇总 frontmatter tags 与正文 inline tag，供识别与解析共用。 */
@@ -100,7 +101,14 @@ export class QuizService {
 	}
 
 	private pathMatched(file: TFile): boolean {
-		return this.settings.pathGlobs.some((glob) => compileGlob(glob)(file.path));
+		return this.settings.pathGlobs.some((glob) => {
+			let matcher = this.globCache.get(glob);
+			if (matcher === undefined) {
+				matcher = compileGlob(glob);
+				this.globCache.set(glob, matcher);
+			}
+			return matcher(file.path);
+		});
 	}
 
 	private parseOptions(file: TFile, tags: string[]) {
@@ -111,7 +119,7 @@ export class QuizService {
 			blankMarker: this.settings.blankMarker,
 			pathMatched: this.pathMatched(file),
 			tags,
-			deps: parserDeps,
+			deps: this.deps,
 		};
 	}
 
@@ -165,9 +173,15 @@ export class QuizService {
 		if (!question || !question.ok) return null;
 
 		const result = gradeAnswer(question, answer);
-		if (this.settings.writeBackEnabled) {
-			await this.record(file, questionId, result, durationMs);
+		if (!this.settings.writeBackEnabled) return result;
+		try {
+			result.written = await this.record(file, questionId, result, durationMs);
+		} catch (error) {
+			// 判分已经完成；写盘失败不能把结果吞掉，交给界面提示「已判分但未写入」。
+			console.error("EasyQuiz: could not write the attempt record", error);
+			result.written = false;
 		}
+		if (result.written) this.onWriteBack?.(file);
 		return result;
 	}
 
@@ -176,7 +190,7 @@ export class QuizService {
 		questionId: string,
 		result: GradeResult,
 		durationMs?: number
-	): Promise<void> {
+	): Promise<boolean> {
 		const historyEntry: HistoryEntry = {
 			at: new Date().toISOString(),
 			result: result.correct ? "correct" : "wrong",
@@ -184,13 +198,14 @@ export class QuizService {
 			...(durationMs !== undefined ? { ms: durationMs } : {}),
 		};
 
+		let written = false;
 		await this.app.vault.process(file, (data) => {
 			const parsed = parseQuizFile(data, file.path, {
 				blockLanguage: this.settings.blockLanguage,
 				headingLevels: this.settings.headingLevels,
 				headingMode: this.settings.headingMode,
 				blankMarker: this.settings.blankMarker,
-				deps: parserDeps,
+				deps: this.deps,
 			});
 			const question = parsed.questions.find((item) => item.id === questionId);
 			if (!question || question.blockLine === null || question.blockSource === null) return data;
@@ -212,15 +227,18 @@ export class QuizService {
 					blockLanguage: this.settings.blockLanguage,
 					headingLevels: this.settings.headingLevels,
 					headingMode: this.settings.headingMode,
-					deps: parserDeps,
+					deps: this.deps,
 				},
 				this.settings.historyLimit
 			);
 			if (!patch.applied) return data;
 
 			const next = replaceBlockInFile(data, question.blockLine, patch.content, this.settings.blockLanguage);
-			return next ?? data;
+			if (next === null) return data;
+			written = true;
+			return next;
 		});
+		return written;
 	}
 
 	/**
@@ -240,6 +258,7 @@ export class QuizService {
 			cleared = true;
 			return next;
 		});
+		if (cleared) this.onWriteBack?.(file);
 		return cleared;
 	}
 
@@ -261,6 +280,7 @@ export class QuizService {
 			}
 			return next;
 		});
+		if (cleared > 0) this.onWriteBack?.(file);
 		return cleared;
 	}
 
@@ -271,7 +291,7 @@ export class QuizService {
 			headingLevels: this.settings.headingLevels,
 			headingMode: this.settings.headingMode,
 			blankMarker: this.settings.blankMarker,
-			deps: parserDeps,
+			deps: this.deps,
 		});
 	}
 
@@ -284,7 +304,7 @@ export class QuizService {
 			headingLevels: this.settings.headingLevels,
 			headingMode: this.settings.headingMode,
 			blankMarker: this.settings.blankMarker,
-			deps: parserDeps,
+			deps: this.deps,
 		});
 		if (!patch.applied) return null;
 		return replaceBlockInFile(data, question.blockLine, patch.content, this.settings.blockLanguage);

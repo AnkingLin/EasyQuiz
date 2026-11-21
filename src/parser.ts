@@ -98,7 +98,6 @@ function splitLines(text: string): string[] {
 }
 
 const HEADING_RE = /^(#{1,6})\s+(.*?)\s*$/;
-
 /**
  * 题面标题末尾的知识点链接：`^[[[知识点]]]`，也就是 `^[` 加一个 Obsidian 双链再加 `]`。
  *
@@ -119,10 +118,6 @@ export function splitKnowledgeLink(title: string): { title: string; knowledgeLin
 }
 
 /** 只取标题文本（去掉末尾的知识点链接），用于显示与派生 id。 */
-export function stripKnowledgeLink(title: string): string {
-	return splitKnowledgeLink(title).title;
-}
-
 function normalizeText(markdown: string): string {
 	return markdown
 		.replace(/\s+/g, " ")
@@ -157,11 +152,11 @@ export function parseQuizFile(content: string, path: string, options: ParseOptio
 	// 一次算出每行的围栏归属，标题扫描与题面解析共用，避免多处各写一份状态机。
 	const fenceMap = buildFenceMap(lines);
 
-	// 标题扫描：找出所有可能的题面标题。
-	// level 模式：只认 headingLevels 区间内的标题；更深一级的标题只在「后面还有更浅的
-	// 标题」时算子标题（分组用途），否则它本身就是一道题的题面。
-	// auto 模式：在 1–6 级标题里挑「自己这一段里有 quiz 数据块」的标题——数据块归属于
-	// 离它最近的那一个标题，所以 `## 分组` 这种没有自己内容的标题不会变成空题。
+	// 标题扫描：先收集 1–6 级的**全部**标题，再决定哪些算题目。
+	//
+	// 边界必须用全部标题计算：README 承诺「题目到下一个同级或更高级标题为止」，
+	// 若只用 headingLevels 区间内的标题算边界，`## Q1` 后面出现 `# 附录` 时
+	// 附录里的列表会被当成 Q1 的选项，答案随之指错。
 	const allHeadings: { line: number; level: number; title: string }[] = [];
 	for (let i = bodyStartLine; i < lines.length; i++) {
 		const state = fenceMap[i];
@@ -171,9 +166,8 @@ export function parseQuizFile(content: string, path: string, options: ParseOptio
 		const match = HEADING_RE.exec(line);
 		if (!match) continue;
 		const level = match[1]?.length ?? 0;
-		const title = match[2];
-		if (title === undefined) continue;
-		if (headingMode === "level" && (level < minLevel || level > maxLevel)) continue;
+		// ATX 标题的闭合井号（`## 标题 ##`）不属于标题文字；只认前置空白的闭合序列。
+		const title = (match[2] ?? "").replace(/\s+#+\s*$/, "").trim();
 		allHeadings.push({ line: i, level, title });
 	}
 
@@ -190,13 +184,11 @@ export function parseQuizFile(content: string, path: string, options: ParseOptio
 	// 整篇都没有数据块时退回 headingLevels 区间，避免把普通笔记的每个标题都当成缺数据块。
 	const autoCandidates =
 		headingMode === "auto" ? allHeadings.filter((heading, index) => ownsBlock[index] === true) : [];
-	const fallback = headingMode === "auto" && autoCandidates.length === 0;
-	const candidates = fallback
-		? allHeadings.filter((heading) => heading.level >= minLevel && heading.level <= maxLevel)
-		: autoCandidates.length > 0
-			? autoCandidates
-			: allHeadings;
-	const autoMode = headingMode === "auto" && !fallback;
+	const inRange = allHeadings.filter(
+		(heading) => heading.level >= minLevel && heading.level <= maxLevel
+	);
+	const autoMode = headingMode === "auto" && autoCandidates.length > 0;
+	const candidates = headingMode === "auto" ? (autoMode ? autoCandidates : inRange) : inRange;
 
 	// 更深一级的标题若后面还有更浅的标题，则它是子标题，归入当前题的题面。
 	const minimalLevelAfter: number[] = new Array<number>(candidates.length).fill(Number.MAX_SAFE_INTEGER);
@@ -211,13 +203,19 @@ export function parseQuizFile(content: string, path: string, options: ParseOptio
 		: candidates.filter((heading, index) => (minimalLevelAfter[index] ?? 0) >= heading.level);
 
 	// 每道题的结束行：
-	// - level 模式：到下一个同级或更高级标题为止；
+	// - level 模式：到下一个**同级或更高级**标题为止（层级范围之外的标题也算边界）；
 	// - auto 模式：到下一个拥有数据块的标题为止（中间没有数据块的子标题归入当前题的题面），
 	//   这样父标题只吃自己那一段，不会把子题的数据块吞进来。
 	const rangeEnds: number[] = headings.map((heading) => {
-		for (const next of candidates) {
+		if (autoMode) {
+			for (const next of candidates) {
+				if (next.line > heading.line) return next.line;
+			}
+			return lines.length;
+		}
+		for (const next of allHeadings) {
 			if (next.line <= heading.line) continue;
-			if (autoMode || next.level <= heading.level) return next.line;
+			if (next.level <= heading.level) return next.line;
 		}
 		return lines.length;
 	});
@@ -243,26 +241,47 @@ export function parseQuizFile(content: string, path: string, options: ParseOptio
 		);
 	}
 
-	// 未被任何题面标题覆盖的 quiz 数据块：提示作者它不会被识别。
-	for (let i = bodyStartLine; i < lines.length; i++) {
-		const line = lines[i];
-		if (line === undefined) continue;
-		const fence = matchFence(line);
-		if (!fence || fence.language !== blockLanguage) continue;
-		const covered = questions.some(
-			(question, index) =>
-				question.blockLine !== null &&
-				question.blockLine >= (headings[index]?.line ?? -1) &&
-				question.blockLine < (rangeEnds[index] ?? -1)
-		);
-		if (!covered) {
-			warnings.push({
-				code: "file",
-				message: t("parser.blockOutsideStem", { line: i + 1, language: blockLanguage }),
-				questionIndex: null,
-				line: i,
-			});
+	// 题目 id 必须唯一：写回、刷题队列与引用都按 id 定位，重复时无法区分是哪一道。
+	// 同标题、归一化后相同的标题以及重复的显式 id 都会撞车；除第一道外一律降级，
+	// 宁可让作者看到提示，也不能把作答写进另一道题的数据块。
+	const firstById = new Map<string, number>();
+	for (let index = 0; index < questions.length; index++) {
+		const question = questions[index];
+		if (question === undefined) continue;
+		const first = firstById.get(question.id);
+		if (first === undefined) {
+			firstById.set(question.id, index);
+			continue;
 		}
+		const warning: ParseWarning = {
+			code: "id-duplicate",
+			message: t("parser.idDuplicate", { id: question.id }),
+			questionIndex: index,
+			line: question.line,
+		};
+		question.warnings.push(warning);
+		question.ok = false;
+		question.answer = null;
+		question.answerAnchors = [];
+		warnings.push(warning);
+	}
+
+	// 未被任何题目使用的 quiz 数据块：提示作者它不会被识别。
+	// 只检查真正的开围栏行（fenceMap），代码示例里的 ```quiz 不会被误报。
+	const usedBlocks = new Set<number>();
+	for (const question of questions) {
+		if (question.blockLine !== null) usedBlocks.add(question.blockLine);
+	}
+	for (let i = bodyStartLine; i < lines.length; i++) {
+		const state = fenceMap[i];
+		if (state === undefined || state.kind !== "open" || state.language !== blockLanguage) continue;
+		if (usedBlocks.has(i)) continue;
+		warnings.push({
+			code: "file",
+			message: t("parser.blockOutsideStem", { line: i + 1, language: blockLanguage }),
+			questionIndex: null,
+			line: i,
+		});
 	}
 
 	return {
@@ -284,12 +303,14 @@ function parseFrontmatter(
 	deps: ParseDependencies,
 	warnings: ParseWarning[]
 ): { frontmatter: Record<string, unknown>; bodyStartLine: number } {
-	if (lines[0]?.trim() !== "---") {
+	// BOM 会出现在从外部工具导入的文件开头；去掉后再判断开围栏。
+	if (lines[0]?.replace(/^\uFEFF/, "").trim() !== "---") {
 		return { frontmatter: {}, bodyStartLine: 0 };
 	}
 	let close = -1;
 	for (let i = 1; i < lines.length; i++) {
-		if (lines[i]?.trim() === "---") {
+		// 只认行首的 `---`：YAML 块标量里缩进的 `  ---` 不是 frontmatter 结束符。
+		if (/^---\s*$/.test(lines[i] ?? "")) {
 			close = i;
 			break;
 		}
@@ -362,7 +383,9 @@ interface FenceInfo {
 }
 
 function matchFence(line: string): FenceInfo | null {
-	const match = /^\s*(`{3,}|~{3,})\s*([^\s`]*)\s*(.*)$/.exec(line);
+	// 围栏最多缩进 3 个空格（CommonMark）：4 空格缩进是缩进代码块，
+	// Obsidian 不会把它当围栏，解析器也不能把它当数据块。
+	const match = /^ {0,3}(`{3,}|~{3,})\s*([^\s`]*)\s*(.*)$/.exec(line);
 	if (!match) return null;
 	const markers = match[1] ?? "";
 	const marker = markers.slice(0, 1);
@@ -520,14 +543,21 @@ function splitBody(
 	if (type === null) return fallback;
 
 	const lines = splitLines(body);
-	const isListLine = (line: string): boolean => LIST_ITEM_RE.test(line);
-	const isTableLine = (line: string): boolean => parseTableRow(line) !== null;
+	// 结构判定必须跳过代码围栏：题面里的代码示例可能写着 `- x` 或管道表格，
+	// 那些是内容，不是选项/题板。围栏状态与 `buildFenceMap` 共用同一套规则。
+	const fenceMap = buildFenceMap(lines);
+	const structural = (index: number): boolean => fenceMap[index]?.kind === "none";
+	const isListLine = (line: string, index: number): boolean => structural(index) && LIST_ITEM_RE.test(line);
+	const isTableLine = (line: string, index: number): boolean =>
+		structural(index) && parseTableRow(line) !== null;
 	const blocks = splitBlocks(lines);
 	if (blocks.length === 0) return fallback;
 
 	const blockLines = (block: LineBlock): string[] => lines.slice(block.start, block.end);
-	const blockHasTable = (block: LineBlock): boolean => blockLines(block).some(isTableLine);
-	const blockHasList = (block: LineBlock): boolean => blockLines(block).some(isListLine);
+	const blockHasTable = (block: LineBlock): boolean =>
+		blockLines(block).some((line, offset) => isTableLine(line, block.start + offset));
+	const blockHasList = (block: LineBlock): boolean =>
+		blockLines(block).some((line, offset) => isListLine(line, block.start + offset));
 	const blockHasBlanks = (block: LineBlock): boolean =>
 		collectBlanks(blockLines(block).join("\n"), blankMarker).length > 0;
 
@@ -568,7 +598,10 @@ function splitBody(
 	const anchorLines = blockLines(anchorBlock);
 	const hasAttachedText =
 		(type === "single" || type === "multi") &&
-		anchorLines.some((line) => line.trim() !== "" && !isListLine(line) && !isTableLine(line));
+		anchorLines.some((line, offset) => {
+			const index = anchorBlock.start + offset;
+			return line.trim() !== "" && !isListLine(line, index) && !isTableLine(line, index);
+		});
 	const included: number[] = [anchor];
 	let cursor = anchor;
 	let canIncludeOrdinary = !hasAttachedText;
@@ -610,7 +643,7 @@ function splitBody(
 		const runs: { start: number; end: number }[] = [];
 		let runStart = -1;
 		anchorLines.forEach((line, index) => {
-			if (isTableLine(line)) {
+			if (isTableLine(line, anchorBlock.start + index)) {
 				if (runStart < 0) runStart = index;
 			} else if (runStart >= 0) {
 				runs.push({ start: runStart, end: index });
@@ -633,14 +666,17 @@ function splitBody(
 
 	// 选择题：目标块的列表是唯一结构；列表之外的行（附着文字、题干里的表格）显示出来。
 	// 上面隔着“普通空行”的段不并入，隔着的空行紧贴表格时才继续向上取。
-	const attachedLines = anchorLines.filter((line) => line.trim() !== "" && !isListLine(line));
+	const attachedLines = anchorLines.filter((line, offset) => {
+		const index = anchorBlock.start + offset;
+		return line.trim() !== "" && !isListLine(line, index);
+	});
 	const stemLines = included.length > 1 ? lines.slice(firstBlock.start, anchorBlock.start) : [];
 
 	return {
 		stem: stemLines.join("\n").trim(),
 		supplement: attachedLines.join("\n").trim(),
 		// 选择题的结构只取列表行：表格属于题面内容，交给题面/补充内容显示。
-		structure: anchorLines.filter(isListLine).join("\n"),
+		structure: anchorLines.filter((line, offset) => isListLine(line, anchorBlock.start + offset)).join("\n"),
 		structureLine,
 	};
 }
@@ -798,7 +834,7 @@ function structureHashSource(
 			.join("|"),
 		structure.boardPairs.map((pair) => `${pair.left}~${pair.right}`).join("|"),
 		structure.blanks.map((b) => `${b.anchor}:${b.expected}`).join("|"),
-		typeof meta.rawAnswer === "string" ? meta.rawAnswer : JSON.stringify(meta.rawAnswer ?? null),
+		typeof meta.rawAnswer === "string" ? meta.rawAnswer : safeStringify(meta.rawAnswer ?? null),
 		meta.question ?? "",
 		String(meta.distractors.count),
 		meta.distractors.pool.join("|"),
@@ -812,6 +848,29 @@ function deriveId(title: string): string {
 		.replace(/[^\p{L}\p{N}]+/gu, "-")
 		.replace(/^-+|-+$/g, "");
 	return slug === "" ? "question" : slug;
+}
+
+/**
+ * 为哈希序列化任意 YAML 值。
+ *
+ * YAML 允许循环锚点（`answer: &a [*a]`），`JSON.stringify` 遇到环会抛错。
+ * 题面哈希只是用来检测改动，遇到环时替换成一个标记即可，绝不能让异常穿出解析器。
+ */
+function safeStringify(value: unknown): string {
+	const seen = new WeakSet<object>();
+	try {
+		return (
+			JSON.stringify(value, (_key, item: unknown) => {
+				if (typeof item === "object" && item !== null) {
+					if (seen.has(item)) return "[Circular]";
+					seen.add(item);
+				}
+				return item;
+			}) ?? "null"
+		);
+	} catch {
+		return "[Unserializable]";
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1159,6 +1218,8 @@ function parseBodyStructure(body: string, bodyStartLine: number, ctx: QuestionCo
 	let tableStartLine = -1;
 	let inFence = false;
 	let fenceMarker = "";
+	/** 顶层选项的缩进；更深的列表项是上一项的说明，不参与选项编号。 */
+	let optionIndent: number | null = null;
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
@@ -1185,6 +1246,11 @@ function parseBodyStructure(body: string, bodyStartLine: number, ctx: QuestionCo
 				tableGroups.push(tableGroup);
 				tableGroup = [];
 			}
+			// 只把最外层列表项当选项：`- 甲` 下面缩进的 `  - 说明` 属于甲的说明。
+			// 否则子项会占掉一个锚点，`answer: c` 就会指到错误的选项。
+			const indent = (/^\s*/.exec(line)?.[0] ?? "").length;
+			if (optionIndent === null) optionIndent = indent;
+			if (indent > optionIndent) continue;
 			const raw = listMatch[1] ?? "";
 			const anchorMatch = ANCHOR_RE.exec(raw);
 			const anchor = anchorMatch?.[1] ?? null;
@@ -1242,16 +1308,18 @@ function parseBodyStructure(body: string, bodyStartLine: number, ctx: QuestionCo
 function parseTableRow(line: string): string[] | null {
 	const trimmed = line.trim();
 	if (!trimmed.startsWith("|")) return null;
-	const cells = trimmed.split("|");
+	// 单元格里的 `\|` 是转义后的竖线，不能当作分隔符；切分后再还原。
+	const cells = trimmed.split(/(?<!\\)\|/);
 	// 去掉首尾空串（行首行尾各一个 `|` 造成）。
 	if (cells[0]?.trim() === "") cells.shift();
 	if (cells[cells.length - 1]?.trim() === "") cells.pop();
 	if (cells.length === 0) return null;
-	return cells.map((cell) => cell.trim());
+	return cells.map((cell) => cell.trim().replace(/\\\|/g, "|"));
 }
 
 function isSeparatorRow(cells: string[]): boolean {
-	return cells.every((cell) => /^:?-{2,}:?$/.test(cell.replace(/\s/g, "")));
+	// GFM 的分隔行允许只写一个 `-`，只要每格都有连字符即可。
+	return cells.every((cell) => /^:?-+:?$/.test(cell.replace(/\s/g, "")));
 }
 
 /**
@@ -1349,16 +1417,51 @@ const MARKER_PATTERNS: { mode: BlankMarkerMode; pattern: RegExp }[] = [
 	{ mode: "bold", pattern: /\*\*([^*\n]+)\*\*(\s*\^[A-Za-z0-9\-_]+)?/g },
 ];
 
+/** 一处空位标记在文本里的位置。 */
+export interface BlankSpan {
+	/** 显式锚点；作者没写时由 {@link findBlankSpans} 按出现顺序补 `b1`、`b2`…。 */
+	anchor: string;
+	/** 标记里的答案原文（尚未去掉包裹的装饰标记）。 */
+	expected: string;
+	/** 在文本中的起始位置。 */
+	index: number;
+	/** 完整匹配长度（含尾部锚点）。 */
+	length: number;
+}
+
+/** 去掉答案外层成对的 Markdown 装饰（`**20**`、`==20==`、`` `20` `` 等）。 */
+function stripBlankDecoration(text: string): string {
+	let result = text.trim();
+	const pairs: [string, string][] = [
+		["**", "**"],
+		["__", "__"],
+		["==", "=="],
+		["~~", "~~"],
+		["`", "`"],
+		["*", "*"],
+		["_", "_"],
+	];
+	for (const [open, close] of pairs) {
+		if (result.length <= open.length + close.length) continue;
+		if (!result.startsWith(open) || !result.endsWith(close)) continue;
+		const inner = result.slice(open.length, result.length - close.length).trim();
+		if (inner === "") continue;
+		result = inner;
+		break;
+	}
+	return result;
+}
+
 /**
- * 收集题面里的空位，按出现顺序。
+ * 找出文本里的空位标记，按出现顺序。
  *
- * - 标记样式由 `marker` 决定（`==…==` / `**…**` / 两者都识别）。
- * - 空位可以写显式锚点 `^b1`；**不写也完全可以**，此时按出现顺序自动编号为 `b1`、`b2`…
- *   （`blanks` 规则里要引用某个空位时才需要锚点）。
- * - 代码块与行内代码中的标记不算空位。
+ * 解析与渲染共用这一份扫描，保证两边的空位顺序与锚点完全一致：
+ * - 代码块与行内代码里的标记只是示例，不算空位；
+ * - 两种标记嵌套（`==**x**==`）只保留外层，避免同一处被数成两个空位；
+ * - 自动编号只给没写锚点的空位，并避开已经显式使用的锚点。
  */
-function collectBlanks(body: string, marker: BlankMarkerMode): BlankSpec[] {
-	const spans: { anchor: string; expected: string; index: number; length: number }[] = [];
+export function findBlankSpans(body: string, marker: BlankMarkerMode): BlankSpan[] {
+	const spans: BlankSpan[] = [];
 	for (const { mode, pattern } of MARKER_PATTERNS) {
 		if (marker !== "both" && marker !== mode) continue;
 		const regex = new RegExp(pattern.source, "g");
@@ -1378,27 +1481,51 @@ function collectBlanks(body: string, marker: BlankMarkerMode): BlankSpec[] {
 			match = regex.exec(body);
 		}
 	}
-	spans.sort((a, b) => a.index - b.index);
+	spans.sort((first, second) => first.index - second.index);
 
 	const excluded = codeRanges(body);
-	const blanks: BlankSpec[] = [];
-	let auto = 0;
+	const kept: BlankSpan[] = [];
 	for (const span of spans) {
 		// 落在代码块 / 行内代码里的标记只是示例文字，不算空位。
 		if (excluded.some(([start, end]) => span.index >= start && span.index < end)) continue;
-		auto++;
-		blanks.push({
-			anchor: span.anchor === "" ? `b${auto}` : span.anchor,
-			expected: span.expected,
-			contextBefore: body.slice(Math.max(0, span.index - 40), span.index),
-			contextAfter: body.slice(span.index + span.length, span.index + span.length + 40),
-		});
+		const previous = kept[kept.length - 1];
+		// 嵌套标记：外层已经覆盖了这处文本，内层不再单独成空位。
+		if (previous !== undefined && span.index < previous.index + previous.length) continue;
+		kept.push(span);
 	}
-	return blanks;
+
+	const used = new Set(kept.filter((span) => span.anchor !== "").map((span) => span.anchor));
+	let auto = 0;
+	for (const span of kept) {
+		if (span.anchor !== "") continue;
+		do {
+			auto++;
+		} while (used.has(`b${auto}`));
+		span.anchor = `b${auto}`;
+		used.add(span.anchor);
+	}
+	return kept;
+}
+
+/**
+ * 收集题面里的空位，按出现顺序。
+ *
+ * - 标记样式由 `marker` 决定（`==…==` / `**…**` / 两者都识别）。
+ * - 空位可以写显式锚点 `^b1`；**不写也完全可以**，此时按出现顺序自动编号为 `b1`、`b2`…
+ *   （`blanks` 规则里要引用某个空位时才需要锚点）。
+ * - 代码块与行内代码中的标记不算空位。
+ */
+function collectBlanks(body: string, marker: BlankMarkerMode): BlankSpec[] {
+	return findBlankSpans(body, marker).map((span) => ({
+		anchor: span.anchor,
+		expected: stripBlankDecoration(span.expected),
+		contextBefore: body.slice(Math.max(0, span.index - 40), span.index),
+		contextAfter: body.slice(span.index + span.length, span.index + span.length + 40),
+	}));
 }
 
 /** 计算代码区域的字符区间：围栏代码块与行内代码。 */
-function codeRanges(body: string): [number, number][] {
+export function codeRanges(body: string): [number, number][] {
 	const ranges: [number, number][] = [];
 	const lines = body.split("\n");
 	let offset = 0;

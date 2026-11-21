@@ -1,7 +1,7 @@
 /**
  * 刷题界面渲染：把一道题渲染成可交互的题卡。
  *
- * 设计约束（README §1.3）：实时预览下光标进入会把渲染结果还原为源码，
+ * 设计约束（见 README 的题卡说明）：实时预览下光标进入会把渲染结果还原为源码，
  * 因此刷题在阅读视图/预览中完成；题卡本身不写文件，提交时统一交给 QuizService。
  *
  * 渲染分工：题面只渲染"非交互部分"——选择题的选项列表、配对题的表格、
@@ -18,7 +18,7 @@ import { plainText } from "./plain-text";
 import { formatStats, QuizService, staleNote } from "./runtime";
 import { seededRandom } from "./session";
 import { BLANK_MARKER_PREFIX, formatStem, formatSupplement } from "./stem";
-import { BlankMarkerMode, QuizOption, QuizQuestion } from "./types";
+import { BlankMarkerMode, QuizOption, QuizQuestion, QuizStats } from "./types";
 
 export interface CardContext {
 	app: App;
@@ -51,6 +51,11 @@ export interface CardContext {
 	addRenderChild?: (child: MarkdownRenderChild) => void;
 	/** 提交完成后回调（用于刷新统计角标；第二个参数是这次提交的作答内容）。 */
 	onSubmitted?: (result: GradeResult, answer?: UserAnswer) => void;
+	/**
+	 * 设置里的「记录写回」开关。写回被关闭时，`written === false` 是预期状态，
+	 * 题卡因此不显示「未能写入笔记」的警告。
+	 */
+	writeBackEnabled?: boolean;
 	/**
 	 * 上一次的作答内容（刷题窗口切回已答题目时传入）。
 	 * 复盘态用它把"你的选择/填写/连线/自评"标在答案旁边，而不是只给出正确答案。
@@ -651,22 +656,37 @@ export function renderMatch(
 	const columnEls = new Map<number, HTMLElement>();
 	// 复盘态：节点不再可点，直接画出正确连线。
 	const review = ctx.reviewOnly === true;
+	// 每列独立打乱，但顺序必须可复现：用题目 id + 会话种子派生随机源，
+	// 否则上一题/下一题来回切时节点位置会跳，用户会以为题目变了。
+	const random = seededRandom(parseInt(contentHash(question.id), 16) ^ (ctx.shuffleSeed ?? 0));
 
 	for (const column of columns) {
 		const col = createBoardColumn(grid, column.name);
 		columnEls.set(column.index, col);
 		// 每列各自打乱，避免行顺序泄露答案。
-		for (const item of shuffle(column.items)) {
+		for (const item of shuffle(column.items, random)) {
 			const el = col.createDiv({
 				cls: `easy-quiz-card__node${column.index === 0 ? " is-left" : ""}`,
 			});
+			if (!review) {
+				// 题板节点也支持键盘：Tab 聚焦、Enter/Space 选中或连线。
+				el.tabIndex = 0;
+				el.setAttribute("role", "button");
+				el.setAttribute("aria-pressed", "false");
+				el.setAttribute("aria-label", item.text);
+				el.addEventListener("click", () => onNodeClick(item.key));
+				el.addEventListener("keydown", (event) => {
+					if (event.key !== " " && event.key !== "Enter") return;
+					event.preventDefault();
+					onNodeClick(item.key);
+				});
+			}
 			// 表格单元格是作者写的 Markdown（`**粗体**`、行内代码…）。节点先放纯文本，
 			// 渲染结果出来后再整体替换：渲染器可能"追加"而不是"清空"，直接渲染进非空
 			// 节点会让文字出现两遍。纯文本单元格（绝大多数）不做一次无意义的渲染。
 			const label = el.createSpan({ cls: "easy-quiz-card__node-text", text: item.text });
 			if (INLINE_MARKDOWN.test(item.text)) void renderNodeText(label, item.text, ctx, renderComponent);
 			nodes.set(item.key, el);
-			if (!review) el.addEventListener("click", () => onNodeClick(item.key));
 		}
 	}
 
@@ -711,7 +731,10 @@ export function renderMatch(
 		svg.setAttribute("width", `${width}`);
 		svg.setAttribute("height", `${height}`);
 		svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-		for (const el of nodes.values()) el.removeClass("is-active", "is-linked");
+		for (const [key, el] of nodes) {
+			el.removeClass("is-active", "is-linked");
+			el.setAttribute("aria-pressed", key === view.activeKey ? "true" : "false");
+		}
 		if (view.activeKey !== null) nodes.get(view.activeKey)?.addClass("is-active");
 
 		const boardRect = board.getBoundingClientRect();
@@ -751,10 +774,13 @@ export function renderMatch(
 	}
 
 	// 尺寸变化后重新画线，避免连线错位。
-	// 观察者与卡片同生命周期：卡片被换掉时由 `onCleanup` 解除，避免观察已移除的节点。
+	// 观察者与卡片同生命周期：刷题窗口通过 `onCleanup` 解除；阅读视图没有这个回调，
+	// 则挂到题卡的 MarkdownRenderChild 上，随卡片重渲染一起卸载，避免泄漏旧 DOM。
 	const observer = new ResizeObserver(() => paint());
 	observer.observe(board);
-	ctx.onCleanup?.(() => observer.disconnect());
+	const disconnect = (): void => observer.disconnect();
+	if (ctx.onCleanup !== undefined) ctx.onCleanup(disconnect);
+	else renderComponent?.register(disconnect);
 	window.setTimeout(() => paint(), 0);
 
 	void renderSubmit(
@@ -912,7 +938,17 @@ async function renderEssay(
 	const submitEssay = async (result: "correct" | "wrong") => {
 		passed.disabled = true;
 		failed.disabled = true;
-		const outcome = await ctx.service.submit(ctx.file, question.id, { kind: "essay", result });
+		let outcome: GradeResult | null;
+		try {
+			outcome = await ctx.service.submit(ctx.file, question.id, { kind: "essay", result });
+		} catch (error) {
+			console.error("EasyQuiz: could not submit the answer", error);
+			feedback.addClass("is-warning");
+			feedback.setText(t("card.feedback.submitFailed"));
+			passed.disabled = false;
+			failed.disabled = false;
+			return;
+		}
 		if (outcome === null) {
 			feedback.addClass("is-warning");
 			feedback.setText(t("card.feedback.submitFailed"));
@@ -922,6 +958,10 @@ async function renderEssay(
 		}
 		feedback.addClass(outcome.correct ? "is-correct" : "is-wrong");
 		feedback.setText(outcome.correct ? t("card.feedback.recordedMastered") : t("card.feedback.recordedNotMastered"));
+		if (outcome.written === false && ctx.writeBackEnabled !== false) {
+			feedback.createDiv({ cls: "easy-quiz-card__note", text: t("card.feedback.notSaved") });
+		}
+		updateStatsBadge(card, question, outcome);
 		const answer: UserAnswer = { kind: "essay", result };
 		ctx.onSubmitted?.(outcome, answer);
 		await renderReview(card, question, ctx, component, answer);
@@ -929,6 +969,27 @@ async function renderEssay(
 	};
 	passed.addEventListener("click", () => void submitEssay("correct"));
 	failed.addEventListener("click", () => void submitEssay("wrong"));
+}
+
+/**
+ * 写回成功后刷新题卡角标（只改显示，不改解析对象）。
+ *
+ * 阅读视图不再因为插件自己的写回而整页重渲染（否则刚显示的复盘会被冲掉），
+ * 因此这次提交的统计只能由题卡自己补上。统计对象本身由刷题窗口统一累计，
+ * 这里用副本计算，避免同一次提交被加两次。只认 `written === true`：关闭写回
+ * 或写盘失败时笔记里的 stats 没变，角标不能凭空加一。
+ */
+function updateStatsBadge(card: HTMLElement, question: QuizQuestion, result: GradeResult): void {
+	if (result.written !== true) return;
+	const badge = card.querySelector<HTMLElement>(".easy-quiz-card__stats");
+	if (badge === null) return;
+	const stats: QuizStats = {
+		attempts: question.stats.attempts + 1,
+		correct: question.stats.correct + (result.correct ? 1 : 0),
+		lastResult: result.correct ? "correct" : "wrong",
+		lastAt: new Date().toISOString(),
+	};
+	badge.setText(formatStats({ ...question, stats }));
 }
 
 async function renderSubmit(
@@ -964,7 +1025,18 @@ async function renderSubmit(
 			return;
 		}
 		button.disabled = true;
-		const result = await ctx.service.submit(ctx.file, question.id, answer, Date.now() - startedAt);
+		let result: GradeResult | null;
+		try {
+			result = await ctx.service.submit(ctx.file, question.id, answer, Date.now() - startedAt);
+		} catch (error) {
+			// 读文件/写回都可能失败（只读 vault、文件被删、解析异常）。判分按钮不能
+			// 永远停在禁用状态，至少要恢复可重试并明确告诉用户。
+			console.error("EasyQuiz: could not submit the answer", error);
+			feedback.setText(t("card.feedback.submitFailed"));
+			feedback.addClass("is-warning");
+			button.disabled = false;
+			return;
+		}
 		if (result === null) {
 			feedback.setText(t("card.feedback.submitFailed"));
 			feedback.addClass("is-warning");
@@ -978,6 +1050,10 @@ async function renderSubmit(
 		for (const detail of result.details) {
 			if (detail.note) feedback.createDiv({ cls: "easy-quiz-card__note", text: detail.note });
 		}
+		if (result.written === false && ctx.writeBackEnabled !== false) {
+			feedback.createDiv({ cls: "easy-quiz-card__note", text: t("card.feedback.notSaved") });
+		}
+		updateStatsBadge(card, question, result);
 		ctx.onSubmitted?.(result, answer);
 		// 复盘内容由调用方决定：数据块渲染时留在原卡片里，刷题窗口则换成下一题。
 		await renderReview(card, question, ctx, component, answer);

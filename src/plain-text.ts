@@ -20,8 +20,8 @@ export function plainText(markdown: string): string {
 	text = text.replace(/\*\*([^*]+)\*\*/g, "$1");
 	text = text.replace(/~~([^~]+)~~/g, "$1");
 	text = text.replace(/==([^=]+)==/g, "$1");
-	// 斜体：只在不成对的双星号之外生效，避免把 `2 * 3 * 4` 当强调。
-	text = text.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1$2");
+	// 斜体：只在不成对的双星号之外生效；开标记后必须紧跟非空白，避免把 `2 * 3 * 4` 当强调。
+	text = text.replace(/(^|[^*])\*([^\s*][^*\n]*?)\*/g, "$1$2");
 	// 双链与普通链接：留下可读的文字部分。
 	text = text.replace(/\[\[([^\]|]*)\|([^\]]+)\]\]/g, "$2");
 	text = text.replace(/\[\[([^\]]+)\]\]/g, "$1");

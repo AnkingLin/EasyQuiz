@@ -1,7 +1,7 @@
 /**
  * EasyQuiz 题目模型与解析结果类型。
  *
- * 设计原则（见 README §2）：
+ * 设计原则（见 README 的题型与数据块说明）：
  * - 题型由 `type` 字段显式声明，绝不由内容形状推断；
  * - 任何解析问题都只降级当前这道题，不影响同文件其它题目，也绝不猜测答案。
  */
@@ -39,6 +39,8 @@ export type WarningCode =
 	| "structure-mismatch"
 	/** 锚点重复或与其它锚点冲突 */
 	| "anchor-duplicate"
+	/** 题目 id 重复，写回与引用无法唯一定位 */
+	| "id-duplicate"
 	/** 文件级提示 */
 	| "file";
 

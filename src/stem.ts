@@ -8,6 +8,7 @@
  */
 
 import { BlankMarkerMode, QuizQuestion } from "./types";
+import { codeRanges, findBlankSpans } from "./parser";
 
 /** 填空题题面中的占位标记前缀；渲染后会被替换成可点击的空位输入框。 */
 export const BLANK_MARKER_PREFIX = "easyquiz-blank:";
@@ -41,37 +42,69 @@ export function formatStem(question: QuizQuestion, mode: BlankMarkerMode = "high
 	let text = question.stemText ?? question.body;
 
 	if (question.type === "blank") {
-		// 按解析出的空位顺序替换，保证占位标记与 blankRules 里的锚点一一对应
-		// （解析阶段已排除代码块/行内代码里的标记）。
-		let index = 0;
-		const nextId = (anchor?: string): string => {
-			const parsed = question.blanks[index];
-			index++;
-			return parsed?.anchor ?? anchor?.replace(/[\s^]/g, "") ?? `b${index}`;
-		};
-		for (const { regex } of activeMarker(mode)) {
-			const pattern = new RegExp(regex.source, "g");
-			text = text.replace(pattern, (_match, _answer: string, anchor?: string) => {
-				return `\`${BLANK_MARKER_PREFIX}${nextId(anchor)}\``;
-			});
+		// 用与解析器相同的扫描结果替换空位：代码示例里的标记不会被误当成空位，
+		// 混合两种标记时也不会因为分两轮替换而把锚点顺序弄反。
+		const spans = findBlankSpans(text, mode);
+		const anchors = question.blanks.map((blank) => blank.anchor);
+		for (let index = spans.length - 1; index >= 0; index--) {
+			const span = spans[index];
+			if (span === undefined) continue;
+			const anchor = anchors[index] ?? span.anchor;
+			text =
+				text.slice(0, span.index) +
+				`\`${BLANK_MARKER_PREFIX}${anchor}\`` +
+				text.slice(span.index + span.length);
 		}
 	} else {
-		// 非填空题：标记只是装饰，保留文字、去掉符号。
-		for (const { regex } of activeMarker(mode)) {
-			const pattern = new RegExp(regex.source, "g");
-			text = text.replace(pattern, "$1");
-		}
+		// 非填空题：标记只是装饰，保留文字、去掉符号；代码里的示例保持原样。
+		text = stripDecorations(text, mode);
 	}
 
-	// 其余锚点（选项的 `^a`、配对表格里的锚点）不参与题面显示。
-	text = text.replace(ANCHOR_AT_END, "");
+	// 其余锚点（选项的 `^a`、配对表格里的锚点）不参与题面显示；代码里的不动。
+	text = stripTrailingAnchors(text);
 
 	if (question.type === "single" || question.type === "multi") {
-		text = dropTopLevelLists(text);
+		// 解析器已经把选项列表从 stemText 里排除；只有手动构造、没有 stemText 的对象
+		// 才需要从 body 里再删一次。否则会把题干上方作为材料显示的列表一起删掉。
+		if (question.stemText === undefined) text = dropTopLevelLists(text);
 	}
 	// 配对题的结构表格由题板接管，解析阶段已把它从题面里剔除；题面里剩下的
 	// 表格（例如上面作为材料的数据表）属于题目内容，按 Markdown 正常显示。
 	return ensureTableSpacing(text).replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** 按当前标记样式去掉装饰符号，但跳过代码块与行内代码。 */
+function stripDecorations(text: string, mode: BlankMarkerMode): string {
+	for (const { regex } of activeMarker(mode)) {
+		text = mapOutsideCode(text, (segment) => segment.replace(new RegExp(regex.source, "g"), "$1"));
+	}
+	return text;
+}
+
+/** 去掉代码区域之外的尾部锚点。 */
+function stripTrailingAnchors(text: string): string {
+	return mapOutsideCode(text, (segment) => segment.replace(ANCHOR_AT_END, ""));
+}
+
+/**
+ * 只对代码区域之外的片段做替换。
+ *
+ * 题面里的代码示例可能写着 `==答案==` 或 `^a`，那是内容而不是标记；直接全局
+ * 替换会把示例改坏，甚至把占位符塞进代码块。
+ */
+function mapOutsideCode(text: string, transform: (segment: string) => string): string {
+	const ranges = codeRanges(text);
+	if (ranges.length === 0) return transform(text);
+	let result = "";
+	let cursor = 0;
+	for (const [start, end] of ranges) {
+		if (end <= cursor) continue;
+		if (start > cursor) result += transform(text.slice(cursor, start));
+		result += text.slice(Math.max(start, cursor), end);
+		cursor = end;
+	}
+	if (cursor < text.length) result += transform(text.slice(cursor));
+	return result;
 }
 
 /**
@@ -81,11 +114,8 @@ export function formatStem(question: QuizQuestion, mode: BlankMarkerMode = "high
 export function formatSupplement(question: QuizQuestion, mode: BlankMarkerMode = "highlight"): string {
 	const source = question.supplementText?.trim() ?? "";
 	if (source === "") return "";
-	let text = source;
-	for (const { regex } of activeMarker(mode)) {
-		text = text.replace(new RegExp(regex.source, "g"), "$1");
-	}
-	text = text.replace(ANCHOR_AT_END, "");
+	let text = stripDecorations(source, mode);
+	text = stripTrailingAnchors(text);
 	return ensureTableSpacing(text).replace(/\n{3,}/g, "\n\n").trim();
 }
 

@@ -31,7 +31,7 @@ import {
 	SummaryTotals,
 	TYPE_ORDER,
 } from "./session";
-import { ParsedQuizFile, QuizQuestion, QuizType } from "./types";
+import { ParsedQuizFile, QUIZ_TYPES, QuizQuestion, QuizType } from "./types";
 import type { GradeResult, UserAnswer } from "./grade";
 import { CardContext, renderQuizCard } from "./view";
 import { openQuestionSource } from "./source-note";
@@ -172,8 +172,17 @@ export class PracticeView extends ItemView {
 	private dirty = false;
 	/** 本轮的选项打乱种子：同一轮里保持稳定，重开一轮才换。 */
 	private sessionSeed = 0;
+	/**
+	 * 会话代数：开始/重开/重置一轮时递增。
+	 *
+	 * 提交是异步的（读文件 + 写回），回调回来时必须确认「还是同一轮、还是同一题」，
+	 * 否则成绩会被记到用户已经切过去的那道题上。
+	 */
+	private sessionGeneration = 0;
 	/** 题卡自身的资源回收（例如配对题的尺寸观察者）。 */
 	private cardCleanups: (() => void)[] = [];
+	/** 两步确认按钮的复位定时器；视图关闭时一并清理。 */
+	private confirmTimers = new Set<number>();
 	/**
 	 * 题卡注册给本视图的 Markdown 子组件。
 	 *
@@ -225,6 +234,10 @@ export class PracticeView extends ItemView {
 			mode: this.config.mode,
 			randomCount: this.config.randomCount,
 			minErrorRate: this.config.minErrorRate,
+			types: [...this.config.types],
+			includeBroken: this.config.includeBroken,
+			shuffle: this.config.shuffle,
+			shuffleOptions: this.config.shuffleOptions,
 			// 搜索词与折叠状态属于"用户怎么看这份清单"，重建工作区时应当保留。
 			query: this.query,
 			folded: [...this.folded],
@@ -289,6 +302,35 @@ export class PracticeView extends ItemView {
 		if ((mode === "order" || mode === "random" || mode === "wrong") && mode !== this.config.mode) {
 			this.config.mode = mode;
 			changed = true;
+		}
+		// `wrongOnly` 与 `mode === "wrong"` 是同一件事的两个入口：恢复工作区时只恢复了
+		// mode，必须把它同步回来，否则候选计数按「全部题」算、真正抽题却按错题过滤。
+		const nextWrongOnly = this.config.mode === "wrong";
+		if (this.config.wrongOnly !== nextWrongOnly) {
+			this.config.wrongOnly = nextWrongOnly;
+			changed = true;
+		}
+
+		const types = data["types"];
+		if (Array.isArray(types)) {
+			const known = QUIZ_TYPES as readonly string[];
+			const next = [
+				...new Set(
+					types.filter((item): item is QuizType => typeof item === "string" && known.includes(item))
+				),
+			];
+			if (!sameStrings(this.config.types, next)) {
+				this.config.types = next;
+				changed = true;
+			}
+		}
+
+		for (const key of ["includeBroken", "shuffle", "shuffleOptions"] as const) {
+			const value = data[key];
+			if (typeof value === "boolean" && this.config[key] !== value) {
+				this.config[key] = value;
+				changed = true;
+			}
 		}
 
 		const count = data["randomCount"];
@@ -420,6 +462,8 @@ export class PracticeView extends ItemView {
 	async onClose(): Promise<void> {
 		this.closed = true;
 		this.opened = false;
+		for (const timer of this.confirmTimers) window.clearTimeout(timer);
+		this.confirmTimers.clear();
 		this.clearInitialFallback();
 		this.releaseCard();
 		this.contentEl.empty();
@@ -958,7 +1002,12 @@ export class PracticeView extends ItemView {
 		if (this.matchedEl === null) return;
 		const searching = this.query.trim() !== "";
 		this.matchedEl.toggleClass("is-hidden", !searching);
-		if (searching) this.matchedEl.setText(t("practice.list.matched", { count: this.visible().matched.length }));
+		if (searching) {
+			const count = this.visible().matched.length;
+			this.matchedEl.setText(
+				t(count === 1 ? "practice.list.matchedOne" : "practice.list.matched", { count })
+			);
+		}
 	}
 
 	private totalsText(totals: SummaryTotals): string {
@@ -1372,7 +1421,10 @@ export class PracticeView extends ItemView {
 			armed = false;
 			button.setText(label);
 			button.removeClass("is-warning");
-			if (timer !== null) window.clearTimeout(timer);
+			if (timer !== null) {
+				window.clearTimeout(timer);
+				this.confirmTimers.delete(timer);
+			}
 			timer = null;
 		};
 		button.addEventListener("click", () => {
@@ -1380,7 +1432,12 @@ export class PracticeView extends ItemView {
 				armed = true;
 				button.setText(t("practice.clear.confirm"));
 				button.addClass("is-warning");
-				timer = window.setTimeout(reset, 4000);
+				const handle = window.setTimeout(() => {
+					this.confirmTimers.delete(handle);
+					reset();
+				}, 4000);
+				timer = handle;
+				this.confirmTimers.add(handle);
 				return;
 			}
 			reset();
@@ -1579,7 +1636,9 @@ export class PracticeView extends ItemView {
 			box.dataset["action"] = "pick-type";
 			box.dataset["type"] = type;
 			box.checked = this.config.types.includes(type);
-			box.disabled = counts[type] === 0;
+			// 已勾选但当前文件没有这种题型时仍要允许取消；否则复选框会「勾着且灰掉」，
+			// 用户既取消不了、候选数又永远是 0，整轮无法开始。
+			box.disabled = counts[type] === 0 && !box.checked;
 			box.addEventListener("change", () => {
 				this.config.types = box.checked
 					? [...new Set([...this.config.types, type])]
@@ -1684,6 +1743,7 @@ export class PracticeView extends ItemView {
 			return;
 		}
 
+		this.sessionGeneration += 1;
 		this.queue = queue;
 		this.cursor = 0;
 		this.results = this.queue.map(() => null);
@@ -1793,6 +1853,8 @@ export class PracticeView extends ItemView {
 
 		// `renderQuizCard` 把题卡追加到传入的元素里，因此直接挂在窗口的卡片容器上，
 		// 复盘内容与导航按钮就是同一个容器的兄弟节点，顺序天然是"题卡在上、按钮在下"。
+		const renderedIndex = this.cursor;
+		const renderedGeneration = this.sessionGeneration;
 		const context: CardContext = {
 			app: this.app,
 			service: this.host.service,
@@ -1800,6 +1862,7 @@ export class PracticeView extends ItemView {
 			el: host,
 			blankMarker: this.host.settings.blankMarker,
 			showStaleHint: this.host.settings.showStaleHint,
+			writeBackEnabled: this.host.settings.writeBackEnabled,
 			onDismissStaleHint: () => this.host.dismissStaleHint?.(),
 			// 「打乱顺序」开关也作用于选择题的选项顺序（题目自己写的 shuffle: true 同样生效）。
 			shuffleOptions: this.config.shuffleOptions,
@@ -1814,12 +1877,18 @@ export class PracticeView extends ItemView {
 				this.cardComponents.push(child);
 			},
 			onSubmitted: (result, answer) => {
-				// 一道题只计一次分：复盘重渲染不会再改分。
-				if (this.results[this.cursor] === null) this.results[this.cursor] = result.correct;
-				// 作答内容每次都记：复盘重渲染交回的是同一份内容，覆盖没有副作用。
-				if (answer !== undefined) this.answers[this.cursor] = answer;
+				// 提交是异步的：回调回来时用户可能已经切题或重开一轮。
+				// 结果永远记在**渲染这张卡时的题号**上（而不是回调执行时的 cursor），
+				// 否则第一题的答案会写进第二题；只有当前仍停在这道题时才去动卡片。
+				if (renderedGeneration !== this.sessionGeneration) return;
 				this.dirty = true;
-				this.afterSubmit(host, result);
+				// 一道题只计一次分：复盘重渲染不会再改分。
+				if (this.results[renderedIndex] === null) this.results[renderedIndex] = result.correct;
+				// 作答内容每次都记：复盘重渲染交回的是同一份内容，覆盖没有副作用。
+				if (answer !== undefined) this.answers[renderedIndex] = answer;
+				this.applyResult(renderedIndex, result);
+				if (renderedIndex !== this.cursor) return;
+				this.afterSubmit(host);
 			},
 			// 题卡右上角的编辑按钮：跳回题库里的这道题。
 			onOpenSource: () => void this.openSource(),
@@ -1847,7 +1916,7 @@ export class PracticeView extends ItemView {
 	}
 
 	/** 提交之后的收尾：停掉提交按钮，把导航换成"下一题"。 */
-	private afterSubmit(host: HTMLElement, result?: GradeResult): void {
+	private afterSubmit(host: HTMLElement): void {
 		for (const button of Array.from(host.querySelectorAll(".easy-quiz-card__actions button"))) {
 			(button as HTMLButtonElement).disabled = true;
 			button.addClass("is-hidden");
@@ -1859,28 +1928,35 @@ export class PracticeView extends ItemView {
 		for (const row of Array.from(host.querySelectorAll(".easy-quiz-card__actions"))) {
 			row.addClass("is-hidden");
 		}
-		/*
-		 * 角标是在渲染时按文件里的记录算出来的，刚提交这一次还没有写回去的副本
-		 * 可读；就地补上，免得复盘时「回答正确」旁边还挂着「未作答」。
-		 * 只认带结果的调用：复盘重画走的是同一个方法，不能再计一次。
-		 */
-		if (result !== undefined) {
-			const entry = this.queue[this.cursor];
-			const question = entry === undefined ? undefined : resolveEntry(this.parsedByPath, entry);
-			if (question !== undefined) {
-				question.stats = {
-					attempts: question.stats.attempts + 1,
-					correct: question.stats.correct + (result.correct ? 1 : 0),
-					lastResult: result.correct ? "correct" : "wrong",
-					lastAt: new Date().toISOString(),
-				};
-				const badge = host.querySelector<HTMLElement>(".easy-quiz-card__stats");
-				if (badge !== null) badge.setText(formatStats(question));
-			}
+		// 角标按 `applyResult` 已累计过的 stats 重画（写回失败/关闭写回时不会变）。
+		const entry = this.queue[this.cursor];
+		const question = entry === undefined ? undefined : resolveEntry(this.parsedByPath, entry);
+		if (question !== undefined) {
+			const badge = host.querySelector<HTMLElement>(".easy-quiz-card__stats");
+			if (badge !== null) badge.setText(formatStats(question));
 		}
 		this.reviewing = true;
 		this.renderProgress();
 		this.renderNav(host);
+	}
+
+	/**
+	 * 把一次成功写回的统计累计到解析缓存里。
+	 *
+	 * 无论用户是否已经切题都要执行：文件已经改了，下一次渲染这道题时应看到
+	 * 新的 stats；只有真正写入成功（`written === true`）才累计。
+	 */
+	private applyResult(index: number, result: GradeResult): void {
+		if (result.written !== true) return;
+		const entry = this.queue[index];
+		const question = entry === undefined ? undefined : resolveEntry(this.parsedByPath, entry);
+		if (question === undefined) return;
+		question.stats = {
+			attempts: question.stats.attempts + 1,
+			correct: question.stats.correct + (result.correct ? 1 : 0),
+			lastResult: result.correct ? "correct" : "wrong",
+			lastAt: new Date().toISOString(),
+		};
 	}
 
 	/** 上一题 / 下一题 / 查看解析 / 跳题。 */
@@ -1994,6 +2070,8 @@ export class PracticeView extends ItemView {
 		this.cursor = index;
 		// 已经答过的题重看时直接进复盘态，避免"再答一次"造成重复写回。
 		this.reviewing = this.results[index] !== null;
+		// 新题从头看：否则长题滚到底后点"下一题"会停在上一题的底部。
+		if (this.rootEl !== null) this.rootEl.scrollTop = 0;
 		this.renderProgress();
 		await this.renderCard();
 	}
@@ -2049,6 +2127,7 @@ export class PracticeView extends ItemView {
 		const retryWrong = this.button(actions, "retry-wrong", t("practice.summary.retryWrong"));
 		retryWrong.disabled = wrongEntries.length === 0;
 		retryWrong.addEventListener("click", () => {
+			this.sessionGeneration += 1;
 			this.queue = wrongEntries;
 			this.cursor = 0;
 			this.results = this.queue.map(() => null);
@@ -2068,6 +2147,7 @@ export class PracticeView extends ItemView {
 	}
 
 	private async restart(): Promise<void> {
+		this.sessionGeneration += 1;
 		this.cursor = 0;
 		this.results = this.queue.map(() => null);
 		this.answers = this.queue.map(() => null);

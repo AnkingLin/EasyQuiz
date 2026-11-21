@@ -30,6 +30,11 @@ export interface GradeResult {
 	details: GradeDetail[];
 	/** 用于写回 history 的答案摘要。 */
 	recorded: string | string[];
+	/**
+	 * 是否已写入笔记。`undefined` 表示只判分、没有尝试写回（例如关闭了写回），
+	 * `false` 表示尝试过但失败（只读 vault、题目被删、补丁未通过校验）。
+	 */
+	written?: boolean;
 }
 
 /**
@@ -187,12 +192,10 @@ function gradeMatch(
 	const label = (key: string): string => itemText.get(key) ?? key;
 
 	const details: GradeDetail[] = [];
-	const recorded: string[] = [];
 
 	// 漏连：正确答案里玩家没连的。
 	for (const pair of question.boardPairs) {
 		const key = `${pair.left}~${pair.right}`;
-		recorded.push(key);
 		if (chosen.has(key)) continue;
 		details.push({
 			correct: false,
@@ -213,6 +216,9 @@ function gradeMatch(
 	if (details.length === 0) {
 		details.push({ correct: true });
 	}
+
+	// history 记录用户实际连出的线，而不是标准答案：漏连/错连时二者并不相同。
+	const recorded = chosenPairs.map((pair) => `${pair.left}~${pair.right}`);
 
 	return {
 		correct: details.every((detail) => detail.correct),

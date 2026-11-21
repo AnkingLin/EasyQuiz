@@ -301,11 +301,11 @@ tags:
 | 字段 | 必填 | 说明 |
 |---|---|---|
 | `type` | **是** | `single` / `multi` / `match` / `blank` / `essay`。决定题型的*唯一*依据。 |
-| `id` | 否 | 稳定标识符；省略时由标题文字推导（不含 `^[[[]]]` 知识点链接）。 |
+| `id` | 否 | 稳定标识符；省略时由标题文字推导（不含 `^[[[]]]` 知识点链接）。同一文件内必须唯一：重复的 id 会让后一道题暂不可作答，直到改名或写成唯一的 id。 |
 | `question` | 否 | 代替标题显示在题卡上的题面文字（同样按 Markdown 渲染）；标题仍用于生成 `id` 与知识点链接。 |
 | `distractors` | 否 | 只用于选择题：`distractors: 2` 随机追加 2 个干扰项；`distractors: { count: 2, pool: [ ... ] }` 指定候选池。每次作答后重新抽取，复盘时显示作答当时那一组。 |
 | `answer` | 视题型而定 | `single`：`c`；`multi`：`[a, b]`；`blank` 与 `match` 与 `essay`：不使用。 |
-| `blanks` | 否 | 每个空位的匹配规则：`strict` / `ignoreCase` / `regex` / `accept`。键是空位锚点。 |
+| `blanks` | 否 | 每个空位的匹配规则：`ignoreCase` / `regex` / `accept`。键是空位锚点；没写规则的空位按严格匹配（忽略首尾空白）。 |
 | `shuffle` | 否 | 打乱**这道题**的选项顺序。默认 `false`；`match` 始终打乱。 |
 | `explanation` | 否 | 解析文字，按 Markdown 渲染（加粗、行内代码、图片、公式都可以）。也可以写成行内的 `> [!note]- 解析` 标注。 |
 | `score` | 否 | 分值，默认 1。 |
@@ -329,7 +329,7 @@ The minimum TCP header length is ==20== ^b1 bytes.
 
 选择题选项的锚点可以省略：一个都没写时按位置自动编号为 `a`、`b`、`c`……；只写了一部分时，没写锚点的选项会从题卡隐藏。如果选项可能被重排、记录又必须跟着同一个选项走，就写显式锚点。
 
-配对表格**不**使用锚点：表格单元格里的 `^id` 会被当作普通文字，行级锚点也不支持。配对题的记录以行内容哈希加行号作为键，所以修改表格只会把受影响的记录标记为「题面已变更」，而不会悄悄丢弃它们。
+配对表格**不**使用锚点：表格单元格里的 `^id` 会被当作普通文字，行级锚点也不支持。配对题的记录以列号加单元格文本的哈希作为键（与行顺序无关），所以调整表格行序不会丢记录；改动单元格文字会把该题标记为「题面已变更」，而不是悄悄丢弃。
 
 ### 配对题细节
 
@@ -534,11 +534,23 @@ history:
 
 ## 更新内容
 
+### 1.2.0
+
+- **重复题目 id 会被发现**：标题或 `id` 相同的两道题不再悄悄共用记录；后一道题会带着明确提示暂不可作答，直到你写一个唯一的 `id` 或改标题。
+- **题目范围回到文档承诺**：任何同级或更高级标题都会结束当前题（即使它不在设置的题面层级里），后面的章节或附录不会再顶替题目选项。代码围栏里的列表/表格只算内容，不再被当成选项或题板。
+- **空位重新对齐**：行内代码里的标记保持原样，`==高亮==` 与 `**加粗**` 混用时按出现顺序对应，嵌套标记只算一个空位；选项上方的材料列表也会显示出来，而不是被删掉。
+- **写回更稳**：时间戳加引号、CRLF 行尾原样保留，写入失败会明确提示而不是静默吞掉；阅读视图提交后不会再被插件自己的刷新冲掉复盘面板。
+- **输入与状态更安全**：`data.json` 里的设置会逐字段校验，`**/*.md` 也能匹配根目录笔记，刷题窗口会恢复题型/只刷错题/打乱开关；提交未完成时切题不会再把成绩记到下一题，配对题历史记录的是你实际连出的线。
+
 ### 1.1.8
 
 - **启动恢复更可靠**：刷题窗口从缓存恢复时先应用缓存的页面、勾选与搜索词，再画首屏；不会再出现「看到题库列表、按钮却按刷题设置页响应」的问题。
 - **加载与刷新更平滑**：窗口骨架只建一次，切页与刷新不再整块重建；题库列表先显示已有数据、再在后台增量刷新，且只重解析改动过的文件，工具条、搜索框与滚动位置保持不动。
 - **勾选与折叠即时生效**：全选、清空、文件夹整组勾选、清空搜索和全部折叠/展开都只更新对应区域，不再整页闪一下或滚回顶部。
+
+### 1.1.7
+
+- **列表复选框居中**：题库列表里的勾选框在任何行高下都与内容垂直居中。
 
 ### 1.1.6
 
@@ -586,6 +598,7 @@ history:
 | 题卡出现了，但点**提交答案**没有反应 | 该题已降级（数据块上方会显示提示） | 按提示指出的问题修正——通常是 `type`、重复的锚点或 YAML 错误 |
 | 编辑题目后屏幕上还留着旧题卡 | 阅读视图不会自己重渲染代码块 | 插件会自动刷新；否则运行**刷新题库视图** |
 | 重命名之后记录不再累积 | `id` 是由旧的标题文字推导出来的 | 给这道题写一个显式的 `id`；记录以文件路径 + 题目 id 为键 |
+| 两道题共用同一份记录 | 两个标题推导出了同一个 `id` | 改掉其中一个标题，或给后一道题写唯一的 `id`；后一道题会带提示暂不可作答 |
 | 某个 `quiz` 数据块被完全忽略 | 它不在任何被当作题目的标题之下 | 把它移到某个题面标题之下 |
 | 改了数据块语言后没生效 | 处理器是在插件加载时注册的 | 重新加载 Obsidian |
 | 另一个插件的 `quiz` 片段不再渲染 | 本插件占用了 `quiz` 数据块语言 | 在设置里改掉**数据块语言**，然后重新加载 |
@@ -596,17 +609,18 @@ history:
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (436 cases)
+npm test           # bundle and run the test suite (498 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 npm run assets     # 重新生成两份 README 用到的截图与 GIF
 ```
 
-测试套件分两层：
+测试套件分三层：
 
-- **纯逻辑**（`parser`、`stem`、`reference`、`grade`、`writeback`、`match-board`、`insert`、`session`）：纯 node，无 DOM。
-- **DOM**（`tests/quiz-match-dom.test.ts`、`tests/quiz-insert-modal.test.ts`、`tests/quiz-practice-view.test.ts`、`tests/quiz-knowledge-link.test.ts`、`tests/quiz-file-menu.test.ts`、`tests/quiz-i18n.test.ts`）：
+- **纯逻辑**（`parser`、`stem`、`reference`、`plain-text`、`grade`、`writeback`、`match-board`、`insert`、`session`、`settings`）：纯 node，无 DOM。`tests/quiz-runtime.test.ts` 用内存 Vault 驱动真实的写回编排，`Vault.process`、并发提交、tag 识别的题库与 CRLF 保留都是实际跑过的。
+- **DOM**（`tests/quiz-match-dom.test.ts`、`tests/quiz-insert-modal.test.ts`、`tests/quiz-practice-view.test.ts`、`tests/quiz-knowledge-link.test.ts`、`tests/quiz-file-menu.test.ts`、`tests/quiz-i18n.test.ts`、`tests/quiz-card-title.test.ts`、`tests/quiz-choice-dom.test.ts`、`tests/quiz-choice-shuffle.test.ts`、`tests/quiz-placement.test.ts`、`tests/quiz-whats-new.test.ts`）：
   在 jsdom 下通过 `renderQuizCard` 渲染真实的题卡与连线板并点击其节点，因此点击处理、连线目标、各列之间的隔离、`MarkdownRenderer` 契约以及知识点链接都是被验证过的，而不是假设的；插入对话框通过 `InsertQuestionModal` 打开并驱动其控件；刷题窗口通过 `PracticeView` 打开并走完它的全部三个页面——包括列表页的搜索、文件夹折叠与整组勾选；文件浏览器菜单也由它自己的真实事件处理函数驱动。`tests/dom.ts` 安装 Obsidian 风格的 DOM 辅助函数（`createDiv`、`addClass`、…），`tests/obsidian-stub.ts` 则代替只有类型定义的 `obsidian` 包。
+- **样式与文档**（`tests/quiz-styles.test.ts`、`tests/quiz-skill-doc.test.ts`）：样式表按文本检查复盘高亮的对比度规则；作者指南里的示例会交给真正的解析器与判分器执行。
 
 `tests/quiz-skill-doc.test.ts` 把文档和代码闭环起来：它读取 `skills/easyquiz-authoring/SKILL.md`，抽出每个被标记的示例，交给真正的解析器与判分器。文档里的骨架如果无法作答，测试套件就会失败。
 
@@ -625,7 +639,10 @@ npm run assets     # 重新生成两份 README 用到的截图与 GIF
 ### 源码结构
 
 ```
-src/main.ts          plugin entry: code-block processor, commands, view registration, settings tab
+src/main.ts          plugin entry: lifecycle, code-block processor, commands, view registration
+src/settings.ts      设置形状、默认值与校验（纯逻辑）
+src/settings-tab.ts  设置页
+src/quiz-lookup.ts   阅读视图的数据块 → 题目映射（纯逻辑）
 src/parser.ts        question-bank parser (pure logic, no obsidian import)
 src/types.ts         question model and parse-result types
 src/stem.ts          stem preprocessing: strips what the interactive controls render (pure logic)
@@ -648,17 +665,17 @@ src/file-menu.ts     the file explorer menu entry that starts practising a bank
 src/labels.ts        question-type labels and default stem titles, shared by card/dialog/window (pure logic)
 src/i18n/            English/Chinese message tables and the language state (pure logic)
 skills/              agent-facing authoring spec (SKILL.md), examples verified by the test suite
-tests/               parser / stem / grading / write-back / insert / session tests, the window tests, a fixture
+tests/               parser / stem / grading / write-back / runtime / settings / lookup / insert / session tests, the window tests, a fixture
 tools/readme-assets/ README 截图与 GIF 生成器（见上一节）
 ```
 
-`parser` / `stem` / `reference` / `plain-text` / `grade` / `writeback` / `hash` / `match-board` / `insert` / `session` / `labels` / `i18n` 刻意**不**导入 `obsidian`，因此它们可以在纯 Node 下运行；所有对 Obsidian API 的依赖都限制在 `runtime.ts`、`view.ts`、`practice-view.ts`、`source-note.ts`、`insert-modal.ts` 和 `file-menu.ts` 里。文案表也是如此：它们是普通对象，所以解析器不必接触 Obsidian API 就能产生本地化的提示。
+`parser` / `stem` / `reference` / `plain-text` / `grade` / `writeback` / `hash` / `match-board` / `insert` / `session` / `labels` / `settings` / `quiz-lookup` / `i18n` 刻意**不**导入 `obsidian`，因此它们可以在纯 Node 下运行；所有对 Obsidian API 的依赖都限制在 `runtime.ts`、`view.ts`、`practice-view.ts`、`source-note.ts`、`insert-modal.ts`、`settings-tab.ts` 和 `file-menu.ts` 里。文案表也是如此：它们是普通对象，所以解析器不必接触 Obsidian API 就能产生本地化的提示。
 
 题干渲染时会**去掉**那些有自己交互控件的部分——选项列表、配对表格以及 `==answer==` 文本都会被剥离，以免同一内容显示两遍。
 
 ## 状态
 
-已实现并有测试覆盖：解析器、题干预处理、五种题型的判分、记录写回、连线板逻辑、题目模板及其插入定位、题卡界面（题面、选项、解析与配对单元格都按 Markdown 渲染、可点击连线的多列配对及打乱、内嵌的点击输入式空位及其随内容变宽、问答题自评，以及可点击的知识点链接）、刷题窗口（带逐文件数据的题库列表，外加搜索、文件夹折叠与整组勾选；带题型/错误率筛选与抽题方式以及「打乱顺序」的刷题设置；以及一次一道题、在原处揭示答案并给出最终报告的一轮）、「题目 id」引用（在别的笔记里就地渲染成可作答的题卡，右上角的铅笔可回到题库笔记），从文件浏览器菜单直接跳到某个题库刷题设置的入口，还有带语言设置的英文/中文界面。题库文件被修改会触发防抖的阅读视图刷新，并使窗口缓存的解析结果失效。
+已实现并有测试覆盖：解析器、题干预处理、五种题型的判分、记录写回、连线板逻辑、题目模板及其插入定位、题卡界面（题面、选项、解析与配对单元格都按 Markdown 渲染、可点击连线的多列配对及打乱、内嵌的点击输入式空位及其随内容变宽、问答题自评，以及可点击的知识点链接）、刷题窗口（带逐文件数据的题库列表，外加搜索、文件夹折叠与整组勾选；带题型/错误率筛选与抽题方式以及「打乱顺序」的刷题设置；以及一次一道题、在原处揭示答案并给出最终报告的一轮）、「题目 id」引用（在别的笔记里就地渲染成可作答的题卡，右上角的铅笔可回到题库笔记），从文件浏览器菜单直接跳到某个题库刷题设置的入口，还有带语言设置的英文/中文界面。题库文件被修改会触发防抖的阅读视图刷新，并使窗口缓存的解析结果失效。另外还覆盖：题目 id 唯一性（重复标题或 id 会让后一道题降级）、`data.json` 设置校验，以及用内存 Vault 驱动的写回编排（并发提交、tag 识别的题库、CRLF 保留与加引号的时间戳）。
 
 尚未实现：把多次写回合并成一次文件写入，以及跨轮次的统计（错题本、图表）——目前只有窗口为单轮计算出的那些数据。
 
@@ -667,7 +684,7 @@ tools/readme-assets/ README 截图与 GIF 生成器（见上一节）
 ## 参与贡献
 
 - `main.ts` 只保留插件生命周期；功能逻辑放在 `src/` 下各自独立的模块里。
-- `parser` / `stem` / `reference` / `plain-text` / `grade` / `writeback` / `hash` / `match-board` / `insert` / `session` / `labels` / `i18n` 不得导入 `obsidian`，这样它们才能在纯 Node 下保持可测试。
+- `parser` / `stem` / `reference` / `plain-text` / `grade` / `writeback` / `hash` / `match-board` / `insert` / `session` / `labels` / `settings` / `quiz-lookup` / `i18n` 不得导入 `obsidian`，这样它们才能在纯 Node 下保持可测试。
 - 绝不要硬编码界面文案：在 `src/i18n/en.ts` 里加键，在 `src/i18n/zh.ts` 里填写（两张表会互相做类型检查），然后通过 `t()` 读取。两张表里的 `{placeholders}` 要保持一致。
 - 改变用户可见的行为时，要同时更新 `README.md`、`README.zh-CN.md` **和** `skills/easyquiz-authoring/SKILL.md`——后者的示例会被 `npm test` 执行。如果改动在界面上看得见，还要运行 `npm run assets`，让图片保持准确；如果希望用户更新后看到提示，还要在两份 README 和 `src/whats-new.ts` 里加上对应的更新条目。
 - 提交 PR 之前先运行 `npm run build`、`npm test` 和 `npm run lint`；CI 会跑这三项。

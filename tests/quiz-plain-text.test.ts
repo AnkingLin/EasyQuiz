@@ -105,3 +105,8 @@ test("纯文本：判分提示里写出的选项文字保留 ~，与卡片上看
 	const text = result.details.map((detail) => detail.note ?? "").join("\n");
 	assert(text.includes("H~2~O"), `判分提示应保留 ~（实际：${JSON.stringify(text)}）`);
 });
+
+test("纯文本：乘号不会被当成斜体", () => {
+	assertEqual(plainText("2 * 3 * 4"), "2 * 3 * 4", "带空格的乘号应保留");
+	assertEqual(plainText("*斜体* 文字"), "斜体 文字", "真正的斜体仍应去掉星号");
+});

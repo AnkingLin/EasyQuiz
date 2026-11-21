@@ -73,6 +73,7 @@ export const en = {
 	"menu.insert": "Insert question",
 	"fileMenu.practice": "Practise this question bank",
 	"notice.recorded": "Attempt recorded.",
+	"notice.notSaved": "Graded, but the attempt could not be written to the note.",
 	"notice.notQuizFile": "\"{name}\" is not a question bank (missing quiz: true or #quiz).",
 	// 计数一律放在标签后面：英文没有量词，`1 questions` 这类写法会读起来是错的。
 	"notice.validation": "Checked {total}: {ok} answerable, {bad} need fixing.",
@@ -105,8 +106,6 @@ export const en = {
 		"Going back to an answered question shows your own answer, and the stats badge reflects the new attempt. The header's edit button follows a native internal link to the question in its source note, reusing the tab if the note is already open.",
 	"whatsNew.bankListFix":
 		"The bank picker shows partial selection for folders and picks up file changes when you switch back, without a manual rescan.",
-	"whatsNew.stemTighter":
-		"Stems are gathered upward from each type's target block: the paragraph right above it is included, further up only blank lines hugging tables are skipped, and an ordinary blank line stops. Matching questions use only the nearest table, and an essay callout is shown together with the blocks above it. Stems render with Obsidian's Markdown rules — the containers carry markdown-rendered, so tables use the theme's styling.",
 	"whatsNew.distractorReroll":
 		"Distractors are redrawn after every attempt, and the review shows the set you answered with.",
 	"whatsNew.clearRecords":
@@ -129,6 +128,16 @@ export const en = {
 		"The End round button now sits at the right of the practice page's title row.",
 	"whatsNew.titleMarkdown":
 		"Question titles render as Markdown: bold, italics, inline code, links and formulas in the heading (or the data block's `question` field) display the way Obsidian renders them, instead of showing raw markers.",
+	"whatsNew.duplicateIds":
+		"Questions with duplicate titles or ids are now caught: the later question is disabled with a warning instead of silently sharing records with the earlier one.",
+	"whatsNew.boundaries":
+		"A question ends at any same-or-higher heading, even outside the configured stem level, and lists or tables inside code fences are no longer read as options or boards.",
+	"whatsNew.blankMarkers":
+		"Blank markers inside inline code stay code, mixed highlight/bold blanks keep their document order, and nested markers count once.",
+	"whatsNew.writeBack":
+		"Attempt timestamps are quoted and CRLF line endings are preserved; a failed write is reported, and the reading view keeps the review panel after submitting.",
+	"whatsNew.stateSafety":
+		"Settings from data.json are validated, `**/*.md` path globs also match root-level notes, and the practice window restores its type/wrong-only/shuffle filters safely.",
 	"whatsNew.noteJumpFix":
 		"The card's edit button now opens the question's heading like a backlink: the cursor lands on the heading in edit mode, reading view scrolls there with the native highlight, and an already-open tab is reused.",
 	"whatsNew.staleHintOff":
@@ -162,6 +171,7 @@ export const en = {
 	"card.essay.mastered": "Mastered",
 	"card.essay.notMastered": "Not mastered",
 	"card.feedback.submitFailed": "Submit failed: the question may have changed, or the data block cannot be written.",
+	"card.feedback.notSaved": "Your answer was graded, but the note could not be updated, so this attempt was not saved.",
 	"card.feedback.recordedMastered": "Recorded: mastered",
 	"card.feedback.recordedNotMastered": "Recorded: not mastered",
 	"card.feedback.answerFirst": "Answer the question first.",
@@ -237,6 +247,7 @@ export const en = {
 		"Every question-bank file in the vault, listed by path with its data. Search to narrow the list, fold a folder with its header, and tick several files to practise them in one round.",
 	"practice.list.scanning": "Scanning question banks…",
 	"practice.list.rootFolder": "/ (vault root)",
+	"practice.list.matchedOne": "Matched {count} question-bank file",
 	"practice.list.matched": "Matched {count} question-bank files",
 	"practice.list.noMatch": "No question-bank file matches \"{query}\".",
 	"practice.list.foldAll": "Collapse all",
@@ -353,6 +364,7 @@ export const en = {
 	"parser.columnUnnamed": "Column {index}",
 	"parser.columnGrouped": "{base} (group {count})",
 	"parser.anchorDuplicate": "Anchor `^{anchor}` is duplicated; grading will be unstable.",
+	"parser.idDuplicate": "The question id \"{id}\" is already used by an earlier question in this file. Set a unique `id` or rename the heading; this question is disabled until then.",
 	"parser.answerIgnoredMatch": "A matching question takes its answer from the table's row order; the `answer` field was ignored.",
 	"parser.answerIgnoredEssay": "A short-answer question has no fixed answer; the `answer` field was ignored.",
 	"parser.answerIgnoredBlank": "A blank question takes its answers from the `==…==` markers; the `answer` field was ignored.",
