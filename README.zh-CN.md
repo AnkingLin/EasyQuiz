@@ -534,6 +534,10 @@ history:
 
 ## 更新内容
 
+### 1.2.1
+
+- **分屏不再被拉回开头**：编辑笔记不会再重画所有打开的笔记。元数据 `resolved` 事件现在只用于启动时的一次性补画，阅读视图刷新也会保持滚动位置，分屏另一侧不会再跳回顶部。
+
 ### 1.2.0
 
 - **重复题目 id 会被发现**：标题或 `id` 相同的两道题不再悄悄共用记录；后一道题会带着明确提示暂不可作答，直到你写一个唯一的 `id` 或改标题。
@@ -609,7 +613,7 @@ history:
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (498 cases)
+npm test           # bundle and run the test suite (501 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 npm run assets     # 重新生成两份 README 用到的截图与 GIF

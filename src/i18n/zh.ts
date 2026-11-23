@@ -97,6 +97,7 @@ export const zh: MessageTable = {
 	"whatsNew.errorRateFilter": "刷题设置新增「错误率」筛选：只抽错误率不低于所选值的题，没做过的题没有错误率，不会入选。",
 	"whatsNew.endRoundRight": "刷题页的「结束本轮」移到标题行右侧。",
 	"whatsNew.titleMarkdown": "题目标题按 Markdown 渲染：标题里的加粗、斜体、行内代码、链接和公式都按 Obsidian 的规则显示，不再露出 `**` 这类标记；数据块的 `question` 字段同样生效。",
+	"whatsNew.scrollFix": "编辑笔记不再重画所有打开的笔记：元数据的 `resolved` 事件只用于启动时的一次性补画，阅读视图刷新也会保持滚动位置，分屏不会再被拉回开头。",
 	"whatsNew.duplicateIds": "标题或 id 重复的题目会被发现：后一道题带提示暂不可作答，而不是悄悄和前一题共用记录。",
 	"whatsNew.boundaries": "题目到任何同级或更高级标题为止（即使不在题面层级设置里）；代码围栏里的列表/表格不再被当成选项或题板。",
 	"whatsNew.blankMarkers": "行内代码里的空位标记保持原样，高亮/加粗混用时按出现顺序对应，嵌套标记只算一个空位。",

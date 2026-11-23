@@ -619,6 +619,10 @@ appears for Markdown question banks; multi-selections and other files are left a
 
 ## What's new
 
+### 1.2.1
+
+- **Split panes keep their place.** Editing a note no longer re-renders every open note. The metadata `resolved` event is now only used for the one-time startup repair, and reading-view refreshes preserve their scroll position, so the other split no longer jumps back to the top.
+
 ### 1.2.0
 
 - **Duplicate question ids are caught.** Two questions with the same title or `id` no longer silently share records: the later one is disabled with a clear warning until you set a unique `id` or rename the heading.
@@ -694,7 +698,7 @@ Each version is announced once. Older releases are on [GitHub Releases](https://
 npm install
 npm run dev        # watch src/main.ts, rebuild main.js on change
 npm run build      # tsc type check + production bundle
-npm test           # bundle and run the test suite (498 cases)
+npm test           # bundle and run the test suite (501 cases)
 npm run typecheck  # type check only
 npm run lint       # eslint (eslint-plugin-obsidianmd)
 npm run assets     # regenerate the screenshots and GIFs used by the READMEs

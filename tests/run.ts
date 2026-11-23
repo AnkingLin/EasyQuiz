@@ -11,6 +11,7 @@ import "./quiz-grading.test";
 import "./quiz-runtime.test";
 import "./quiz-settings.test";
 import "./quiz-lookup.test";
+import "./quiz-preview-refresh.test";
 import "./quiz-stem.test";
 import "./quiz-plain-text.test";
 import "./quiz-match-board.test";

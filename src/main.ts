@@ -32,6 +32,7 @@ import type { PracticePlacement } from "./practice-placement";
 import { PRACTICE_VIEW_TYPE, PracticeView } from "./practice-view";
 import { openQuestionSource } from "./source-note";
 import { findQuestion } from "./quiz-lookup";
+import { rerenderPreviewPreservingScroll } from "./preview-refresh";
 import { shouldAnnounce, whatsNewFor } from "./whats-new";
 import { EasyQuizSettingTab } from "./settings-tab";
 import { WhatsNewModal } from "./whats-new-modal";
@@ -82,6 +83,8 @@ export default class EasyQuizPlugin extends Plugin {
 	private selfWrites = new Map<string, number>();
 	/** 上次保存时与解析有关的设置指纹；变化时让缓存与已渲染题卡失效。 */
 	private lastParseSignature = "";
+	/** 初始的元数据解析是否已经补画过一次；`resolved` 之后每次编辑都会再触发。 */
+	private initialCacheResolved = false;
 
 	async onload() {
 		await this.loadSettings();
@@ -122,11 +125,15 @@ export default class EasyQuizPlugin extends Plugin {
 				if (file instanceof TFile && this.isQuizPath(file.path)) refresh(file);
 			})
 		);
-		// 元数据缓存就绪前建立的引用索引可能是空表：缓存建好后清掉并重画一次，
-		// 否则启动时已打开的笔记会一直把 `` `题目id` `` 当成普通代码。
+		// 元数据缓存就绪前建立的引用索引可能是空表：缓存建好后清掉并补画一次。
+		// 注意 `resolved` 在初始加载后**每次文件修改都会再触发**（见 obsidian.d.ts），
+		// 因此只有第一次能重画全部笔记；后续编辑只让索引失效，否则会把分屏
+		// 另一侧的阅读视图也重画并滚回开头。
 		this.registerEvent(
 			this.app.metadataCache.on("resolved", () => {
 				this.invalidateReferences();
+				if (this.initialCacheResolved) return;
+				this.initialCacheResolved = true;
 				this.refreshNotes();
 			})
 		);
@@ -389,7 +396,7 @@ export default class EasyQuizPlugin extends Plugin {
 			if (!(view instanceof MarkdownView)) continue;
 			if (view.file?.path !== file.path) continue;
 			if (!force && view.getMode() !== "preview") continue;
-			view.previewMode.rerender(true);
+			rerenderPreviewPreservingScroll(view);
 		}
 	}
 
@@ -650,7 +657,7 @@ export default class EasyQuizPlugin extends Plugin {
 	refreshNotes(): void {
 		for (const view of this.practiceViews()) void view.render();
 		for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-			if (leaf.view instanceof MarkdownView) leaf.view.previewMode.rerender(true);
+			if (leaf.view instanceof MarkdownView) rerenderPreviewPreservingScroll(leaf.view);
 		}
 	}
 

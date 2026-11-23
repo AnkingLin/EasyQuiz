@@ -128,6 +128,8 @@ export const en = {
 		"The End round button now sits at the right of the practice page's title row.",
 	"whatsNew.titleMarkdown":
 		"Question titles render as Markdown: bold, italics, inline code, links and formulas in the heading (or the data block's `question` field) display the way Obsidian renders them, instead of showing raw markers.",
+	"whatsNew.scrollFix":
+		"Editing a note no longer re-renders every open note: the metadata `resolved` event is only used for the one-time startup repair, and reading-view refreshes keep their scroll position, so split panes stay where you left them.",
 	"whatsNew.duplicateIds":
 		"Questions with duplicate titles or ids are now caught: the later question is disabled with a warning instead of silently sharing records with the earlier one.",
 	"whatsNew.boundaries":
